@@ -1,0 +1,6 @@
+{
+    "mcp_server_url": "http://localhost:8000",
+    "timeout": 30,
+    "token_budget_limit": 10000,
+    "max_cost_per_task": 0.10
+}

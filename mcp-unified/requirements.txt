@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+structlog
+python-json-logger
+pydantic
+pydantic-settings
+asyncpg
+psycopg[binary]
+psycopg-pool
+pgvector
+redis
+httpx
+pytest
+tiktoken
