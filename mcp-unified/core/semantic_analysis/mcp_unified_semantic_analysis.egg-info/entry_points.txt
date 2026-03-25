@@ -1,0 +1,2 @@
+[console_scripts]
+semantic-analyzer = mcp_unified.core.semantic_analysis.cli:main

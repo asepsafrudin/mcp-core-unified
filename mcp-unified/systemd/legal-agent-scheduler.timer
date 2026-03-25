@@ -1,0 +1,16 @@
+[Unit]
+Description=Legal Agent Enhancement - Daily Timer at 21:00 WIB
+Documentation=https://github.com/asepsafrudin/mcp-universal-agent-system
+
+[Timer]
+# Run at 21:00 WIB (Asia/Jakarta) every day
+OnCalendar=*-*-* 21:00:00
+
+# Run immediately if system was down at scheduled time
+Persistent=true
+
+# Randomize start time by 1 minute to avoid thundering herd
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

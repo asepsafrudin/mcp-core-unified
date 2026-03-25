@@ -1,28 +1,46 @@
 import json
 import asyncio
 import os
+import uuid
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from observability.logger import logger
 
 class MCPProxy:
-    def __init__(self, config_path: str = "/home/aseps/MCP/antigravity-mcp-config.json"):
+    def __init__(self, config_path: str = None):
+        # [REVIEWER] Path resolved dynamically — no hardcoded username
+        # Priority: 1) explicit argument, 2) env var, 3) relative to project root
+        if config_path is None:
+            config_path = os.environ.get(
+                "MCP_CONFIG_PATH",
+                str(Path(__file__).parent.parent.parent / "antigravity-mcp-config.json")
+            )
         self.config_path = config_path
         self.external_servers: Dict[str, Dict[str, Any]] = {}
         self.load_config()
 
     def load_config(self):
+        logger.info("mcp_proxy_loading_config", path=self.config_path)
         try:
+            if not os.path.exists(self.config_path):
+                logger.warning("mcp_proxy_config_not_found",
+                              path=self.config_path,
+                              note="No external MCP servers will be available. "
+                                   "Set MCP_CONFIG_PATH env var or create config file.")
+                return
+                
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
                 mcp_servers = config.get("mcpServers", {})
-                # Filter out the unified server itself to avoid recursion
                 self.external_servers = {
-                    name: cfg for name, cfg in mcp_servers.items() 
+                    name: cfg for name, cfg in mcp_servers.items()
                     if name != "mcp-unified"
                 }
-            logger.info("mcp_proxy_config_loaded", servers=list(self.external_servers.keys()))
+            logger.info("mcp_proxy_config_loaded",
+                       servers=list(self.external_servers.keys()),
+                       count=len(self.external_servers))
         except Exception as e:
-            logger.error("mcp_proxy_config_error", error=str(e))
+            logger.error("mcp_proxy_config_error", error=str(e), path=self.config_path)
 
     async def list_remote_tools(self, server_name: str) -> List[Dict[str, Any]]:
         """Queries an external MCP server for its tools via tools/list method."""
@@ -117,6 +135,9 @@ class MCPProxy:
         command = server_cfg["command"]
         args = server_cfg["args"]
 
+        # [REVIEWER] Use UUID-based call ID to prevent collision in concurrent execution
+        call_id = f"call_{tool_name}_{uuid.uuid4().hex[:8]}"
+
         # Prepare JSON-RPC requests
         # 1. Initialize
         init_request = {
@@ -138,7 +159,7 @@ class MCPProxy:
         # 3. Call Tool
         call_request = {
             "jsonrpc": "2.0",
-            "id": f"call_{tool_name}",
+            "id": call_id,  # ← use variable, not f-string
             "method": "tools/call",
             "params": {
                 "name": tool_name,
@@ -171,9 +192,8 @@ class MCPProxy:
             output = stdout.decode()
             
             # Find the response for the specific call ID
-            target_id = f"call_{tool_name}"
             for line in output.splitlines():
-                if target_id in line:
+                if call_id in line:  # ← match the same call_id sent
                     try:
                         response = json.loads(line)
                         if "error" in response:

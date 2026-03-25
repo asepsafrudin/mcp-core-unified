@@ -1,0 +1,21 @@
+[Unit]
+Description=Legal Agent Enhancement - Pre-execution Notification
+After=network.target
+
+[Service]
+Type=oneshot
+User=aseps
+Group=aseps
+WorkingDirectory=/home/aseps/MCP
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="TZ=Asia/Jakarta"
+
+# Send pre-execution notification
+ExecStart=/home/aseps/MCP/mcp-unified/scheduler/legal_agent_implementation.sh --notify-pre
+
+# Logging
+StandardOutput=append:/home/aseps/MCP/logs/legal_agent/notify.log
+StandardError=append:/home/aseps/MCP/logs/legal_agent/notify_error.log
+
+[Install]
+WantedBy=multi-user.target

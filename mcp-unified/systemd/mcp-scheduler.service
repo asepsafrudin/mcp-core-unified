@@ -1,0 +1,62 @@
+[Unit]
+Description=MCP Autonomous Task Scheduler Daemon
+Documentation=https://github.com/asepsafrudin/mcp-universal-agent-system
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=aseps
+Group=aseps
+WorkingDirectory=/home/aseps/MCP/mcp-unified
+
+# Environment
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/home/aseps/MCP"
+Environment="TZ=Asia/Jakarta"
+Environment="PYTHONUNBUFFERED=1"
+
+# Load environment variables from .env file if exists
+EnvironmentFile=-/home/aseps/MCP/mcp-unified/.env
+
+# Main daemon execution
+ExecStart=/usr/bin/python3 /home/aseps/MCP/mcp-unified/scheduler/daemon.py
+
+# Graceful shutdown
+ExecStop=/usr/bin/python3 /home/aseps/MCP/mcp-unified/scheduler/daemon.py --stop
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=append:/home/aseps/MCP/logs/scheduler/daemon.log
+StandardError=append:/home/aseps/MCP/logs/scheduler/daemon_error.log
+SyslogIdentifier=mcp-scheduler
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/aseps/MCP/logs/scheduler /tmp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false  # Python needs this
+
+# Allow network access untuk API calls
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
