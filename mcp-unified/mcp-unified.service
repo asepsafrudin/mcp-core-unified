@@ -1,0 +1,32 @@
+[Unit]
+Description=MCP Unified Hub — Persistent AI Agent Infrastructure
+Documentation=file:///home/aseps/MCP/docs/
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=aseps
+WorkingDirectory=/home/aseps/MCP/mcp-unified
+Environment="PYTHONPATH=/home/aseps/MCP/mcp-unified"
+EnvironmentFile=/home/aseps/MCP/.env
+
+# [REVIEWER] ExecStart menggunakan python3 langsung
+# Ganti path python3 jika menggunakan virtualenv
+ExecStart=/usr/bin/python3 /home/aseps/MCP/mcp-unified/mcp_server_sse.py
+
+# Restart policy — restart otomatis jika crash, tunggu 5 detik
+Restart=always
+RestartSec=5
+
+# Logging ke systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mcp-unified
+
+# Resource limits
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -8,9 +8,21 @@ from typing import Dict, Any, List, Optional
 from core.config import settings
 from observability.logger import logger
 
+
+class EmbeddingUnavailableError(Exception):
+    """
+    Raised when embedding service (Ollama) is unavailable or returns invalid data.
+    
+    [REVIEWER] Do NOT catch this silently. Let it propagate so callers can
+    decide how to handle: retry, fallback to keyword-only, or fail loudly.
+    """
+    pass
+
+
 # Async Connection Pool
 DB_PARAMS = {
     'host': settings.POSTGRES_SERVER,
+    'port': settings.POSTGRES_PORT,
     'dbname': settings.POSTGRES_DB,
     'user': settings.POSTGRES_USER,
     'password': settings.POSTGRES_PASSWORD,
@@ -24,20 +36,21 @@ async def initialize_db():
     """
     Initialize database schema with namespace support.
     
-    [REVIEWER] Schema includes namespace field for project isolation.
-    This prevents cross-project memory contamination.
+    [REVIEWER] Pool is properly closed on failure to prevent connection leaks.
+    Schema includes namespace field for project isolation.
     """
+    pool_opened = False
     try:
         await pool.open()
+        pool_opened = True
         logger.info("db_connected")
         
-        # Initialize Schema
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 # Enable vector extension
                 await cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 
-                # Create memories table with namespace support
+                # Create memories table
                 await cur.execute("""
                 CREATE TABLE IF NOT EXISTS memories (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -50,31 +63,122 @@ async def initialize_db():
                 );
                 """)
                 
-                # Create indexes for search performance
+                # Indexes
                 await cur.execute("""
-                CREATE INDEX IF NOT EXISTS memories_embedding_idx ON memories USING hnsw (embedding vector_cosine_ops);
+                CREATE INDEX IF NOT EXISTS memories_embedding_idx 
+                ON memories USING hnsw (embedding vector_cosine_ops);
                 """)
                 await cur.execute("""
                 CREATE INDEX IF NOT EXISTS memories_key_idx ON memories (key);
                 """)
-                
-                # [REVIEWER] Index for namespace filtering - critical for isolation
                 await cur.execute("""
                 CREATE INDEX IF NOT EXISTS memories_namespace_idx ON memories (namespace);
                 """)
-                
-                # Composite index for namespace + key lookups
                 await cur.execute("""
                 CREATE INDEX IF NOT EXISTS memories_namespace_key_idx ON memories (namespace, key);
                 """)
                 
+                # [REVIEWER] Safe constraint addition — works on all PostgreSQL versions
+                # Check if constraint exists before adding (no IF NOT EXISTS needed)
+                await cur.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint 
+                        WHERE conname = 'memories_namespace_key_unique'
+                    ) THEN
+                        ALTER TABLE memories 
+                        ADD CONSTRAINT memories_namespace_key_unique 
+                        UNIQUE (namespace, key);
+                    END IF;
+                END $$;
+                """)
+
+                # Create unified_messages table for Phase 3
+                await cur.execute("""
+                CREATE TABLE IF NOT EXISTS unified_messages (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    platform TEXT NOT NULL, -- 'gmail', 'whatsapp', 'telegram'
+                    external_id TEXT,       -- original ID from platform
+                    namespace TEXT NOT NULL DEFAULT 'default',
+                    sender TEXT,
+                    recipient TEXT,
+                    content TEXT,
+                    metadata JSONB,
+                    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                
+                # Create group_documentation table for Phase 3
+                await cur.execute("""
+                CREATE TABLE IF NOT EXISTS group_documentation (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    group_id TEXT NOT NULL,
+                    sender_id TEXT,
+                    doc_type TEXT NOT NULL, -- 'link', 'file', 'text'
+                    content TEXT NOT NULL,
+                    summary TEXT,
+                    metadata JSONB DEFAULT '{}',
+                    embedding VECTOR(384),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                
+                # Indexes for group_documentation
+                await cur.execute("CREATE INDEX IF NOT EXISTS doc_group_idx ON group_documentation(group_id);")
+                await cur.execute("CREATE INDEX IF NOT EXISTS doc_type_idx ON group_documentation(doc_type);")
+                try:
+                    await cur.execute("CREATE INDEX IF NOT EXISTS doc_embedding_idx ON group_documentation USING hnsw (embedding vector_cosine_ops);")
+                except:
+                    pass
+
+                # [PHASE 4] Member profiles for ethics and personalization
+                await cur.execute("""
+                CREATE TABLE IF NOT EXISTS member_profiles (
+                    whatsapp_id TEXT PRIMARY KEY,
+                    name TEXT,
+                    role TEXT,
+                    ethics_notes TEXT,
+                    metadata JSONB DEFAULT '{}',
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+
+                # [PHASE 4] Group configurations for multi-group support
+                await cur.execute("""
+                CREATE TABLE IF NOT EXISTS group_configs (
+                    group_id TEXT PRIMARY KEY,
+                    group_name TEXT,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    auto_backup BOOLEAN DEFAULT TRUE,
+                    ai_enabled BOOLEAN DEFAULT TRUE,
+                    system_prompt TEXT,
+                    settings JSONB DEFAULT '{}',
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                
         logger.info("db_schema_initialized")
+        
     except Exception as e:
-        logger.error("db_connection_failed", error=str(e))
+        logger.error("db_initialization_failed", error=str(e))
+        # [REVIEWER] Close pool on failure to prevent connection leak
+        if pool_opened:
+            try:
+                await pool.close()
+            except Exception as close_err:
+                logger.error("pool_close_failed_during_cleanup", error=str(close_err))
+        raise  # Re-raise so caller knows initialization failed
 
 
 async def get_embedding(text: str) -> List[float]:
-    """Get embedding via Ollama with fallback."""
+    """
+    Get embedding via Ollama.
+    
+    [REVIEWER] Raises EmbeddingUnavailableError if Ollama is down.
+    Callers must handle this explicitly — no silent fallback to zero vectors.
+    """
     try:
         proc = await asyncio.create_subprocess_exec(
             "curl", "-s", "http://localhost:11434/api/embeddings",
@@ -87,15 +191,28 @@ async def get_embedding(text: str) -> List[float]:
         )
         stdout, stderr = await proc.communicate()
 
-        if proc.returncode == 0:
-            response_data = json.loads(stdout)
-            return response_data.get("embedding", [0.0] * 384)
-        else:
+        if proc.returncode != 0:
             logger.error("ollama_error", error=stderr.decode())
-            return [0.0] * 384
+            raise EmbeddingUnavailableError(
+                f"Ollama returned non-zero exit code: {stderr.decode()[:200]}"
+            )
+
+        response_data = json.loads(stdout)
+        embedding = response_data.get("embedding", [])
+
+        # [REVIEWER] Zero vector is invalid — it means embedding silently failed
+        if not embedding or all(v == 0.0 for v in embedding):
+            raise EmbeddingUnavailableError(
+                "Ollama returned empty or zero vector — model may not be loaded"
+            )
+
+        return embedding
+
+    except EmbeddingUnavailableError:
+        raise  # Re-raise, do not swallow
     except Exception as e:
         logger.error("embedding_failed", error=str(e))
-        return [0.0] * 384
+        raise EmbeddingUnavailableError(f"Embedding service error: {str(e)}") from e
 
 
 async def memory_save(
@@ -124,13 +241,28 @@ async def memory_save(
     
     try:
         logger.info("saving_memory", key=key, namespace=namespace)
-        embedding = await get_embedding(content)
+        
+        # [REVIEWER] Handle embedding failure gracefully - save without vector
+        try:
+            embedding = await get_embedding(content)
+        except EmbeddingUnavailableError as e:
+            logger.warning("embedding_unavailable_fallback",
+                         key=key, namespace=namespace,
+                         reason=str(e),
+                         note="Memory saved without vector — semantic search will not work for this entry")
+            embedding = None  # Simpan tanpa embedding, keyword search masih bisa
 
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
+                # [REVIEWER] UPSERT: insert or update existing key
                 await cur.execute("""
                 INSERT INTO memories (namespace, key, content, metadata, embedding)
                 VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (namespace, key) DO UPDATE SET
+                    content = EXCLUDED.content,
+                    metadata = EXCLUDED.metadata,
+                    embedding = EXCLUDED.embedding,
+                    created_at = CURRENT_TIMESTAMP
                 RETURNING id
                 """, (namespace, key, content, json.dumps(metadata), embedding))
                 memory_id = await cur.fetchone()
@@ -139,7 +271,7 @@ async def memory_save(
         logger.info("memory_saved", key=key, namespace=namespace, memory_id=str(memory_id))
         return {
             "success": True,
-            "message": f"Memory '{key}' saved in namespace '{namespace}'.",
+            "message": f"Memory '{key}' saved (upserted) in namespace '{namespace}'.",
             "memory_id": str(memory_id),
             "namespace": namespace
         }
@@ -170,7 +302,16 @@ async def memory_search(
         Dict with success status and list of matching memories
     """
     try:
-        query_emb = await get_embedding(query)
+        # [REVIEWER] Fallback to keyword search if embedding unavailable
+        try:
+            query_emb = await get_embedding(query)
+        except EmbeddingUnavailableError:
+            logger.warning("search_fallback_keyword_only",
+                         namespace=namespace,
+                         reason="Ollama unavailable — falling back to keyword search")
+            strategy = "keyword"  # Override strategy
+            query_emb = None
+        
         limit = min(limit, 10)
 
         logger.info("searching_memories", 
@@ -391,10 +532,13 @@ async def memory_get(
         
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
+                # [REVIEWER] Safety net: ORDER BY + LIMIT 1 ensures deterministic result
                 await cur.execute("""
                 SELECT id, key, content, metadata, created_at
                 FROM memories
                 WHERE key = %s AND namespace = %s
+                ORDER BY created_at DESC
+                LIMIT 1
                 """, (key, namespace))
                 
                 row = await cur.fetchone()
@@ -457,4 +601,261 @@ async def memory_list_namespaces() -> Dict[str, Any]:
                 }
     except Exception as e:
         logger.error("list_namespaces_failed", error=str(e))
+        return {"success": False, "error": str(e)}
+
+
+async def message_save(
+    platform: str,
+    content: str,
+    external_id: str = None,
+    sender: str = None,
+    recipient: str = None,
+    metadata: Dict = None,
+    timestamp: Optional[str] = None,
+    namespace: str = "default"
+) -> Dict[str, Any]:
+    """
+    Save a message to the unified_messages table.
+    """
+    if metadata is None:
+        metadata = {}
+    
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                INSERT INTO unified_messages (platform, external_id, namespace, sender, recipient, content, metadata, timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, COALESCE(%s, CURRENT_TIMESTAMP))
+                RETURNING id
+                """, (platform, external_id, namespace, sender, recipient, content, json.dumps(metadata), timestamp))
+                msg_id = await cur.fetchone()
+                return {"success": True, "message_id": str(msg_id[0])}
+    except Exception as e:
+        logger.error("message_save_failed", error=str(e))
+        return {"success": False, "error": str(e)}
+
+
+async def message_list(
+    platform: Optional[str] = None,
+    namespace: str = "default",
+    limit: int = 20,
+    offset: int = 0
+) -> Dict[str, Any]:
+    """
+    List messages from the unified_messages table.
+    """
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                query = "SELECT id, platform, external_id, sender, recipient, content, metadata, timestamp FROM unified_messages WHERE namespace = %s"
+                params = [namespace]
+                
+                if platform:
+                    query += " AND platform = %s"
+                    params.append(platform)
+                
+                query += " ORDER BY timestamp DESC LIMIT %s OFFSET %s"
+                params.extend([limit, offset])
+                
+                await cur.execute(query, params)
+                rows = await cur.fetchall()
+                
+                messages = []
+                for row in rows:
+                    messages.append({
+                        "id": str(row[0]),
+                        "platform": row[1],
+                        "external_id": row[2],
+                        "sender": row[3],
+                        "recipient": row[4],
+                        "content": row[5],
+                        "metadata": row[6] if isinstance(row[6], dict) else json.loads(row[6] or "{}"),
+                        "timestamp": row[7].isoformat() if row[7] else None
+                    })
+                
+                return {"success": True, "messages": messages}
+    except Exception as e:
+        logger.error("message_list_failed", error=str(e))
+        return {"success": False, "error": str(e)}
+
+
+async def doc_save(
+    group_id: str,
+    doc_type: str,
+    content: str,
+    sender_id: str = None,
+    summary: str = None,
+    metadata: Dict = None
+) -> Dict[str, Any]:
+    """
+    Save documentation to group_documentation table.
+    Automatically generates embedding for the content/summary.
+    """
+    if metadata is None:
+        metadata = {}
+    
+    try:
+        # Generate embedding
+        embed_text = f"{content} {summary or ''}"
+        embedding = None
+        try:
+            embedding = await get_embedding(embed_text)
+        except Exception as e:
+            logger.warning(f"Embedding generation failed for doc: {e}")
+            
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                INSERT INTO group_documentation (group_id, sender_id, doc_type, content, summary, metadata, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """, (group_id, sender_id, doc_type, content, summary, json.dumps(metadata), embedding))
+                doc_id = await cur.fetchone()
+                return {"success": True, "doc_id": str(doc_id[0])}
+    except Exception as e:
+        logger.error("doc_save_failed", error=str(e))
+        return {"success": False, "error": str(e)}
+
+
+async def doc_search(
+    query: str,
+    group_id: Optional[str] = None,
+    limit: int = 5
+) -> Dict[str, Any]:
+    """
+    Search documentation using semantic search.
+    """
+    try:
+        embedding = await get_embedding(query)
+        if not embedding:
+            return {"success": False, "error": "Could not generate embedding"}
+            
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                sql = """
+                SELECT id, doc_type, content, summary, metadata, created_at,
+                       1 - (embedding <=> %s::vector) as similarity
+                FROM group_documentation
+                """
+                params = [embedding]
+                
+                if group_id:
+                    sql += " WHERE group_id = %s"
+                    params.append(group_id)
+                    
+                sql += " ORDER BY embedding <=> %s::vector LIMIT %s"
+                params.extend([embedding, limit])
+                
+                await cur.execute(sql, params)
+                rows = await cur.fetchall()
+                
+                results = []
+                for row in rows:
+                    results.append({
+                        "id": str(row[0]),
+                        "type": row[1],
+                        "content": row[2],
+                        "summary": row[3],
+                        "metadata": row[4],
+                        "created_at": row[5].isoformat() if row[5] else None,
+                        "similarity": float(row[6])
+                    })
+                
+                return {"success": True, "results": results}
+    except Exception as e:
+        logger.error("doc_search_failed", error=str(e))
+        return {"success": False, "error": str(e)}
+
+
+async def get_member_profile(whatsapp_id: str) -> Optional[Dict[str, Any]]:
+    """Get profile information for a member."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT whatsapp_id, name, role, ethics_notes, metadata FROM member_profiles WHERE whatsapp_id = %s",
+                    (whatsapp_id,)
+                )
+                row = await cur.fetchone()
+                if row:
+                    return {
+                        "whatsapp_id": row[0],
+                        "name": row[1],
+                        "role": row[2],
+                        "ethics_notes": row[3],
+                        "metadata": row[4]
+                    }
+                return None
+    except Exception as e:
+        logger.error("get_member_profile_failed", error=str(e))
+        return None
+
+
+async def upsert_member_profile(whatsapp_id: str, name: str = None, role: str = None, ethics_notes: str = None, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Create or update a member profile."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                INSERT INTO member_profiles (whatsapp_id, name, role, ethics_notes, metadata, updated_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (whatsapp_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    role = EXCLUDED.role,
+                    ethics_notes = EXCLUDED.ethics_notes,
+                    metadata = member_profiles.metadata || EXCLUDED.metadata,
+                    updated_at = CURRENT_TIMESTAMP
+                """, (whatsapp_id, name, role, ethics_notes, json.dumps(metadata) if metadata else '{}'))
+                return {"success": True}
+    except Exception as e:
+        logger.error("upsert_member_profile_failed", error=str(e))
+        return {"success": False, "error": str(e)}
+
+
+async def get_group_config(group_id: str) -> Optional[Dict[str, Any]]:
+    """Get configuration for a group."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT group_id, group_name, is_active, auto_backup, ai_enabled, system_prompt, settings FROM group_configs WHERE group_id = %s",
+                    (group_id,)
+                )
+                row = await cur.fetchone()
+                if row:
+                    return {
+                        "group_id": row[0],
+                        "group_name": row[1],
+                        "is_active": row[2],
+                        "auto_backup": row[3],
+                        "ai_enabled": row[4],
+                        "system_prompt": row[5],
+                        "settings": row[6]
+                    }
+                return None
+    except Exception as e:
+        logger.error("get_group_config_failed", error=str(e))
+        return None
+
+
+async def upsert_group_config(group_id: str, name: str = None, is_active: bool = True, auto_backup: bool = True, ai_enabled: bool = True, system_prompt: str = None, settings: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Create or update a group configuration."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                INSERT INTO group_configs (group_id, group_name, is_active, auto_backup, ai_enabled, system_prompt, settings, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (group_id) DO UPDATE SET
+                    group_name = EXCLUDED.group_name,
+                    is_active = EXCLUDED.is_active,
+                    auto_backup = EXCLUDED.auto_backup,
+                    ai_enabled = EXCLUDED.ai_enabled,
+                    system_prompt = EXCLUDED.system_prompt,
+                    settings = group_configs.settings || EXCLUDED.settings,
+                    updated_at = CURRENT_TIMESTAMP
+                """, (group_id, name, is_active, auto_backup, ai_enabled, system_prompt, json.dumps(settings) if settings else '{}'))
+                return {"success": True}
+    except Exception as e:
+        logger.error("upsert_group_config_failed", error=str(e))
         return {"success": False, "error": str(e)}

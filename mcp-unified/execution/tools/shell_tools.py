@@ -1,9 +1,9 @@
 import subprocess
 import shlex
 import os
-import re
-from typing import Dict, Any, List
+from typing import Dict, Any
 from observability.logger import logger
+from tools.file.path_utils import is_safe_path
 
 # [REVIEWER] Explicit whitelist — jangan tambahkan command tanpa review security
 # Setiap penambahan command harus melalui security review
@@ -46,21 +46,24 @@ ALLOWED_COMMANDS = frozenset([
     "top -b -n 1",
 ])
 
+
 # [REVIEWER] Dangerous patterns that could lead to command injection
 # Input containing any of these will be rejected
 DANGEROUS_PATTERNS = [
-    ';',           # Command chaining: cmd1; cmd2
-    '&&',          # AND operator: cmd1 && cmd2
-    '||',          # OR operator: cmd1 || cmd2
-    '|',           # Pipe operator
-    '>',           # Output redirection
-    '>>',          # Append redirection
-    '`',           # Command substitution (backtick)
+    ';',           # Command chaining
+    '&&',          # AND chaining
+    '||',          # OR chaining
+    '|',           # Pipe
+    '>',           # Output redirect
+    '>>',          # Append redirect
+    '`',           # Backtick substitution
     '$(',          # Command substitution
-    '${',          # Variable expansion with command execution
+    '${',          # Variable expansion
     '<(',          # Process substitution
-    '>&',          # File descriptor redirection
-    '#',           # Comment injection (can hide malicious commands)
+    '>&',          # FD redirect
+    '\x00',        # [REVIEWER] Null byte injection
+    '../',         # [REVIEWER] Path traversal (belt-and-suspenders, _is_safe_path handles this too)
+    # Removed '#' — shell=False makes it harmless, keeping it causes false positives
 ]
 
 
@@ -107,14 +110,35 @@ def _validate_command(command: str) -> tuple[bool, str]:
     
     base_cmd = parts[0]
     
-    # Check if exact command is in whitelist
+    # Check if exact command is in whitelist (no path arguments)
     if normalized_cmd in ALLOWED_COMMANDS:
+        # [REVIEWER] Even whitelisted commands with path args need validation
+        # Check if there are any path arguments
+        for part in parts[1:]:
+            if part.startswith("-"):
+                continue
+            if "/" in part or ".." in part or part.startswith("."):
+                if not is_safe_path(part):
+                    logger.warning("unsafe_path_in_whitelisted_command",
+                                 command=base_cmd,
+                                 path=part[:100])
+                    return False, f"Path argument '{part}' is outside allowed directories"
         return True, ""
     
     # Check if base command with common flags is allowed
     # This allows "ls -la /path" if "ls -la" is in whitelist
     for allowed in ALLOWED_COMMANDS:
         if normalized_cmd.startswith(allowed + " ") or normalized_cmd == allowed:
+            # [REVIEWER] Validate path arguments even for whitelisted command patterns
+            for part in parts[1:]:
+                if part.startswith("-"):
+                    continue
+                if "/" in part or ".." in part or part.startswith("."):
+                    if not is_safe_path(part):
+                        logger.warning("unsafe_path_in_whitelisted_command",
+                                     command=base_cmd,
+                                     path=part[:100])
+                        return False, f"Path argument '{part}' is outside allowed directories"
             return True, ""
     
     # Check if base command alone is allowed (for commands like git)
@@ -126,6 +150,21 @@ def _validate_command(command: str) -> tuple[bool, str]:
             for allowed in ALLOWED_COMMANDS:
                 if allowed.startswith(git_subcmd):
                     return True, ""
+    
+    # [REVIEWER] Additional: validate path arguments for commands that accept them
+    PATH_ACCEPTING_COMMANDS = {"cat", "find", "grep", "ls", "git"}
+    if base_cmd in PATH_ACCEPTING_COMMANDS:
+        for part in parts[1:]:
+            # Skip flags (arguments starting with -)
+            if part.startswith("-"):
+                continue
+            # Validate any path-like argument
+            if "/" in part or ".." in part or part.startswith("."):
+                if not is_safe_path(part):
+                    logger.warning("unsafe_path_argument",
+                                 command=base_cmd,
+                                 path=part[:100])
+                    return False, f"Path argument '{part}' is outside allowed directories"
     
     # Command not in whitelist
     logger.warning("restricted_command_attempt", 

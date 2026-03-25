@@ -1,0 +1,13 @@
+[Unit]
+Description=Legal Agent Enhancement - Pre-execution Notification at 20:55 WIB
+Documentation=https://github.com/asepsafrudin/mcp-universal-agent-system
+
+[Timer]
+# Run at 20:55 WIB (5 minutes before main execution)
+OnCalendar=*-*-* 20:55:00
+
+# Run immediately if system was down at scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -6,5 +6,13 @@ if [ -d "/home/aseps/MCP/.venv" ]; then
     source /home/aseps/MCP/.venv/bin/activate
 fi
 
+# Load environment variables from .env file if it exists
+if [ -f "/home/aseps/MCP/.env" ]; then
+    export $(cat /home/aseps/MCP/.env | grep -v '^#' | xargs)
+fi
+
 export PYTHONPATH=$PYTHONPATH:$(pwd)
-exec uvicorn core.server:app --host 0.0.0.0 --port 8000 --reload
+
+# Backward compatible alias: run FastAPI HTTP server
+exec "$(dirname "$0")/scripts/run_api.sh"
+

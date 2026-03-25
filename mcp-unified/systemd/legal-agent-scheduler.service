@@ -1,0 +1,29 @@
+[Unit]
+Description=Legal Agent Enhancement - Autonomous Implementation
+After=network.target mcp-unified.service
+Wants=mcp-unified.service
+
+[Service]
+Type=oneshot
+User=aseps
+Group=aseps
+WorkingDirectory=/home/aseps/MCP
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/home/aseps/MCP"
+Environment="TZ=Asia/Jakarta"
+
+# Main execution
+ExecStart=/home/aseps/MCP/mcp-unified/scheduler/legal_agent_implementation.sh
+
+# Logging
+StandardOutput=append:/home/aseps/MCP/logs/legal_agent/systemd.log
+StandardError=append:/home/aseps/MCP/logs/legal_agent/systemd_error.log
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/aseps/MCP/logs/legal_agent /home/aseps/MCP/mcp-unified/agents/profiles/research /home/aseps/MCP/mcp-unified/agents/coordination /home/aseps/MCP/mcp-unified/knowledge/sync
+
+[Install]
+WantedBy=multi-user.target

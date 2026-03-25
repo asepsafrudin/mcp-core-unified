@@ -1,14 +1,62 @@
+# MCP SDK - WAJIB
+mcp>=1.0.0
+
+# Web Framework
 fastapi
 uvicorn
+starlette>=0.36.0
+
+# Message Queue
+aio-pika
+
+# Logging
 structlog
 python-json-logger
+
+# Validation & Settings
 pydantic
 pydantic-settings
+
+# Database (Opsional - untuk memory)
 asyncpg
 psycopg[binary]
 psycopg-pool
 pgvector
+
+# Cache (Opsional - untuk working memory)
 redis
+
+# HTTP Client
 httpx
+requests
+
+# Testing
 pytest
+
+# Token counting
 tiktoken
+
+# Security (Auth & JWT)
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+
+# Vision Tools (Opsional)
+Pillow>=10.0.0
+pymupdf>=1.23.0
+
+# Office Document Processing (Opsional)
+python-docx>=1.0.0
+openpyxl>=3.1.0
+
+# Google Drive Integration (Opsional)
+google-auth>=2.22.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.95.0
+
+# Semantic Analysis Tools (LSP/AST)
+astroid>=2.11.0
+ruff>=0.1.0
+rope>=0.20.0
+jedi>=0.18.0
+networkx>=3.0

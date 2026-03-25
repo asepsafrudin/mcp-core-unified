@@ -1,0 +1,18 @@
+[Unit]
+Description=MCP Autonomous Task Scheduler - Periodic Job Checker
+Documentation=https://github.com/asepsafrudin/mcp-universal-agent-system
+PartOf=mcp-scheduler.service
+
+[Timer]
+# Run every minute untuk check due jobs
+OnBootSec=1min
+OnUnitActiveSec=1min
+
+# Accuracy (allow coalescing untuk efficiency)
+AccuracySec=30s
+
+# Run immediately if system was down at scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target

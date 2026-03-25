@@ -1,0 +1,7 @@
+setup.py
+mcp_unified_advanced_features.egg-info/PKG-INFO
+mcp_unified_advanced_features.egg-info/SOURCES.txt
+mcp_unified_advanced_features.egg-info/dependency_links.txt
+mcp_unified_advanced_features.egg-info/entry_points.txt
+mcp_unified_advanced_features.egg-info/requires.txt
+mcp_unified_advanced_features.egg-info/top_level.txt

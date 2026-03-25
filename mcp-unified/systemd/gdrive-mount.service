@@ -1,0 +1,28 @@
+[Unit]
+Description=Google Drive Mount via rclone
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=aseps
+Group=aseps
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/rclone mount gdrive: /home/aseps/MCP/google_drive \
+    --vfs-cache-mode writes \
+    --vfs-cache-max-size 100M \
+    --allow-other \
+    --default-permissions \
+    --uid 1000 \
+    --gid 1000 \
+    --file-perms 0777 \
+    --dir-perms 0777 \
+    --log-file=/home/aseps/MCP/google_drive_mount.log \
+    --log-level INFO \
+    --daemon
+ExecStop=/bin/fusermount -u /home/aseps/MCP/google_drive
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
