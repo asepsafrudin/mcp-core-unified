@@ -24,12 +24,22 @@ elif [ -f "${PROJECT_ROOT}/.env" ]; then
     export $(cat "${PROJECT_ROOT}/.env" | grep -v '^#' | xargs)
 fi
 
-# Ensure dependencies (Postgres/Redis) are running
+# Ensure dependencies (Postgres/Redis/Vane) are running
 if [ -x "${SCRIPT_DIR}/setup_database.sh" ]; then
     echo "🗄️  Ensuring database services..."
     "${SCRIPT_DIR}/setup_database.sh"
 else
     echo "⚠️  setup_database.sh not found or not executable. Skipping DB setup."
+fi
+
+if command -v docker >/dev/null 2>&1; then
+    echo "🔍 Ensuring Vane & WAHA engines are running..."
+    if ! docker ps | grep -q vane; then
+        docker start vane 2>/dev/null || echo "  ⚠️ Vane container not found."
+    fi
+    if ! docker ps | grep -q waha; then
+        docker start waha 2>/dev/null || echo "  ⚠️ WAHA container not found."
+    fi
 fi
 
 # Start WhatsApp + Telegram bots if script exists
