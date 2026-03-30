@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from observability.logger import logger
 from tools.file.path_utils import is_safe_path
+from execution import registry
 
 
 # ─── Rule Definitions ──────────────────────────────────────────────────────
@@ -324,6 +325,7 @@ CHECKS = {
 
 # ─── Main Tool Function ────────────────────────────────────────────────────
 
+@registry.register
 async def self_review(
     file_path: str,
     check_type: str = "general",
@@ -454,6 +456,7 @@ async def self_review(
     }
 
 
+@registry.register
 async def self_review_batch(
     file_paths: List[str],
     check_type: str = "general"

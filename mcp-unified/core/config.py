@@ -2,6 +2,11 @@ import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 
+from core.secrets import load_runtime_secrets
+
+
+load_runtime_secrets()
+
 
 class Settings(BaseSettings):
     """
@@ -16,11 +21,18 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Database - [REVIEWER] Never hardcode credentials
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
-    POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
-    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "mcp")
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER") or os.getenv("PG_USER", "")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD") or os.getenv("PG_PASSWORD", "")
+    POSTGRES_SERVER: str = (
+        os.getenv("POSTGRES_SERVER")
+        or os.getenv("POSTGRES_HOST")
+        or os.getenv("PG_HOST", "localhost")
+    )
+    POSTGRES_PORT: int = int(
+        os.getenv("POSTGRES_PORT")
+        or os.getenv("PG_PORT", "5432")
+    )
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB") or os.getenv("PG_DATABASE", "mcp")
     
     # Redis - [REVIEWER] Use environment variable for connection URL
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -30,7 +42,6 @@ class Settings(BaseSettings):
     JSON_LOGS: bool = True
 
     class Config:
-        env_file = ".env"
         extra = "ignore"
 
 

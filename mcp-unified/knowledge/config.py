@@ -9,6 +9,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from core.secrets import load_runtime_secrets
+
 
 @dataclass
 class KnowledgeConfig:
@@ -45,12 +47,14 @@ class KnowledgeConfig:
     @classmethod
     def from_env(cls) -> "KnowledgeConfig":
         """Load configuration dari environment variables."""
+        load_runtime_secrets()
+
         # Support both PG_* and POSTGRES_* environment variables
         pg_host = os.environ.get("POSTGRES_HOST") or os.environ.get("PG_HOST", "localhost")
         pg_port = int(os.environ.get("POSTGRES_PORT") or os.environ.get("PG_PORT", "5432"))
         pg_database = os.environ.get("POSTGRES_DB") or os.environ.get("PG_DATABASE", "mcp")
         pg_user = os.environ.get("POSTGRES_USER") or os.environ.get("PG_USER", "aseps")
-        pg_password = os.environ.get("POSTGRES_PASSWORD") or os.environ.get("PG_PASSWORD", "secure123")
+        pg_password = os.environ.get("POSTGRES_PASSWORD") or os.environ.get("PG_PASSWORD", "")
         
         return cls(
             pg_host=pg_host,

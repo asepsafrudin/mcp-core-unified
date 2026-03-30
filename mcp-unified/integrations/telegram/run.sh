@@ -1,24 +1,23 @@
 #!/bin/bash
 
-# Telegram Bot Server Runner
+# Telegram Bot Runner
 # 
 # Usage:
-#   ./run.sh          # Run with default .env file
+#   ./run.sh          # Run with centralized root .env
 #   ./run.sh --daemon # Run in background
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+ROOT_ENV="/home/aseps/MCP/.env"
+LOCAL_ENV=".env"
 
-# Check if .env exists
-if [ ! -f ".env" ]; then
-    echo "❌ Error: .env file not found!"
-    echo "Please copy .env.example to .env and configure your bot token."
-    echo ""
-    echo "Commands:"
-    echo "  cp .env.example .env"
-    echo "  nano .env  # Edit with your token"
+# Check if centralized env exists
+if [ ! -f "$ROOT_ENV" ] && [ ! -f "$LOCAL_ENV" ]; then
+    echo "❌ Error: no secret source found!"
+    echo "Expected root env: $ROOT_ENV"
+    echo "Optional fallback: $(pwd)/$LOCAL_ENV"
     exit 1
 fi
 
@@ -31,12 +30,12 @@ fi
 # Export PYTHONPATH
 export PYTHONPATH="${SCRIPT_DIR}/../../..:${PYTHONPATH}"
 
-echo "🤖 Starting Telegram Bot Server..."
+echo "🤖 Starting Telegram Bot..."
 echo "================================"
 
 if [ "$1" == "--daemon" ] || [ "$1" == "-d" ]; then
     # Run in background
-    nohup python3 bot_server.py > telegram_bot.log 2>&1 &
+    nohup python3 run.py > telegram_bot.log 2>&1 &
     PID=$!
     echo $PID > telegram_bot.pid
     echo "✅ Bot started in background (PID: $PID)"
@@ -49,5 +48,5 @@ else
     # Run in foreground
     echo "Press Ctrl+C to stop"
     echo ""
-    python3 bot_server.py
+    python3 run.py
 fi

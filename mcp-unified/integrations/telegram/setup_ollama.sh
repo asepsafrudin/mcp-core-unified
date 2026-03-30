@@ -141,7 +141,7 @@ update_config() {
     echo ""
     echo -e "${YELLOW}📝 Updating bot configuration...${NC}"
     
-    ENV_FILE=".env"
+    ENV_FILE="/home/aseps/MCP/.env"
     
     if [ -f "$ENV_FILE" ]; then
         # Backup
@@ -159,7 +159,7 @@ update_config() {
             echo -e "${GREEN}✅ Config already exists${NC}"
         fi
     else
-        echo -e "${YELLOW}⚠️  .env file not found. Please create manually.${NC}"
+        echo -e "${YELLOW}⚠️  Root .env not found. Please create /home/aseps/MCP/.env manually.${NC}"
     fi
 }
 
@@ -216,12 +216,12 @@ main() {
     echo ""
     echo "Next steps:"
     echo "  1. Start Ollama: ollama serve"
-    echo "  2. Start Telegram Bot: ./run_sql_bot.sh"
+    echo "  2. Start SQL Bot legacy service: ./run_sql_bot.sh"
     echo ""
     echo "Commands:"
     echo "  ollama list          - List models"
     echo "  ollama run sqlcoder  - Test model"
-    echo "  ./run_sql_bot.sh     - Start bot"
+    echo "  ./run_sql_bot.sh     - Start SQL bot legacy service"
 }
 
 # Run main

@@ -4,6 +4,7 @@ import os
 from typing import Dict, Any
 from observability.logger import logger
 from tools.file.path_utils import is_safe_path
+from execution import registry
 
 # [REVIEWER] Explicit whitelist — jangan tambahkan command tanpa review security
 # Setiap penambahan command harus melalui security review
@@ -173,6 +174,7 @@ def _validate_command(command: str) -> tuple[bool, str]:
     return False, f"Command '{base_cmd}' is not in the allowed whitelist"
 
 
+@registry.register
 async def run_shell(command: str, user_context: str = "unknown") -> Dict[str, Any]:
     """
     Execute a safe shell command with strict whitelist validation.

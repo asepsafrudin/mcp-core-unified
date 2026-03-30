@@ -30,7 +30,8 @@ class BaseHandler(ABC):
         self.config = bot.config
         self.mcp = bot.mcp
         self.ai_manager = bot.ai_manager
-        self.memory_service = bot.memory_service
+        self.bridge_memory_service = bot.bridge_memory_service
+        self.conversation_service = bot.conversation_service
         self.messaging_service = bot.messaging_service
     
     def is_user_allowed(self, user_id: int) -> bool:

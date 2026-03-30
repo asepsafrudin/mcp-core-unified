@@ -7,6 +7,7 @@ import os
 from typing import Dict, Any, List, Optional
 from core.config import settings
 from observability.logger import logger
+from execution import registry
 
 
 class EmbeddingUnavailableError(Exception):
@@ -215,6 +216,7 @@ async def get_embedding(text: str) -> List[float]:
         raise EmbeddingUnavailableError(f"Embedding service error: {str(e)}") from e
 
 
+@registry.register
 async def memory_save(
     key: str, 
     content: str, 
@@ -280,6 +282,7 @@ async def memory_save(
         return {"success": False, "error": str(e)}
 
 
+@registry.register
 async def memory_search(
     query: str, 
     namespace: str = "default",
@@ -377,6 +380,7 @@ async def memory_search(
         return {"success": False, "error": str(e)}
 
 
+@registry.register
 async def memory_list(
     namespace: str = "default",
     limit: int = 10, 
@@ -448,6 +452,7 @@ async def memory_list(
         return {"success": False, "error": str(e)}
 
 
+@registry.register
 async def memory_delete(
     key: str = None, 
     memory_id: str = None,

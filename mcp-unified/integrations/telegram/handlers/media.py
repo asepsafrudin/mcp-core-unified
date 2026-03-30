@@ -1,7 +1,7 @@
 """
 Media Handlers
 
-Handler untuk photos, documents, dan media lainnya.
+Handler untuk photos, documents, voice, dan media lainnya.
 """
 
 import os
@@ -24,12 +24,16 @@ class MediaHandlers(BaseHandler):
         handlers = [
             MessageHandler(filters.PHOTO, self.handle_photo),
             MessageHandler(filters.Document.ALL, self.handle_document),
+            # ✅ BARU: Voice & Audio support via Groq Whisper
+            MessageHandler(filters.VOICE, self.handle_voice),
+            MessageHandler(filters.AUDIO, self.handle_audio),
+            MessageHandler(filters.VIDEO_NOTE, self.handle_video_note),
         ]
         
         for handler in handlers:
             self.bot.application.add_handler(handler)
         
-        logger.info("Registered media handlers")
+        logger.info("Registered media handlers (photo, doc, voice, audio, video_note)")
     
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming photos dengan vision analysis."""
@@ -77,7 +81,7 @@ class MediaHandlers(BaseHandler):
                     await processing_msg.edit_text(response.text)
                     
                     # Save conversation
-                    await self.memory_service.save_conversation(
+                    await self.conversation_service.save_conversation(
                         user_id=user.id,
                         message=f"[Image] {caption}",
                         response=response.text
@@ -152,6 +156,264 @@ class MediaHandlers(BaseHandler):
                 "❌ Maaf, terjadi kesalahan saat memproses dokumen."
             )
     
+    async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle voice message — transkripsi via Groq Whisper lalu proses sebagai teks."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id):
+            return
+
+        voice_service = getattr(self.bot, 'voice_service', None)
+        if not voice_service or not voice_service.is_available:
+            await update.message.reply_text(
+                "⚠️ *Voice transcription tidak tersedia*\n\n"
+                "GROQ_API_KEY belum dikonfigurasi atau service error.",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Show recording indicator
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id,
+            action="record_voice"
+        )
+
+        thinking_msg = await update.message.reply_text(
+            "🎤 *Mentranskripsi pesan suara...*",
+            parse_mode="Markdown"
+        )
+
+        try:
+            voice = update.message.voice
+            file = await context.bot.get_file(voice.file_id)
+
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+                await file.download_to_drive(tmp.name)
+                temp_path = tmp.name
+
+            try:
+                # Transkripsi
+                transcript = await voice_service.transcribe_file(
+                    temp_path, language="id"
+                )
+
+                if not transcript:
+                    await thinking_msg.edit_text(
+                        "❌ Transkripsi gagal. Pastikan audio jelas dan tidak terlalu pendek."
+                    )
+                    return
+
+                # Tampilkan transkripsi ke user
+                await thinking_msg.edit_text(
+                    f"🎤 *Anda berkata:*\n_{transcript}_\n\n🤔 *Sedang memproses...*",
+                    parse_mode="Markdown"
+                )
+
+                # Proses transkripsi sebagai pesan teks biasa
+                await self._process_text_with_ai(
+                    update=update,
+                    context=context,
+                    user=user,
+                    message_text=transcript,
+                    edit_msg=thinking_msg,
+                    prefix=f"🎤 *Transkripsi:* _{transcript}_\n\n"
+                )
+
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+
+        except Exception as e:
+            logger.error(f"Voice handler error: {e}")
+            try:
+                await thinking_msg.edit_text("❌ Gagal memproses pesan suara.")
+            except Exception:
+                await update.message.reply_text("❌ Gagal memproses pesan suara.")
+
+    async def handle_audio(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle audio file — sama dengan voice, tapi file audio."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id):
+            return
+
+        voice_service = getattr(self.bot, 'voice_service', None)
+        if not voice_service or not voice_service.is_available:
+            await update.message.reply_text(
+                "⚠️ Voice transcription tidak tersedia."
+            )
+            return
+
+        audio = update.message.audio
+        if audio.file_size > MAX_FILE_SIZE:
+            await update.message.reply_text("❌ File audio terlalu besar. Maksimum 20MB.")
+            return
+
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action="record_voice"
+        )
+        thinking_msg = await update.message.reply_text(
+            f"🎵 *Memproses audio: {audio.file_name or 'audio'}...*",
+            parse_mode="Markdown"
+        )
+
+        try:
+            file = await context.bot.get_file(audio.file_id)
+            ext = os.path.splitext(audio.file_name or ".mp3")[1] or ".mp3"
+
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                await file.download_to_drive(tmp.name)
+                temp_path = tmp.name
+
+            try:
+                transcript = await voice_service.transcribe_file(temp_path, language="id")
+
+                if not transcript:
+                    await thinking_msg.edit_text("❌ Transkripsi audio gagal.")
+                    return
+
+                await self._process_text_with_ai(
+                    update=update,
+                    context=context,
+                    user=user,
+                    message_text=transcript,
+                    edit_msg=thinking_msg,
+                    prefix=f"🎵 *Audio: {audio.file_name}*\n🎤 *Transkripsi:* _{transcript}_\n\n"
+                )
+
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+
+        except Exception as e:
+            logger.error(f"Audio handler error: {e}")
+            await thinking_msg.edit_text("❌ Gagal memproses file audio.")
+
+    async def handle_video_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle video note (bulat/circle) — transkripsi audio-nya."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id):
+            return
+
+        voice_service = getattr(self.bot, 'voice_service', None)
+        if not voice_service or not voice_service.is_available:
+            await update.message.reply_text("⚠️ Voice transcription tidak tersedia.")
+            return
+
+        thinking_msg = await update.message.reply_text(
+            "🎥 *Memproses video note...*", parse_mode="Markdown"
+        )
+
+        try:
+            vn = update.message.video_note
+            file = await context.bot.get_file(vn.file_id)
+
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                await file.download_to_drive(tmp.name)
+                temp_path = tmp.name
+
+            try:
+                transcript = await voice_service.transcribe_file(temp_path, language="id")
+
+                if not transcript:
+                    await thinking_msg.edit_text(
+                        "📹 Video note diterima. Transkripsi tidak tersedia "
+                        "(mungkin tidak ada audio/terlalu pendek)."
+                    )
+                    return
+
+                await self._process_text_with_ai(
+                    update=update,
+                    context=context,
+                    user=user,
+                    message_text=transcript,
+                    edit_msg=thinking_msg,
+                    prefix=f"🎥 *Video Note:*\n🎤 *Transkripsi:* _{transcript}_\n\n"
+                )
+
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+
+        except Exception as e:
+            logger.error(f"Video note handler error: {e}")
+            await thinking_msg.edit_text("❌ Gagal memproses video note.")
+
+    async def _process_text_with_ai(
+        self,
+        update: Update,
+        context,
+        user,
+        message_text: str,
+        edit_msg=None,
+        prefix: str = ""
+    ):
+        """
+        Helper: Proses teks dengan AI dan update/kirim response.
+        Digunakan bersama oleh semua handler media yang menghasilkan teks.
+        """
+        ai_provider = self.ai_manager.current_provider
+        if not ai_provider:
+            if edit_msg:
+                await edit_msg.edit_text("⚠️ AI tidak tersedia.")
+            return
+
+        try:
+            enriched_context = await self.conversation_service.build_enriched_context(
+                user_id=user.id,
+                message=message_text
+            )
+
+            full_response = ""
+            last_update = ""
+            chunk_count = 0
+
+            async for chunk in ai_provider.generate_stream(
+                user_id=user.id,
+                message=message_text,
+                context=enriched_context
+            ):
+                full_response += chunk
+                chunk_count += 1
+
+                if chunk_count >= 5 or chunk.endswith(('.', '!', '?', '\n')):
+                    if full_response != last_update:
+                        try:
+                            display = prefix + full_response[:4000]
+                            if edit_msg:
+                                await edit_msg.edit_text(display, parse_mode="Markdown")
+                            last_update = full_response
+                            chunk_count = 0
+                        except Exception:
+                            pass
+
+            # Final update
+            if full_response != last_update:
+                display = prefix + full_response[:4000]
+                try:
+                    if edit_msg:
+                        await edit_msg.edit_text(display, parse_mode="Markdown")
+                    else:
+                        await update.message.reply_text(display, parse_mode="Markdown")
+                except Exception:
+                    await update.message.reply_text(full_response[:4096])
+
+            # Simpan ke memory
+            await self.conversation_service.save_conversation(
+                user_id=user.id,
+                message=message_text,
+                response=full_response
+            )
+
+        except Exception as e:
+            logger.error(f"AI processing error: {e}")
+            msg = "❌ Terjadi kesalahan saat memproses dengan AI."
+            try:
+                if edit_msg:
+                    await edit_msg.edit_text(msg)
+                else:
+                    await update.message.reply_text(msg)
+            except Exception:
+                pass
+
     def _format_size(self, size_bytes: int) -> str:
         """Format file size ke human-readable."""
         for unit in ['B', 'KB', 'MB', 'GB']:

@@ -29,6 +29,7 @@ import numpy as np
 
 from observability.logger import logger
 from tools.file.path_utils import is_safe_path, validate_file_extension
+from execution import registry
 
 # Import existing vision tools
 from execution.tools.vision_tools import (
@@ -152,6 +153,7 @@ vision_cache = VisionCache()
 # ENHANCED IMAGE ANALYSIS
 # =============================================================================
 
+@registry.register
 async def analyze_image_enhanced(
     image_path: str,
     prompt: str = "Describe this image in detail",
@@ -327,6 +329,7 @@ def _calculate_confidence(description: str, prompt: str) -> float:
 # BATCH PROCESSING
 # =============================================================================
 
+@registry.register
 async def analyze_batch(
     image_paths: List[str],
     prompt: str = "Describe this image in detail",
@@ -402,6 +405,7 @@ async def analyze_batch(
 # IMAGE COMPARISON
 # =============================================================================
 
+@registry.register
 async def compare_images(
     image_paths: List[str],
     comparison_prompt: str = "Compare these images and identify similarities and differences",
@@ -482,6 +486,7 @@ async def compare_images(
 # STRUCTURED DATA EXTRACTION
 # =============================================================================
 
+@registry.register
 async def extract_structured_data(
     image_path: str,
     schema: Dict[str, str],
@@ -566,6 +571,7 @@ JSON:"""
 # IMAGE ENHANCEMENT
 # =============================================================================
 
+@registry.register
 async def enhance_image(
     image_path: str,
     enhancements: List[str] = None,
@@ -658,6 +664,7 @@ async def enhance_image(
 # URL SUPPORT
 # =============================================================================
 
+@registry.register
 async def analyze_image_url(
     image_url: str,
     prompt: str = "Describe this image in detail",
@@ -760,6 +767,7 @@ async def analyze_image_url(
 # OCR HYBRID
 # =============================================================================
 
+@registry.register
 async def analyze_with_ocr_fallback(
     image_path: str,
     prompt: str = "Extract all text from this image",
@@ -853,6 +861,7 @@ OCR Text Extraction:
 # VIDEO FRAME ANALYSIS
 # =============================================================================
 
+@registry.register
 async def analyze_video_frames(
     video_path: str,
     prompt: str = "Describe this frame",
@@ -958,12 +967,14 @@ async def analyze_video_frames(
 # UTILITY FUNCTIONS
 # =============================================================================
 
+@registry.register
 def clear_vision_cache():
     """Clear vision cache"""
     vision_cache.clear()
     logger.info("vision_cache_cleared")
 
 
+@registry.register
 async def get_vision_stats() -> Dict[str, Any]:
     """Get vision system statistics"""
     return {

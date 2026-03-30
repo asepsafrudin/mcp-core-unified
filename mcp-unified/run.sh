@@ -1,18 +1,13 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+set -e
 
-# Activate venv if exists
-if [ -d "/home/aseps/MCP/.venv" ]; then
-    source /home/aseps/MCP/.venv/bin/activate
-fi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}"
 
-# Load environment variables from .env file if it exists
-if [ -f "/home/aseps/MCP/.env" ]; then
-    export $(cat /home/aseps/MCP/.env | grep -v '^#' | xargs)
-fi
-
-export PYTHONPATH=$PYTHONPATH:$(pwd)
+source "${SCRIPT_DIR}/scripts/lib/startup_common.sh"
+activate_project_venv
+load_project_env || true
+ensure_pythonpath
 
 # Backward compatible alias: run FastAPI HTTP server
-exec "$(dirname "$0")/scripts/run_api.sh"
-
+exec "${SCRIPT_DIR}/scripts/run_api.sh"

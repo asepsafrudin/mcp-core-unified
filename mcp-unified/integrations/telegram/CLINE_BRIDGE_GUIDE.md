@@ -3,7 +3,7 @@
 ## Alur Kerja Simpel (Versi Terbaru)
 
 ```
-User Telegram → /cline <pesan> → MCP Memory → Cline Baca → Plan Mode → Respon ke User
+User Telegram → /cline <pesan> → Agent Bridge Memory → Cline Baca → Plan Mode → Respon ke User
 ```
 
 ## Cara Menggunakan
@@ -68,7 +68,7 @@ Atau gunakan MCP tool untuk mengirim pesan langsung.
 
 | File | Fungsi |
 |------|--------|
-| `bot_server.py` | Bot Telegram utama |
+| `run.py` | Entry point bot Telegram utama |
 | `cline_reader.py` | Script untuk Cline membaca pesan |
 | `cline_bridge.py` | Script untuk Cline kirim balasan |
 | `CLINE_BRIDGE_GUIDE.md` | Dokumentasi ini |
@@ -110,3 +110,7 @@ Untuk notifikasi otomatis di VS Code, Anda bisa:
 - Gunakan `/cline` untuk request yang kompleks atau butuh human judgment
 - Gunakan pesan biasa untuk chat cepat dengan AI
 - Cline akan melihat notifikasi "📨 PESAN BARU DARI TELEGRAM" saat ada pesan masuk
+
+Catatan arsitektur:
+- Chat Telegram biasa tidak lagi memakai memory agent sebagai konteks default.
+- Hanya command bridge seperti `/cline` yang sengaja masuk ke domain agent/MCP.

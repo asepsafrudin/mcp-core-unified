@@ -10,18 +10,18 @@ import asyncio
 import json
 from pathlib import Path
 
-# [REVIEWER] Load environment variables before anything else
-from dotenv import load_dotenv
-env_path = Path(__file__).parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
-    # Log to stderr if successful (stdout is reserved for MCP protocol)
-    print(f"DEBUG: Loaded .env from {env_path}", file=sys.stderr)
-
 # Add the project root to Python path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 os.environ.setdefault("PYTHONPATH", str(project_root))
+
+# [REVIEWER] Load environment variables before anything else
+from core.secrets import load_runtime_secrets
+
+loaded_secret_files = load_runtime_secrets()
+for env_path in loaded_secret_files:
+    # Log to stderr if successful (stdout is reserved for MCP protocol)
+    print(f"DEBUG: Loaded .env from {env_path}", file=sys.stderr)
 
 # Route any accidental print() calls to stderr to keep MCP stdout clean
 _original_print = builtins.print
@@ -30,15 +30,18 @@ def _stderr_print(*args, **kwargs):
     return _original_print(*args, **kwargs)
 builtins.print = _stderr_print
 
-from mcp.server.models import InitializationOptions
-from mcp.server.session import ServerSession
+from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
-    ServerCapabilities,
     Tool,
     TextContent,
     ImageContent,
     EmbeddedResource,
+    Resource,
+    Prompt,
+    PromptArgument,
+    PromptMessage,
+    GetPromptResult,
 )
 import logging
 
@@ -46,10 +49,17 @@ import logging
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("mcp-unified-server")
 
-# Import registry after setting up path
-from execution.registry import registry, discover_remote_tools
+# MCP Server instance
+mcp_server = Server("mcp-unified")
+
+# Import registries after setting up path
+from execution import registry, resource_registry, prompt_registry
+from execution.registry import discover_remote_tools
 from memory.longterm import initialize_db
 from memory.working import working_memory
+
+# Import discovery tools
+from execution.discovery import discover_all_standard_locations
 
 # Import scheduler tools
 from scheduler.tools import get_scheduler_tools
@@ -244,12 +254,35 @@ async def initialize_components():
     except Exception as e:
         logger.warning(f"Failed to register Monitoring tools: {e}")
 
+    # 5i. Register Default Resources
+    try:
+        from core.resources import register_default_resources
+        await register_default_resources()
+        logger.info("Registered default resources")
+    except Exception as e:
+        logger.warning(f"Failed to register default resources: {e}")
+
+    # 5j. Register Default Prompts
+    try:
+        from core.prompts import register_default_prompts
+        register_default_prompts()
+        logger.info("Registered default prompts")
+    except Exception as e:
+        logger.warning(f"Failed to register default prompts: {e}")
+
     # 6. Discover remote tools
     try:
         await discover_remote_tools()
         logger.info("Remote tools discovery completed")
     except Exception as e:
         logger.warning(f"Failed to discover remote tools: {e}")
+
+    # 7. Discover local dynamic plugins
+    try:
+        discover_all_standard_locations()
+        logger.info("Local plugins discovery completed")
+    except Exception as e:
+        logger.error(f"Failed to discover local plugins: {e}")
 
 async def list_tools() -> list[Tool]:
     """List all available tools from the registry."""
@@ -329,6 +362,74 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent | ImageConte
         logger.error(error_msg)
         return [TextContent(type="text", text=error_msg)]
 
+
+@mcp_server.list_tools()
+async def handle_list_tools() -> list[Tool]:
+    return await list_tools()
+
+
+@mcp_server.call_tool()
+async def handle_call_tool(name: str, arguments: dict) -> list[TextContent | ImageContent | EmbeddedResource]:
+    return await call_tool(name, arguments)
+
+
+@mcp_server.list_resources()
+async def handle_list_resources() -> list[Resource]:
+    resources = []
+    for item in resource_registry.list_resources():
+        resources.append(
+            Resource(
+                name=item.name,
+                title=item.name,
+                uri=item.uri,
+                description=item.description,
+                mimeType=item.mimeType,
+            )
+        )
+    return resources
+
+
+@mcp_server.read_resource()
+async def handle_read_resource(uri: str):
+    return await resource_registry.read_resource(uri)
+
+
+@mcp_server.list_prompts()
+async def handle_list_prompts() -> list[Prompt]:
+    prompts = []
+    for item in prompt_registry.list_prompts():
+        args = [
+            PromptArgument(
+                name=arg.name,
+                description=arg.description,
+                required=arg.required,
+            )
+            for arg in item.arguments
+        ]
+        prompts.append(
+            Prompt(
+                name=item.name,
+                title=item.name,
+                description=item.description,
+                arguments=args,
+            )
+        )
+    return prompts
+
+
+@mcp_server.get_prompt()
+async def handle_get_prompt(name: str, arguments: dict = None) -> GetPromptResult:
+    prompt_text = prompt_registry.get_prompt(name, arguments)
+    return GetPromptResult(
+        description=f"Prompt template: {name}",
+        messages=[
+            PromptMessage(
+                role="user",
+                content=TextContent(type="text", text=prompt_text),
+            )
+        ],
+    )
+
 async def main():
     """Main MCP server entry point."""
     logger.info("Starting mcp-unified MCP server")
@@ -337,28 +438,11 @@ async def main():
     await initialize_components()
     
     async with stdio_server() as (read_stream, write_stream):
-        init_options = InitializationOptions(
-            server_name="mcp-unified",
-            server_version="1.0.0",
-            capabilities=ServerCapabilities(
-                tools={}
-            )
+        await mcp_server.run(
+            read_stream,
+            write_stream,
+            mcp_server.create_initialization_options(),
         )
-        async with ServerSession(read_stream, write_stream, init_options) as session:
-            # Set server capabilities
-            await session.initialize(init_options)
-            
-            # Register tool handlers
-            @session.list_tools()
-            async def handle_list_tools() -> list[Tool]:
-                return await list_tools()
-            
-            @session.call_tool()
-            async def handle_call_tool(name: str, arguments: dict) -> list[TextContent | ImageContent | EmbeddedResource]:
-                return await call_tool(name, arguments)
-            
-            # Run the server
-            await session.run()
 
 if __name__ == "__main__":
     asyncio.run(main())

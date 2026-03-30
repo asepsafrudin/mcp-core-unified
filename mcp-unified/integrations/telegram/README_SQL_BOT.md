@@ -1,5 +1,10 @@
 # 🤖 SQL Bot - Telegram Bot untuk Operasi Database
 
+Status:
+- Service ini diperlakukan sebagai bot terpisah/legacy.
+- Bukan bagian dari runtime bot chat Telegram utama.
+- Gunakan hanya jika memang ingin menjalankan antarmuka SQL yang dedicated.
+
 Bot Telegram yang difokuskan khusus untuk operasi SQL database PostgreSQL. Bot ini dapat menerima pertanyaan dalam bahasa natural dan mengkonversinya ke SQL query, serta mendukung eksekusi SQL manual.
 
 ## ✨ Fitur Utama
@@ -42,15 +47,12 @@ Eksekusi SQL query langsung ke database.
 ### Setup Environment
 
 ```bash
-# Copy environment file
-cd mcp-unified/integrations/telegram
-cp .env.example .env
-
-# Edit .env file
+# Edit centralized secret file
+cd /home/aseps/MCP
 nano .env
 ```
 
-**Konfigurasi .env:**
+**Konfigurasi centralized `.env`:**
 ```env
 # Telegram
 TELEGRAM_BOT_TOKEN=your_bot_token_here
@@ -77,6 +79,10 @@ PG_PASSWORD=your_password
 ALLOWED_USERS=123456789,987654321
 ```
 
+Catatan:
+- Root `/home/aseps/MCP/.env` adalah source of truth yang direkomendasikan.
+- File lokal `mcp-unified/integrations/telegram/.env` sekarang hanya alias kompatibilitas ke root.
+
 ### Install Dependencies
 
 ```bash
@@ -87,13 +93,13 @@ pip install -r requirements.txt
 
 ```bash
 # Cara 1: Direct run
-python bot_server_sql_focused.py
+python legacy/bot_server_sql_focused.py
 
 # Cara 2: Using run script
 ./run_sql_bot.sh
 
 # Cara 3: Production dengan nohup
-nohup python bot_server_sql_focused.py > sql_bot.log 2>&1 &
+nohup python legacy/bot_server_sql_focused.py > sql_bot.log 2>&1 &
 echo $! > sql_bot.pid
 ```
 
@@ -231,7 +237,7 @@ ps aux | grep bot_server_sql_focused
 
 # Restart bot
 pkill -f bot_server_sql_focused
-python bot_server_sql_focused.py
+python legacy/bot_server_sql_focused.py
 ```
 
 ### Database tidak terhubung
@@ -252,7 +258,7 @@ sudo systemctl status postgresql
 
 ```
 telegram/
-├── bot_server_sql_focused.py  # Main bot (SQL-focused)
+├── legacy/bot_server_sql_focused.py  # Main bot legacy (SQL-focused)
 ├── core/
 │   ├── config.py              # Configuration
 │   └── ai_providers.py        # AI integrations

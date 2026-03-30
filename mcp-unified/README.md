@@ -10,9 +10,11 @@ Server ini dibangun dengan mempertimbangkan skalabilitas, ketahanan, dan observa
 
 ## Fitur Utama
 
-- **Tool Registry**: Mekanisme untuk mendaftarkan dan mengelola tool yang tersedia.
-- **Eksekusi Tool**: Endpoint untuk menjalankan tool yang terdaftar dengan aman.
-- **Penemuan Tool Jarak Jauh**: Kemampuan untuk menemukan dan mengintegrasikan tool dari server MCP lain.
+- **Tool Registry (Auto Discovery)**: Mekanisme otomatis untuk mendeteksi dan mendaftarkan tool baru menggunakan dekorator `@registry.register`.
+- **Resource Support**: Mengekspos data read-only (seperti log sistem, status, atau dokumen statis) via `@resource_registry.register`.
+- **Prompts Management**: Template instruksi siap pakai yang dapat dipanggil oleh agen via `@prompt_registry.register`.
+- **Eksekusi Tool Multi-Bahasa**: Dukungan eksekusi tool berbasis Python, Bash (.sh), dan JavaScript (.js).
+- **Penemuan Tool Jarak Jauh**: Kemampuan untuk menemukan dan mengintegrasikan tool dari server MCP lain secara transparan.
 - **Arsitektur Berbasis FastAPI**: Performa tinggi dan pengembangan API yang cepat.
 - **Ketahanan Sistem**:
     - **Circuit Breaker**: Mencegah kegagalan beruntun saat tool mengalami masalah.
@@ -28,8 +30,8 @@ Server ini dibangun dengan mempertimbangkan skalabilitas, ketahanan, dan observa
 
 ```
 mcp-unified/
-├── core/             # Logika inti server (FastAPI app, config, circuit breaker, rate limiter)
-├── execution/        # Logika eksekusi tool, registry, workspace, dan proxy
+├── execution/        # Logika eksekusi tool, registry (tools, resources, prompts), workspace, dan discovery engine
+├── plugins/          # Tempat menaruh custom tools, resources, dan prompts (Hot-reloadable)
 ├── intelligence/     # Komponen cerdas (planner, self-healing)
 ├── memory/           # Manajemen memori (jangka panjang & kerja) dengan PostgreSQL + pgvector
 ├── messaging/        # Klien untuk message queue (RabbitMQ)
@@ -120,6 +122,29 @@ chmod +x run_mcp_with_services.sh
 ./run_mcp_with_services.sh
 ```
 
+Subcommand operasional yang tersedia:
+
+```bash
+./run_mcp_with_services.sh status
+./run_mcp_with_services.sh start-admin
+./run_mcp_with_services.sh start-bots
+./run_mcp_with_services.sh start-sse
+./run_mcp_with_services.sh start-stdio
+./run_mcp_with_services.sh start-llm-api
+./run_mcp_with_services.sh start-scheduler
+./run_mcp_with_services.sh start-all
+```
+
+Ringkasannya:
+- `status`: cek health runtime tanpa expose secret
+- `start-admin`: start FastAPI admin/API saja
+- `start-bots`: restart WhatsApp dan Telegram bot
+- `start-sse`: jalankan SSE server di foreground bila port `8000` belum dipakai
+- `start-stdio`: jalankan MCP stdio server saja
+- `start-llm-api`: start standalone LLM API di port `8088`
+- `start-scheduler`: start scheduler via `systemd` atau daemon background
+- `start-all`: jalur lengkap, kompatibel dengan perilaku lama `./run_mcp_with_services.sh`
+
 ### Mode 4: MCP SSE Server (Starlette)
 
 Jika kamu butuh mode SSE (mis. integrasi streaming), jalankan:
@@ -163,7 +188,7 @@ Service yang tersedia di UI:
 - `knowledge_admin` (Knowledge Admin Dashboard)
 - `whatsapp` (WhatsApp Bot)
 - `telegram` (Telegram Bot)
-- `telegram_sql_bot` (Telegram SQL Bot)
+- `telegram_sql_bot` (Telegram SQL Bot, service terpisah/legacy)
 - `telegram_watcher` (Telegram Watcher)
 - `gdrive_mount` (GDrive Mount - systemd user)
 - `self_healing` (Self-Healing Agent - one-off)
@@ -259,7 +284,14 @@ pytest tests/test_self_healing.py
 pytest tests/test_tokens.py
 ```
 
-## Tool yang Tersedia
+## Tool & Registry (Dynamic)
+
+Sistem kini menggunakan **Auto Discovery**. Tool tidak lagi didaftarkan secara manual di core code, melainkan dideteksi dari folder `plugins/`, `execution/tools/`, `memory/`, `intelligence/`, dan `messaging/`.
+
+### Cara Menambah Tool Baru
+Cukup gunakan dekorator `@registry.register` pada fungsi Python Anda, atau letakkan script `.sh` / `.js` di folder `plugins/`.
+
+### Tool Core yang Tersedia:
 
 ### File Tools
 - `list_dir(path)` - List direktori

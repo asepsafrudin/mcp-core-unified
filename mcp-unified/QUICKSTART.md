@@ -64,10 +64,60 @@ python3 mcp_server.py
 ```
 
 Server akan jalan dengan tools:
-- ✅ File operations (read_file, write_file, list_dir)
 - ✅ Shell execution (run_shell)
 - ✅ Workspace management
 - ❌ Memory save/search (butuh PostgreSQL)
+
+---
+
+## 🧩 Auto Discovery & Plugin System
+
+Server kini mendukung pengenalan otomatis untuk tools, resources, dan prompts. Anda tidak perlu lagi mendaftarkan tool secara manual di `registry.py`.
+
+### 1. Cara Menambah Tool (Python)
+Cukup buat file `.py` di dalam folder `plugins/tools/` dan gunakan dekorator `@registry.register`:
+
+```python
+from execution import registry
+
+@registry.register
+async def my_new_tool(name: str):
+    """Deskripsi tool yang akan dibaca oleh AI"""
+    return {"message": f"Hello {name}!"}
+```
+
+### 2. Cara Menambah Tool (Bash/Shell)
+Simpan script `.sh` Anda di dalam folder `plugins/tools/`. Server akan otomatis membungkusnya sebagai tool MCP:
+- **Input:** Argumen dikirim via flag `--key value`.
+- **Lokasi:** `plugins/tools/hello.sh` akan menjadi tool `hello`.
+
+### 3. Cara Menambah Tool (JavaScript/Node.js)
+Simpan file `.js` Anda di folder `plugins/tools/`.
+- **Input:** Argumen dikirim sebagai JSON string di argumen pertama.
+
+---
+
+## 📦 Resources & Prompts
+
+### Resources (Data Read-Only)
+Gunakan `@resource_registry.register`:
+```python
+from execution import resource_registry
+
+@resource_registry.register(uri="mcp://system/status", name="System Status")
+async def get_status():
+    return "System is healthy"
+```
+
+### Prompts (Template Instruksi)
+Gunakan `@prompt_registry.register`:
+```python
+from execution import prompt_registry
+
+@prompt_registry.register(name="analyze-code", description="Analyze code quality")
+async def analyze_prompt(code: str):
+    return f"Please analyze this code: {code}"
+```
 
 ---
 
