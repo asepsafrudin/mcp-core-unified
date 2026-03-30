@@ -217,11 +217,39 @@ class DailyReportService:
                 port=os.getenv("POSTGRES_PORT", "5432"),
                 dbname=os.getenv("POSTGRES_DB", "mcp"),
                 user=os.getenv("POSTGRES_USER", "aseps"),
-                password=os.getenv("POSTGRES_PASSWORD", "secure123")
+                password=os.getenv("POSTGRES_PASSWORD", "")
             )
             cur = conn.cursor(cursor_factory=RealDictCursor)
-            
-            # Get top 3 active tasks
+
+            cur.execute("""
+                SELECT content
+                FROM project_memories
+                WHERE project_name = 'MCP Unified Tasks'
+            """)
+            project_row = cur.fetchone()
+
+            rows = []
+            if project_row and project_row.get("content"):
+                content = project_row["content"]
+                if isinstance(content, str):
+                    content = json.loads(content)
+
+                metrics = content.get("metrics", {})
+                current_tasks = content.get("current_tasks", [])
+                summary_lines = [
+                    (
+                        "   • Ringkasan: "
+                        f"{metrics.get('active_tasks', 0)} aktif, "
+                        f"{metrics.get('completed_tasks', 0)} selesai"
+                    )
+                ]
+                summary_lines.extend(f"   • {task}" for task in current_tasks[:3])
+
+                cur.close()
+                conn.close()
+                return "\n".join(summary_lines)
+
+            # Fallback ke tabel memories jika project_memories belum terisi
             cur.execute("""
                 SELECT key, content, metadata
                 FROM memories

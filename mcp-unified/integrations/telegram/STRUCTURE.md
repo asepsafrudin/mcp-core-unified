@@ -22,9 +22,11 @@ mcp-unified/integrations/telegram/
 │
 ├── services/                      # 🧠 Business Logic Layer
 │   ├── __init__.py
-│   ├── ai_service.py             # AI providers (Groq, Gemini)
+│   ├── ai_service.py             # AI providers (Groq, Gemini, OpenAI)
 │   ├── messaging_service.py      # Message processing & chunking
-│   └── memory_service.py         # MCP memory integration
+│   ├── telegram_context_service.py # Konteks lokal khusus bot Telegram
+│   ├── agent_bridge_memory_service.py # Bridge eksplisit ke agent/MCP
+│   └── memory_service.py         # Legacy MCP/LTM/knowledge service
 │
 ├── handlers/                      # 📨 Telegram Update Handlers
 │   ├── __init__.py
@@ -80,7 +82,7 @@ mcp-unified/integrations/telegram/
                                                ▼
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   Telegram  │◀────│   Workers   │◀────│   Services  │
-│     API     │     │ (Chunking)  │     │(AI/Memory)  │
+│     API     │     │ (Chunking)  │     │(AI/Context) │
 └─────────────┘     └─────────────┘     └──────┬──────┘
                                                │
                                                ▼
@@ -108,7 +110,9 @@ mcp-unified/integrations/telegram/
 - **GroqAI/GeminiAI**: Concrete implementations
 - **AIServiceManager**: Multi-provider management dengan failover
 - **MessagingService**: Message chunking & formatting
-- **MemoryService**: MCP memory & LTM integration
+- **TelegramContextService**: Konteks percakapan lokal bot Telegram
+- **AgentBridgeMemoryService**: Jalur eksplisit untuk bridge ke agent/MCP
+- **MemoryService**: Service legacy MCP/LTM/knowledge yang tidak lagi menjadi konteks default chat
 
 ### 4. Handlers Module (`handlers/`)
 - **BaseHandler**: Common functionality untuk semua handlers

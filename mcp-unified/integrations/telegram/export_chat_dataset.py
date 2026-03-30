@@ -2,9 +2,9 @@
 Export Chat History untuk ML/AI Training Dataset
 
 Menyimpan chat history dalam format yang bisa digunakan untuk:
-- Fine-tuning Text-to-SQL models
-- Training data untuk ML
-- Analytics dan improvement
+- Training data untuk analitik/ML
+- Dataset legacy untuk eksperimen Text-to-SQL
+- Analisis kualitas interaksi
 """
 import asyncio
 import json
@@ -19,7 +19,7 @@ from knowledge_service import KnowledgeService
 
 
 class ChatDatasetExporter:
-    """Export chat history untuk ML training."""
+    """Export chat history untuk ML training dan dataset legacy."""
     
     def __init__(self):
         self.knowledge = KnowledgeService()
@@ -28,7 +28,7 @@ class ChatDatasetExporter:
         """
         Export chat history ke JSON format.
         
-        Format untuk Text-to-SQL training:
+        Format legacy untuk Text-to-SQL training:
         {
             "instruction": "berapa dokumen PUU 2026?",
             "input": "",
@@ -60,7 +60,7 @@ class ChatDatasetExporter:
         for row in result.rows:
             user_id, username, message, response, created_at = row
             
-            # Format untuk Text-to-SQL training
+            # Format legacy untuk eksperimen Text-to-SQL
             entry = {
                 "instruction": message,
                 "input": "",
@@ -121,7 +121,7 @@ class ChatDatasetExporter:
     
     async def export_sql_pairs(self, output_file: str = "sql_pairs.jsonl") -> int:
         """
-        Export natural language -> SQL pairs untuk training.
+        Export natural language -> SQL pairs untuk training legacy.
         
         Format JSONL (one JSON per line):
         {"question": "...", "sql": "...", "database": "mcp_knowledge"}

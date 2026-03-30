@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
+from core.secrets import get_default_secret_files, load_runtime_secrets
 from .constants import TelegramMode, AIProvider
 
 logger = logging.getLogger(__name__)
@@ -42,13 +43,15 @@ class AIConfig:
     """AI provider configuration."""
     provider: AIProvider = AIProvider.GROQ
     groq_api_key: Optional[str] = None
-    groq_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "qwen/qwen3-32b"
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-2.0-flash"
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
+    ollama_url: Optional[str] = None
+    ollama_model: str = "qwen3:latest"
     temperature: float = 0.7
-    max_tokens: int = 2048
+    max_tokens: int = 4096
     streaming: bool = True
     
     @classmethod
@@ -59,13 +62,15 @@ class AIConfig:
         return cls(
             provider=provider,
             groq_api_key=os.getenv("GROQ_API_KEY"),
-            groq_model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+            groq_model=os.getenv("GROQ_MODEL", "qwen/qwen3-32b"),
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            ollama_url=os.getenv("OLLAMA_URL"),
+            ollama_model=os.getenv("OLLAMA_MODEL", "qwen3:latest"),
             temperature=float(os.getenv("AI_TEMPERATURE", "0.7")),
-            max_tokens=int(os.getenv("AI_MAX_TOKENS", "2048")),
+            max_tokens=int(os.getenv("AI_MAX_TOKENS", "4096")),
             streaming=os.getenv("AI_STREAMING", "true").lower() == "true",
         )
 
@@ -189,31 +194,17 @@ class TelegramConfig:
         Raises:
             ValueError: If required variables missing
         """
-        # Load .env file if provided
-        if env_file and os.path.exists(env_file):
-            try:
-                from dotenv import load_dotenv
-                load_dotenv(env_file)
-                logger.debug(f"Loaded .env from {env_file}")
-            except ImportError:
-                logger.warning("python-dotenv not installed, skipping .env load")
-        
-        # Try to load from default locations
-        elif not env_file:
-            possible_paths = [
-                Path(".env"),
-                Path(__file__).parent.parent / ".env",
-                Path.cwd() / ".env",
-            ]
-            for path in possible_paths:
-                if path.exists():
-                    try:
-                        from dotenv import load_dotenv
-                        load_dotenv(path)
-                        logger.debug(f"Loaded .env from {path}")
-                        break
-                    except ImportError:
-                        pass
+        if env_file:
+            loaded_files = load_runtime_secrets([env_file])
+        else:
+            loaded_files = load_runtime_secrets()
+
+        for path in loaded_files:
+            logger.debug(f"Loaded .env from {path}")
+
+        if not env_file:
+            configured_files = ", ".join(str(path) for path in get_default_secret_files())
+            logger.debug(f"Telegram config secret lookup order: {configured_files}")
         
         bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         if not bot_token:
@@ -249,6 +240,7 @@ class TelegramConfig:
                 "groq_model": self.ai.groq_model,
                 "gemini_model": self.ai.gemini_model,
                 "openai_model": self.ai.openai_model,
+                "ollama_model": self.ai.ollama_model,
                 "streaming": self.ai.streaming,
             },
             "security": {

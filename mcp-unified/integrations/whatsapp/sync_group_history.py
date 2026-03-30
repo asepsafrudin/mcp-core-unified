@@ -5,13 +5,13 @@ import sys
 import logging
 from datetime import datetime
 from pathlib import Path
-from dotenv import load_dotenv
 
 # Add project root to path
 project_root = Path('/home/aseps/MCP/mcp-unified')
 sys.path.insert(0, str(project_root))
+from core.secrets import load_runtime_secrets
 
-load_dotenv(project_root / '.env')
+load_runtime_secrets()
 
 from integrations.whatsapp.client import get_whatsapp_client
 from memory import longterm

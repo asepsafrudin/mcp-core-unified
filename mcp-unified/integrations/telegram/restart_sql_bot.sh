@@ -4,7 +4,7 @@
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-echo -e "${GREEN}🔄 SQL Bot Restarter${NC}"
+echo -e "${GREEN}🔄 SQL Bot Restarter (Legacy Service)${NC}"
 echo "===================="
 
 # Stop

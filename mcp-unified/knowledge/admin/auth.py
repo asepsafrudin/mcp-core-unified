@@ -90,8 +90,8 @@ class SecureAuthManager:
         if salt is None:
             salt = secrets.token_hex(32)
         
-        # Use environment pepper if available
-        pepper = os.getenv('MCP_PASSWORD_PEPPER', 'default-pepper-change-in-production')
+        # Pepper is optional but should be set in production for stronger password hashing.
+        pepper = os.getenv('MCP_PASSWORD_PEPPER', '')
         
         # PBKDF2 hashing
         pwdhash = hashlib.pbkdf2_hmac(

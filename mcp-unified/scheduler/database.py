@@ -9,6 +9,7 @@ Tables:
 
 import json
 import asyncio
+import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -142,12 +143,14 @@ async def get_pool() -> psycopg_pool.AsyncConnectionPool:
     """Get or create database connection pool."""
     global _pool
     if _pool is None:
+        # Prefer the knowledge-stack PG_* variables for scheduler state.
+        # Fall back to core settings for older deployments.
         db_params = {
-            'host': settings.POSTGRES_SERVER,
-            'port': settings.POSTGRES_PORT,
-            'dbname': settings.POSTGRES_DB,
-            'user': settings.POSTGRES_USER,
-            'password': settings.POSTGRES_PASSWORD,
+            'host': os.getenv("PG_HOST") or settings.POSTGRES_SERVER,
+            'port': int(os.getenv("PG_PORT") or settings.POSTGRES_PORT),
+            'dbname': os.getenv("PG_DATABASE") or settings.POSTGRES_DB,
+            'user': os.getenv("PG_USER") or settings.POSTGRES_USER,
+            'password': os.getenv("PG_PASSWORD") or settings.POSTGRES_PASSWORD,
             'autocommit': True
         }
         _pool = psycopg_pool.AsyncConnectionPool(
@@ -157,7 +160,13 @@ async def get_pool() -> psycopg_pool.AsyncConnectionPool:
             open=False
         )
         await _pool.open()
-        logger.info("scheduler_db_pool_created")
+        logger.info(
+            "scheduler_db_pool_created",
+            host=db_params["host"],
+            port=db_params["port"],
+            dbname=db_params["dbname"],
+            user=db_params["user"],
+        )
     return _pool
 
 

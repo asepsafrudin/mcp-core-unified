@@ -4,10 +4,13 @@ import os
 import aio_pika
 from typing import Dict, Any
 
+from core.secrets import load_runtime_secrets
+
 # Configuration
 # On a remote machine, replace 'localhost' with the Master Node's Tailscale IP
-# Example: "amqp://mcp:mcp_secure_pass@100.88.72.19/"
-RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://mcp:mcp_secure_pass@localhost/")
+# Example: "amqp://<user>:<password>@100.88.72.19/"
+load_runtime_secrets()
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://localhost/")
 WORKER_ID = os.getenv("WORKER_ID", "worker-node-1")
 
 class MCPWorker:

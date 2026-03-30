@@ -3,6 +3,8 @@ import os
 from dataclasses import dataclass
 from typing import List, Optional
 
+from core.secrets import load_runtime_secrets
+
 
 @dataclass
 class TelegramConfig:
@@ -22,12 +24,7 @@ class TelegramConfig:
     @classmethod
     def from_env(cls) -> "TelegramConfig":
         """Load configuration from environment variables."""
-        from dotenv import load_dotenv
-        
-        # Load .env file
-        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
-        if os.path.exists(env_path):
-            load_dotenv(env_path)
+        load_runtime_secrets()
         
         bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         if not bot_token:

@@ -8,6 +8,7 @@ Run: PYTHONPATH=/home/aseps/MCP/mcp-unified python3 tests/test_integration_postg
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -21,11 +22,11 @@ from knowledge.stores.pgvector import PGVectorStore
 
 # Database config dari .env.postgresql
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "database": "mcp",
-    "user": "aseps",
-    "password": "secure123"
+    "host": os.getenv("POSTGRES_SERVER", "localhost"),
+    "port": int(os.getenv("POSTGRES_PORT", "5432")),
+    "database": os.getenv("POSTGRES_DB", "mcp"),
+    "user": os.getenv("POSTGRES_USER", "aseps"),
+    "password": os.getenv("POSTGRES_PASSWORD", "")
 }
 
 # Build connection string

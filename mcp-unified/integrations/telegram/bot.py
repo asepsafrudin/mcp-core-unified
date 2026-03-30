@@ -12,14 +12,23 @@ from telegram.ext import Application
 
 from integrations.telegram.config import TelegramConfig
 from integrations.telegram.core import MCPClientWrapper
-from integrations.telegram.services import AIServiceManager, MessagingService, MemoryService
+from integrations.telegram.services import (
+    AIServiceManager,
+    AgentBridgeMemoryService,
+    MessagingService,
+    TelegramContextService,
+)
+from integrations.telegram.services.voice_service import VoiceTranscriptionService
+from integrations.telegram.services.tool_executor import (
+    ToolExecutor,
+    TELEGRAM_CHAT_TOOL_DEFINITIONS,
+)
 from integrations.telegram.handlers import CommandHandlers, MessageHandlers, MediaHandlers
 from integrations.telegram.middleware import AuthMiddleware, LoggingMiddleware, RateLimitMiddleware
 from integrations.telegram.workers import MessageWorker
 from integrations.telegram.utils import setup_logging
 
 logger = logging.getLogger(__name__)
-
 
 class TelegramBot:
     """
@@ -62,7 +71,8 @@ class TelegramBot:
         self.messaging_service = MessagingService(
             chunk_size=self.config.worker.chunk_size
         )
-        self.memory_service = MemoryService(self.mcp)
+        self.bridge_memory_service = AgentBridgeMemoryService(self.mcp)
+        self.conversation_service = TelegramContextService()
         
         # Correspondence Dashboard
         from services.correspondence_dashboard import CorrespondenceDashboard
@@ -75,6 +85,22 @@ class TelegramBot:
             max_workers=self.config.worker.max_workers,
             chunk_size=self.config.worker.chunk_size
         )
+
+        # ✅ Voice Transcription Service (Groq Whisper)
+        groq_key = self.config.ai.groq_api_key
+        if groq_key:
+            self.voice_service = VoiceTranscriptionService(
+                groq_api_key=groq_key,
+                model="turbo"  # whisper-large-v3-turbo
+            )
+        else:
+            self.voice_service = None
+            logger.warning("⚠️ GROQ_API_KEY tidak ada, voice transcription tidak tersedia")
+
+        # ✅ Tool Executor untuk Agentic chat Telegram operasional
+        self.tool_executor = ToolExecutor(bot=self)
+        self.tool_definitions = TELEGRAM_CHAT_TOOL_DEFINITIONS
+        logger.info(f"✅ ToolExecutor initialized ({len(self.tool_definitions)} Telegram chat tools)")
         
         # Initialize middleware
         self.auth_middleware = AuthMiddleware(self.config)
@@ -103,7 +129,7 @@ class TelegramBot:
             mcp_ok = await self.mcp.initialize()
             if not mcp_ok:
                 logger.warning("⚠️ MCP not available, running in standalone mode")
-            
+
             # Initialize workers
             await self.message_worker.start()
             

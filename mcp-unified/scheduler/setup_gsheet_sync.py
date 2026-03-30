@@ -6,11 +6,12 @@ import os
 import sys
 import json
 from pathlib import Path
-from dotenv import load_dotenv
 
 project_root = '/home/aseps/MCP/mcp-unified'
 sys.path.insert(0, project_root)
-load_dotenv(Path(project_root) / '.env')
+from core.secrets import load_runtime_secrets
+
+load_runtime_secrets()
 
 from scheduler.database import create_job
 

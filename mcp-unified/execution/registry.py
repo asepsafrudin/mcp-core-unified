@@ -1,12 +1,5 @@
-from typing import Callable, Dict, Any, List
-from execution.tools import file_tools, shell_tools
-from execution.tools import vision_tools
-from execution.tools import vision_enhanced
-from execution.tools import self_review_tool
+from typing import Callable, Dict, Any, List, Union
 from intelligence.self_healing import self_healing
-from memory import longterm
-from execution import workspace
-from intelligence import planner
 from execution.mcp_proxy import mcp_proxy
 from observability.logger import logger
 import asyncio
@@ -18,10 +11,33 @@ class ToolRegistry:
         self._tools: Dict[str, Callable] = {}
         self._descriptions: Dict[str, str] = {}
         
-    def register(self, func: Callable, name: str = None):
-        tool_name = name or func.__name__
-        self._tools[tool_name] = func
-        self._descriptions[tool_name] = func.__doc__ or "No description provided."
+    def register(self, func_or_name: Union[Callable, str] = None, name: str = None):
+        """
+        Register a tool function. Can be used as a decorator or direct call.
+        
+        Examples:
+            @registry.register
+            def foo(): ...
+            
+            @registry.register(name="bar")
+            def foo(): ...
+            
+            registry.register(some_func, name="manual")
+        """
+        def decorator(func: Callable):
+            nonlocal name
+            tool_name = name or func.__name__
+            self._tools[tool_name] = func
+            self._descriptions[tool_name] = func.__doc__ or "No description provided."
+            return func
+        
+        if callable(func_or_name):
+            return decorator(func_or_name)
+        
+        if isinstance(func_or_name, str):
+            name = func_or_name
+            
+        return decorator
         
     def get_tool(self, name: str) -> Callable:
         return self._tools.get(name)
@@ -87,54 +103,19 @@ class ToolRegistry:
 
 registry = ToolRegistry()
 
-from intelligence import planner
-from messaging import queue_client
-
 def register_defaults():
-    # File Tools
-    registry.register(file_tools.list_dir)
-    registry.register(file_tools.read_file)
-    registry.register(file_tools.write_file)
+    """
+    Register core tools that have not yet been migrated to the 
+    auto-discovery pattern.
     
-    # Shell Tools
-    registry.register(shell_tools.run_shell)
+    [PHASE 6] Auto Discovery handles most tools in plugins/, 
+    execution/tools/, memory/, intelligence/, and messaging/.
+    """
+    # Tools in core directories are now auto-discovered via discovery.py
+    # using the @registry.register decorator.
     
-    # Memory Tools
-    registry.register(longterm.memory_save)
-    registry.register(longterm.memory_search)
-    registry.register(longterm.memory_list)
-    
-    # Workspace Tools
-    registry.register(workspace.create_workspace)
-    registry.register(workspace.cleanup_workspace)
-    
-    # Intelligence Tools
-    registry.register(planner.create_plan)
-    registry.register(planner.save_plan_experience)
-    
-    # Distributed Tools
-    registry.register(queue_client.publish_remote_task)
-    
-    # Vision Tools (Base)
-    registry.register(vision_tools.analyze_image)
-    registry.register(vision_tools.analyze_pdf_pages)
-    registry.register(vision_tools.list_vision_results)
-    
-    # Enhanced Vision Tools
-    registry.register(vision_enhanced.analyze_image_enhanced)
-    registry.register(vision_enhanced.analyze_batch)
-    registry.register(vision_enhanced.compare_images)
-    registry.register(vision_enhanced.extract_structured_data)
-    registry.register(vision_enhanced.enhance_image)
-    registry.register(vision_enhanced.analyze_image_url)
-    registry.register(vision_enhanced.analyze_with_ocr_fallback)
-    registry.register(vision_enhanced.analyze_video_frames)
-    registry.register(vision_enhanced.clear_vision_cache)
-    registry.register(vision_enhanced.get_vision_stats)
-    
-    # Self-Review Tools
-    registry.register(self_review_tool.self_review)
-    registry.register(self_review_tool.self_review_batch)
+    logger.info("register_defaults_complete", 
+               note="Core tools now managed by Auto Discovery")
 
 async def discover_remote_tools():
     """Discover and register tools from external MCP servers."""

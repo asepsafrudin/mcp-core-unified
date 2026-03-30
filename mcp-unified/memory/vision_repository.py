@@ -8,6 +8,7 @@ Mendukung confidence-based filtering dan integrasi dengan LTM.
 import asyncio
 import json
 import hashlib
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -17,6 +18,7 @@ import psycopg
 from psycopg_pool import AsyncConnectionPool
 
 from observability.logger import logger
+from core.secrets import load_runtime_secrets
 from core.vision_config import (
     VisionStorageConfig, 
     ProcessingResult, 
@@ -27,12 +29,14 @@ from core.vision_config import (
 # Database connection pool (shared dengan longterm.py)
 # atau create dedicated pool untuk vision_results
 
+load_runtime_secrets()
+
 DB_PARAMS = {
-    'host': 'localhost',
-    'port': 5433,
-    'dbname': 'mcp_knowledge',
-    'user': 'mcp_user',
-    'password': 'mcp_password_2024',
+    'host': os.getenv('POSTGRES_HOST') or os.getenv('PG_HOST', 'localhost'),
+    'port': int(os.getenv('POSTGRES_PORT') or os.getenv('PG_PORT', '5433')),
+    'dbname': os.getenv('POSTGRES_DB') or os.getenv('PG_DATABASE', 'mcp_knowledge'),
+    'user': os.getenv('POSTGRES_USER') or os.getenv('PG_USER', 'mcp_user'),
+    'password': os.getenv('POSTGRES_PASSWORD') or os.getenv('PG_PASSWORD', ''),
     'autocommit': True
 }
 

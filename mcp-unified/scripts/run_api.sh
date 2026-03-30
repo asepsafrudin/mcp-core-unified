@@ -4,19 +4,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_DIR}"
 
-# Activate venv if exists
-if [ -d "/home/aseps/MCP/.venv" ]; then
-    # shellcheck disable=SC1091
-    source /home/aseps/MCP/.venv/bin/activate
-fi
-
-# Load environment variables from .env file if it exists
-if [ -f "/home/aseps/MCP/.env" ]; then
-    # shellcheck disable=SC2046
-    export $(cat /home/aseps/MCP/.env | grep -v '^#' | xargs)
-fi
-
-export PYTHONPATH=$PYTHONPATH:$(pwd)
+source "${SCRIPT_DIR}/lib/startup_common.sh"
+activate_project_venv
+load_project_env || true
+ensure_pythonpath
 
 # Default environment to development if not set.
 # This matters because auth layer treats missing MCP_ENV as production.
@@ -38,7 +29,17 @@ if [ -z "${MCP_AUTO_OPEN_UI}" ]; then
 fi
 
 # Start FastAPI HTTP server
-uvicorn core.server:app --host 0.0.0.0 --port 8000 &
+RELOAD_FLAG=""
+if [ "${MCP_RELOAD}" = "true" ]; then
+    RELOAD_FLAG="--reload"
+    echo "[INFO] Running with auto-reload enabled"
+fi
+
+if port_is_listening "127.0.0.1" "${MCP_HTTP_PORT:-8000}"; then
+    log_warn "Port ${MCP_HTTP_PORT:-8000} is already listening before startup."
+fi
+
+uvicorn core.server:app --host 0.0.0.0 --port 8000 ${RELOAD_FLAG} &
 UVICORN_PID=$!
 
 if [ "${MCP_AUTO_OPEN_UI}" = "true" ]; then

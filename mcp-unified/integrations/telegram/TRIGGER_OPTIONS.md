@@ -1,10 +1,15 @@
 # 🔔 Opsi Trigger untuk Cline Bridge
 
+Status dokumen:
+- Historis/legacy.
+- Beberapa contoh masih berbasis file watcher atau pola lama.
+- Untuk arsitektur terbaru, jadikan dokumen ini referensi ide operasional bridge saja, bukan source of truth runtime Telegram utama.
+
 Berbagai cara agar Cline (Anda) tahu ada pesan baru dari Telegram.
 
 ## Opsi 1: Polling (Paling Simpel)
 
-Cline secara berkala mengecek file `telegram_messages.json`.
+Cline secara berkala mengecek sumber pesan bridge.
 
 ### Menggunakan Script Polling
 
@@ -31,13 +36,13 @@ crontab -e
 
 ## Opsi 2: File Watcher (Realtime)
 
-Deteksi perubahan file secara realtime.
+Deteksi perubahan sumber bridge secara realtime.
 
 ### Script watcher.py
 
 ```python
 #!/usr/bin/env python3
-"""File watcher untuk telegram_messages.json"""
+"""File watcher legacy untuk telegram_messages.json"""
 
 import time
 import os
@@ -47,7 +52,7 @@ from watchdog.events import FileSystemEventHandler
 class TelegramHandler(FileSystemEventHandler):
     def on_modified(self, event):
         if event.src_path.endswith('telegram_messages.json'):
-            print("📨 File telegram_messages.json berubah!")
+            print("📨 File bridge legacy berubah!")
             os.system('python3 cline_reader.py')
 
 if __name__ == "__main__":
@@ -232,7 +237,7 @@ alias telegram-watch='cd /home/aseps/MCP/mcp-unified/integrations/telegram && wa
 ```
 1. User kirim /cline <pesan>
         ↓
-2. Bot simpan ke telegram_messages.json
+2. Bot simpan ke jalur bridge/agent memory
         ↓
 3. TRIGGER aktif (polling/watcher/webhook)
         ↓

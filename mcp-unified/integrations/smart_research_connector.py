@@ -12,6 +12,8 @@ import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
+from core.secrets import load_runtime_secrets
+
 # Domain yang diblokir (konten China tidak relevan untuk riset hukum Indonesia)
 BLOCKED_DOMAINS = [
     "baidu.com", "zhidao.baidu.com", "zhihu.com", "weibo.com",
@@ -23,7 +25,7 @@ BLOCKED_DOMAINS = [
 # ================================
 SEARXNG_URL = "http://localhost:8090"   # SearxNG dari dalam Vane (port 8090 di-expose)
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL   = os.environ.get("GROQ_MODEL", "qwen/qwen3-32b")  # model default
 
 # Fallback model — qwen/qwen3-32b bisa diakses (error 400 bukan 403)
@@ -45,8 +47,9 @@ class SmartResearchConnector:
     """
 
     def __init__(self, searxng_url: str = SEARXNG_URL, groq_key: str = GROQ_API_KEY):
+        load_runtime_secrets()
         self.searxng_url = searxng_url
-        self.groq_key = groq_key
+        self.groq_key = groq_key or os.environ.get("GROQ_API_KEY", "")
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (MCP Research Agent)"

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
+from execution import registry
 
 
 class RiskLevel(Enum):
@@ -299,7 +300,8 @@ class CodeQualityAnalyzer:
             f"| {'Status':<25} | {assessment.status:<15} | {'-':<10} |",
             "=" * 60,
             "",
-            f"📝 Rekomendasi:")
+            f"📝 Rekomendasi:"
+        ])
         
         # Word wrap recommendation
         words = assessment.recommendation.split()
@@ -336,16 +338,19 @@ def get_analyzer() -> CodeQualityAnalyzer:
     return _default_analyzer
 
 
+@registry.register
 def analyze_file(filepath: str) -> RiskAssessment:
     """Quick analyze file using default analyzer"""
     return get_analyzer().analyze_file(filepath)
 
 
+@registry.register
 def analyze_code(code: str, filename: str = "<string>") -> RiskAssessment:
     """Quick analyze code string"""
     return get_analyzer().analyze_code(code, filename)
 
 
+@registry.register
 def analyze_project(project_path: str, 
                    exclude_patterns: Optional[List[str]] = None) -> Dict[str, RiskAssessment]:
     """Quick analyze project"""

@@ -1,15 +1,18 @@
 import aio_pika
 import json
 import asyncio
+import os
 from typing import Callable, Dict, Any, Optional
 from observability.logger import logger
-from core.config import settings
+from core.secrets import load_runtime_secrets
+from execution import registry
 
 class MCPMessageQueue:
     """Message queue client for distributed MCP tasks"""
     
-    def __init__(self, rabbitmq_url: str = "amqp://mcp:mcp_secure_pass@localhost/"):
-        self.url = rabbitmq_url
+    def __init__(self, rabbitmq_url: Optional[str] = None):
+        load_runtime_secrets()
+        self.url = rabbitmq_url or os.getenv("RABBITMQ_URL", "amqp://localhost/")
         self.connection: Optional[aio_pika.RobustConnection] = None
         self.channel: Optional[aio_pika.Channel] = None
         self.exchange: Optional[aio_pika.Exchange] = None
@@ -71,6 +74,7 @@ class MCPMessageQueue:
 # In production, URL should come from settings/env
 mq_client = MCPMessageQueue()
 
+@registry.register
 async def publish_remote_task(task_type: str, payload: Dict[str, Any], priority: int = 5) -> Dict[str, Any]:
     """
     Publish a task to be executed by a remote worker.

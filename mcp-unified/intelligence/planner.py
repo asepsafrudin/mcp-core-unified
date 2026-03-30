@@ -4,6 +4,7 @@ import re
 import json
 from observability.logger import logger
 from memory.longterm import memory_search, memory_save
+from execution import registry
 
 
 class SimplePlanner:
@@ -130,6 +131,7 @@ class SimplePlanner:
 planner = SimplePlanner()
 
 
+@registry.register
 async def create_plan(request: str, namespace: str = "default") -> Dict[str, Any]:
     """
     Exposed tool to generate a plan.
@@ -142,6 +144,7 @@ async def create_plan(request: str, namespace: str = "default") -> Dict[str, Any
     return {"success": True, "plan": generated_plan, "namespace": namespace}
 
 
+@registry.register
 async def save_plan_experience(
     request: str, 
     plan: List[Dict[str, Any]], 

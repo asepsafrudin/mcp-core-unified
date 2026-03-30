@@ -7,8 +7,11 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}🤖 SQL Bot Runner${NC}"
+echo -e "${GREEN}🤖 SQL Bot Runner (Legacy/Separated Service)${NC}"
 echo "===================="
+
+ROOT_ENV="/home/aseps/MCP/.env"
+LOCAL_ENV=".env"
 
 # Check if already running
 if [ -f sql_bot.pid ]; then
@@ -29,24 +32,23 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Check .env file
-if [ ! -f .env ]; then
-    echo -e "${YELLOW}⚠️  .env file not found${NC}"
-    echo "Creating from .env.example..."
-    if [ -f .env.example ]; then
-        cp .env.example .env
-        echo -e "${GREEN}✅ Created .env file${NC}"
-        echo -e "${YELLOW}⚠️  Please edit .env with your configuration${NC}"
-        exit 1
-    else
-        echo -e "${RED}❌ .env.example not found${NC}"
-        exit 1
-    fi
+# Check centralized env file
+if [ ! -f "$ROOT_ENV" ] && [ ! -f "$LOCAL_ENV" ]; then
+    echo -e "${RED}❌ No secret source found${NC}"
+    echo "Expected root env: $ROOT_ENV"
+    echo "Optional fallback: $(pwd)/$LOCAL_ENV"
+    exit 1
 fi
 
-# Check required environment variables
-if ! grep -q "TELEGRAM_BOT_TOKEN=" .env || grep -q "TELEGRAM_BOT_TOKEN=your_bot_token" .env; then
-    echo -e "${RED}❌  ***REMOVED_TOKEN***not configured in .env${NC}"
+# Check required environment variables in centralized source first
+if [ -f "$ROOT_ENV" ]; then
+    ENV_TO_CHECK="$ROOT_ENV"
+else
+    ENV_TO_CHECK="$LOCAL_ENV"
+fi
+
+if ! grep -q "TELEGRAM_BOT_TOKEN=" "$ENV_TO_CHECK" || grep -q "TELEGRAM_BOT_TOKEN=your_bot_token" "$ENV_TO_CHECK"; then
+    echo -e "${RED}❌  ***REMOVED_TOKEN***not configured in $ENV_TO_CHECK${NC}"
     exit 1
 fi
 
@@ -55,8 +57,11 @@ echo "🔍 Checking PostgreSQL connection..."
 python3 << EOF
 import os
 import sys
-from dotenv import load_dotenv
-load_dotenv()
+from pathlib import Path
+
+sys.path.insert(0, "/home/aseps/MCP/mcp-unified")
+from core.secrets import load_runtime_secrets
+load_runtime_secrets()
 
 import asyncpg
 import asyncio
@@ -83,16 +88,18 @@ if [ $? -ne 0 ]; then
 fi
 
 # Run bot
-echo -e "${GREEN}🚀 Starting SQL Bot...${NC}"
+echo -e "${GREEN}🚀 Starting SQL Bot legacy service...${NC}"
 echo "Logs will be saved to: sql_bot.log"
 echo ""
 
 # Run in background with nohup
-nohup python3 bot_server_sql_focused.py > sql_bot.log 2>&1 &
+nohup python3 legacy/bot_server_sql_focused.py > sql_bot.log 2>&1 &
 BOT_PID=$!
 echo $BOT_PID > sql_bot.pid
 
 echo -e "${GREEN}✅ Bot started with PID: $BOT_PID${NC}"
+echo ""
+echo "Catatan: SQL Bot bukan bagian dari runtime bot chat Telegram utama."
 echo ""
 echo "Commands:"
 echo "  ./stop_sql_bot.sh     - Stop the bot"

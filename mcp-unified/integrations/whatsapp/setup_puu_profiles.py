@@ -3,11 +3,12 @@ import os
 import sys
 import json
 from pathlib import Path
-from dotenv import load_dotenv
 
 project_root = Path('/home/aseps/MCP/mcp-unified')
 sys.path.insert(0, str(project_root))
-load_dotenv(project_root / '.env')
+from core.secrets import load_runtime_secrets
+
+load_runtime_secrets()
 
 from memory import longterm
 

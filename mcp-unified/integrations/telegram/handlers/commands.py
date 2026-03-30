@@ -30,7 +30,9 @@ class CommandHandlers(BaseHandler):
             CommandHandler("cline_status", self.cline_status_command),
             CommandHandler("query", self.query_command),
             CommandHandler(["dashboard", "Dashboard", "DASHBOARD"], self.dashboard_command),
-            CommandHandler(["cari", "Cari", "CARI"], self.search_command),
+            CommandHandler(["cari", "Cari", "CARI", "perihal", "Perihal", "PERIHAL"], self.search_command),
+            CommandHandler(["posisi", "Posisi", "POSISI"], self.posisi_command),
+            CommandHandler(["surat_keluar", "SK", "sk"], self.surat_keluar_command),
         ]
         
         for handler in handlers:
@@ -52,7 +54,7 @@ class CommandHandlers(BaseHandler):
         welcome_message = (
             f"👋 Halo {user.first_name}!\n\n"
             "Saya *Aria*, asisten pribadi AI Anda.\n"
-            "Terintegrasi dengan *MCP Server* untuk berbagai tools dan layanan.\n\n"
+            "Fokus utama saya di Telegram adalah percakapan, korespondensi, dan bantuan operasional.\n\n"
             "📝 *Cara Penggunaan:*\n"
             "— Ketik pertanyaan untuk jawaban langsung\n"
             "— Kirim gambar untuk analisis\n"
@@ -125,10 +127,10 @@ class CommandHandlers(BaseHandler):
             "*Status Sistem Aria*\n\n"
             f"— Bot: 🟢 Online\n"
             f"— AI: {ai_status} {ai_name}\n"
-            f"— MCP: {mcp_status} Connected\n"
+            f"— Bridge Agent: {mcp_status} {'Connected' if self.mcp and self.mcp.is_available else 'Optional/Offline'}\n"
             f"— OS: {platform.system()} {platform.release()}\n"
             f"— Python: {platform.python_version()}\n"
-            f"— Memory: {session_count} pesan dalam konteks\n"
+            f"— Konteks Telegram: {self.conversation_service.get_message_count(user.id)} item\n"
             f"— Mode: {self.config.mode.value.title()}\n\n"
             "✅ *Sistem berjalan normal*"
         )
@@ -142,6 +144,7 @@ class CommandHandlers(BaseHandler):
         # Reset AI chat
         if self.ai_manager.current_provider:
             self.ai_manager.current_provider.reset_chat(user.id)
+        self.conversation_service.clear_context(user.id)
         
         await update.message.reply_text(
             "🧹 *Konteks percakapan direset.*\n\n"
@@ -159,6 +162,7 @@ class CommandHandlers(BaseHandler):
         
         # Reset AI chat untuk semua providers
         self.ai_manager.reset_all_chats(user.id)
+        self.conversation_service.clear_context(user.id)
         
         await update.message.reply_text(
             "🔄 *Sesi sepenuhnya direset.*\n\n"
@@ -221,7 +225,7 @@ class CommandHandlers(BaseHandler):
         message_text = " ".join(args)
         
         # Save untuk Cline
-        success = await self.memory_service.save_bridge_message(
+        success = await self.bridge_memory_service.save_bridge_message(
             user_id=user.id,
             username=user.username,
             first_name=user.first_name,
@@ -250,76 +254,17 @@ class CommandHandlers(BaseHandler):
         )
     
     async def query_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /query command - text-to-SQL query."""
+        """Handle /query command - dinonaktifkan di bot chat utama."""
         user = update.effective_user
-        
         if not self.is_user_allowed(user.id):
             return
-        
-        args = context.args
-        if not args:
-            await update.message.reply_text(
-                "📊 *Query Database dengan Bahasa Natural*\n\n"
-                "Kirim pertanyaan dalam Bahasa Indonesia/Inggris,\n"
-                "saya akan konversi ke SQL dan eksekusi.\n\n"
-                "*Penggunaan:* `/query <pertanyaan>`\n\n"
-                "*Contoh:*\n"
-                "— `/query berapa dokumen PUU 2026?`\n"
-                "— `/query list semua task yang pending`\n"
-                "— `/query total telegram messages hari ini`",
-                parse_mode="Markdown"
-            )
-            return
-        
-        question = " ".join(args)
-        
-        # Check if text_to_sql service is available
-        if not hasattr(self.bot, 'text_to_sql') or not self.bot.text_to_sql:
-            await update.message.reply_text(
-                "⚠️ *Text-to-SQL Service tidak tersedia*\n\n"
-                "Service belum diinisialisasi. Hubungi administrator.",
-                parse_mode="Markdown"
-            )
-            return
-        
-        # Check if knowledge service is available
-        if not hasattr(self.bot, 'knowledge') or not self.bot.knowledge:
-            await update.message.reply_text(
-                "⚠️ *Knowledge Service tidak tersedia*\n\n"
-                "Database belum terhubung. Hubungi administrator.",
-                parse_mode="Markdown"
-            )
-            return
-        
-        # Send thinking message
-        thinking_msg = await update.message.reply_text(
-            "🤔 *Menganalisis pertanyaan...*",
+
+        await update.message.reply_text(
+            "⚠️ *Mode query database sudah dipisahkan dari bot chat utama.*\n\n"
+            "Bot Telegram ini sekarang difokuskan untuk percakapan, korespondensi, dan operasional ringan.\n"
+            "Jika butuh Text-to-SQL atau akses knowledge database, gunakan service SQL/agent yang terdedikasi.",
             parse_mode="Markdown"
         )
-        
-        try:
-            # Execute natural language query
-            result = await self.bot.text_to_sql.execute_natural_query(
-                question=question,
-                knowledge_service=self.bot.knowledge
-            )
-            
-            # Format result
-            formatted_text = self.bot.text_to_sql.format_result_as_text(result)
-            
-            # Send result
-            await thinking_msg.edit_text(
-                formatted_text,
-                parse_mode="Markdown"
-            )
-            
-        except Exception as e:
-            logger.error(f"Query command error: {e}")
-            await thinking_msg.edit_text(
-                f"❌ *Terjadi kesalahan*\n\n"
-                f"```{str(e)[:200]}```",
-                parse_mode="Markdown"
-            )
 
     async def dashboard_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /dashboard command - show correspondence summary."""
@@ -356,4 +301,63 @@ class CommandHandlers(BaseHandler):
         except ImportError:
             formatted_text = f"🔍 Hasil untuk *{query}*: {len(results)} temuan."
         
+        await update.message.reply_text(formatted_text, parse_mode="Markdown", disable_web_page_preview=True)
+
+    async def surat_keluar_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /surat_keluar command - tampilkan surat produksi Tim PUU."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id):
+            return
+
+        args = context.args
+        year = 2026
+        limit = 10
+
+        # Parse argumen opsional: /surat_keluar atau /surat_keluar 2026 atau /surat_keluar 2026 20
+        if args:
+            try:
+                year = int(args[0])
+            except ValueError:
+                await update.message.reply_text(
+                    "ℹ️ *Format:* `/surat_keluar [tahun] [limit]`\n"
+                    "Contoh: `/surat_keluar 2026` atau `/surat_keluar 2026 20`",
+                    parse_mode="Markdown"
+                )
+                return
+        if len(args) > 1:
+            try:
+                limit = int(args[1])
+            except ValueError:
+                pass
+
+        result = self.bot.dashboard.get_puu_production(limit=limit, year=year)
+        await update.message.reply_text(result, parse_mode="Markdown", disable_web_page_preview=True)
+
+    async def posisi_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /posisi command - search letters by position."""
+        user = update.effective_user
+        if not self.is_allowed(user.id): return
+
+        args = context.args
+        if not args:
+            await update.message.reply_text(
+                "📍 *Pencarian Berdasarkan Posisi*\n\n"
+                "Gunakan: `/posisi <nama unit/meja atau kode>`\n"
+                "Contoh:\n"
+                "— `/posisi PUU` (Semua di PUU)\n"
+                "— `/posisi 500.4` (Kode Klasifikasi 500.4)\n"
+                "— `/posisi Sekretariat` (Posisi Sekretariat)",
+                parse_mode="Markdown"
+            )
+            return
+
+        query = " ".join(args)
+        results = self.bot.dashboard.search_by_position(query)
+
+        try:
+            from services.correspondence_dashboard import format_search_results
+            formatted_text = format_search_results(results, f"Posisi: {query}")
+        except:
+            formatted_text = f"📍 Ditemukan {len(results)} surat di posisi *{query}*."
+
         await update.message.reply_text(formatted_text, parse_mode="Markdown", disable_web_page_preview=True)

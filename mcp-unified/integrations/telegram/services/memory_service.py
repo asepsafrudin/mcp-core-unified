@@ -12,6 +12,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 
+import asyncpg
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +53,15 @@ class MemoryService:
         self._cache: Dict[str, Any] = {}
         self._cache_ttl = 300  # 5 minutes
         self._cache_timestamp: Dict[str, datetime] = {}
+        self._ltm_db_pool: Optional[asyncpg.Pool] = None
+        self._ltm_db_checked = False
+        self._ltm_db_config = {
+            "host": os.getenv("POSTGRES_SERVER") or os.getenv("POSTGRES_HOST") or "localhost",
+            "port": int(os.getenv("POSTGRES_PORT") or "5432"),
+            "database": os.getenv("POSTGRES_DB") or "mcp",
+            "user": os.getenv("POSTGRES_USER") or "",
+            "password": os.getenv("POSTGRES_PASSWORD") or "",
+        }
     
     def _find_ltm_path(self) -> Optional[str]:
         """Find LTM file path."""
@@ -160,44 +171,23 @@ class MemoryService:
         Returns:
             Relevant LTM content
         """
-        if not self.ltm_path or not os.path.exists(self.ltm_path):
-            return ""
-        
         try:
             # Check cache
             cache_key = f"ltm_{query.lower()[:50]}"
             if self._is_cache_valid(cache_key):
                 return self._cache.get(cache_key, "")
-            
-            with open(self.ltm_path, 'r', encoding='utf-8') as f:
-                ltm_data = json.load(f)
-            
-            query_lower = query.lower()
+
             relevant_sections = []
-            
-            # Check telegram_bot_integration section
-            if 'telegram' in query_lower or 'bot' in query_lower:
-                telegram_data = ltm_data.get('telegram_bot_integration', {})
-                if telegram_data:
-                    relevant_sections.append(
-                        f"📱 Telegram Bot: {telegram_data.get('status', 'N/A')}\n"
-                        f"Features: {', '.join(telegram_data.get('features', []))}"
-                    )
-            
-            # Check completed_tasks
-            if 'task' in query_lower or 'project' in query_lower:
-                tasks = ltm_data.get('completed_tasks', [])
-                if tasks:
-                    task_names = [t.get('task', '') for t in tasks[:3]]
-                    relevant_sections.append(f"📋 Recent Tasks: {', '.join(task_names)}")
-            
-            # Check architecture
-            if 'arch' in query_lower or 'struct' in query_lower:
-                arch = ltm_data.get('architecture', {})
-                if arch:
-                    relevant_sections.append(f"🏗️ Architecture: {arch.get('status', 'N/A')}")
-            
-            result = "\n\n".join(relevant_sections)
+
+            db_context = await self._get_ltm_db_context(query)
+            if db_context:
+                relevant_sections.append(db_context)
+
+            file_context = self._get_ltm_file_context(query)
+            if file_context:
+                relevant_sections.append(file_context)
+
+            result = "\n\n".join(part for part in relevant_sections if part)
             
             # Update cache
             self._cache[cache_key] = result
@@ -208,6 +198,157 @@ class MemoryService:
         except Exception as e:
             logger.warning(f"Failed to read LTM: {e}")
             return ""
+
+    async def _ensure_ltm_db_pool(self) -> Optional[asyncpg.Pool]:
+        """Initialize pooled access to the main LTM PostgreSQL database."""
+        if self._ltm_db_pool is not None:
+            return self._ltm_db_pool
+
+        if self._ltm_db_checked:
+            return None
+
+        self._ltm_db_checked = True
+
+        if not self._ltm_db_config["user"]:
+            logger.info("LTM DB user not configured; skipping PostgreSQL-backed LTM context")
+            return None
+
+        try:
+            self._ltm_db_pool = await asyncpg.create_pool(
+                host=self._ltm_db_config["host"],
+                port=self._ltm_db_config["port"],
+                database=self._ltm_db_config["database"],
+                user=self._ltm_db_config["user"],
+                password=self._ltm_db_config["password"],
+                min_size=1,
+                max_size=2,
+            )
+            logger.info("LTM PostgreSQL pool initialized")
+            return self._ltm_db_pool
+        except Exception as e:
+            logger.warning(f"Failed to initialize LTM PostgreSQL pool: {e}")
+            return None
+
+    async def _get_ltm_db_context(self, query: str) -> str:
+        """Get live project/task context from PostgreSQL-backed LTM tables."""
+        pool = await self._ensure_ltm_db_pool()
+        if not pool:
+            return ""
+
+        query_lower = query.lower()
+        sections: List[str] = []
+
+        try:
+            async with pool.acquire() as conn:
+                if any(
+                    keyword in query_lower
+                    for keyword in ("task", "tugas", "progress", "status", "handoff", "lanjut", "project")
+                ):
+                    project_row = await conn.fetchrow(
+                        """
+                        SELECT content, updated_at
+                        FROM project_memories
+                        WHERE project_name = $1
+                        """,
+                        "MCP Unified Tasks",
+                    )
+                    if project_row:
+                        content = project_row["content"]
+                        if isinstance(content, str):
+                            try:
+                                content = json.loads(content)
+                            except json.JSONDecodeError:
+                                content = {}
+
+                        metrics = content.get("metrics", {}) if isinstance(content, dict) else {}
+                        current_tasks = content.get("current_tasks", []) if isinstance(content, dict) else []
+                        task_lines = "\n".join(f"- {task}" for task in current_tasks[:5])
+                        summary = (
+                            "📋 Task Snapshot:\n"
+                            f"Active: {metrics.get('active_tasks', 0)} | "
+                            f"Completed: {metrics.get('completed_tasks', 0)} | "
+                            f"Total: {metrics.get('total_tasks', 0)}"
+                        )
+                        if task_lines:
+                            summary += f"\nCurrent Tasks:\n{task_lines}"
+                        sections.append(summary)
+
+                    task_rows = await conn.fetch(
+                        """
+                        SELECT key, metadata
+                        FROM memories
+                        WHERE namespace = 'mcp_tasks'
+                        ORDER BY created_at DESC
+                        LIMIT 3
+                        """
+                    )
+                    if task_rows:
+                        task_briefs = []
+                        for row in task_rows:
+                            metadata = row["metadata"] or {}
+                            task_briefs.append(
+                                f"- {row['key']}: {metadata.get('progress', 0)}% ({metadata.get('status', 'UNKNOWN')})"
+                            )
+                        sections.append("🧠 LTM Active Tasks:\n" + "\n".join(task_briefs))
+
+                if any(keyword in query_lower for keyword in ("telegram", "bot", "integrasi")):
+                    ltm_row = await conn.fetchrow(
+                        """
+                        SELECT session_id, status, timestamp, data
+                        FROM ltm_memory
+                        WHERE session_id IN ('mcp_task_sync', 'telegram_bot_activation_2026_03_03')
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                        """
+                    )
+                    if ltm_row:
+                        data = ltm_row["data"] or {}
+                        notes = data.get("notes", []) if isinstance(data, dict) else []
+                        note_text = "\n".join(f"- {note}" for note in notes[:3])
+                        summary = (
+                            f"🗂️ LTM Session: {ltm_row['session_id']} ({ltm_row['status']})\n"
+                            f"Updated: {ltm_row['timestamp']}"
+                        )
+                        if note_text:
+                            summary += f"\nNotes:\n{note_text}"
+                        sections.append(summary)
+
+            return "\n\n".join(sections)
+        except Exception as e:
+            logger.warning(f"Failed to fetch LTM DB context: {e}")
+            return ""
+
+    def _get_ltm_file_context(self, query: str) -> str:
+        """Fallback to legacy .ltm_memory.json when DB data is unavailable."""
+        if not self.ltm_path or not os.path.exists(self.ltm_path):
+            return ""
+
+        with open(self.ltm_path, 'r', encoding='utf-8') as f:
+            ltm_data = json.load(f)
+
+        query_lower = query.lower()
+        relevant_sections = []
+
+        if 'telegram' in query_lower or 'bot' in query_lower:
+            telegram_data = ltm_data.get('telegram_bot_integration', {})
+            if telegram_data:
+                relevant_sections.append(
+                    f"📱 Telegram Bot: {telegram_data.get('status', 'N/A')}\n"
+                    f"Features: {', '.join(telegram_data.get('features', []))}"
+                )
+
+        if 'task' in query_lower or 'project' in query_lower or 'handoff' in query_lower:
+            tasks = ltm_data.get('completed_tasks', [])
+            if tasks:
+                task_names = [t.get('task', '') for t in tasks[:3]]
+                relevant_sections.append(f"📋 Recent Tasks: {', '.join(task_names)}")
+
+        if 'arch' in query_lower or 'struct' in query_lower:
+            arch = ltm_data.get('architecture', {})
+            if arch:
+                relevant_sections.append(f"🏗️ Architecture: {arch.get('status', 'N/A')}")
+
+        return "\n\n".join(relevant_sections)
     
     async def get_knowledge_context(
         self,

@@ -11,9 +11,9 @@ from pathlib import Path
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+from core.secrets import load_runtime_secrets
 
-from dotenv import load_dotenv
-load_dotenv(project_root / ".env")
+load_runtime_secrets()
 
 from integrations.whatsapp.client import get_whatsapp_client
 

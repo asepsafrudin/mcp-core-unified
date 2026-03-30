@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from observability.logger import logger
 from tools.file.path_utils import is_safe_path, validate_file_extension
+from execution import registry
 
 # [REVIEWER] Model config
 # llava: model vision umum yang tersedia di Ollama (~4.7GB)
@@ -124,6 +125,7 @@ def _image_to_base64(image_path: str) -> Optional[str]:
         return None
 
 
+@registry.register
 async def analyze_image(
     image_path: str,
     prompt: str = "Describe this image in detail",
@@ -202,6 +204,7 @@ async def analyze_image(
     }
 
 
+@registry.register
 async def analyze_pdf_pages(
     pdf_path: str,
     prompt: str = "Extract all text and describe any charts, tables, and images",
@@ -342,6 +345,7 @@ async def analyze_pdf_pages(
         return {"success": False, "error": str(e)}
 
 
+@registry.register
 async def list_vision_results(
     namespace: str = "default",
     limit: int = 10

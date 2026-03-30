@@ -23,6 +23,8 @@ import requests
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
+from core.secrets import load_runtime_secrets
+
 logger = logging.getLogger(__name__)
 
 # ============================================================
@@ -70,28 +72,14 @@ class VaneConnector:
         groq_key:    str = GROQ_API_KEY,
         model:       str = GROQ_MODEL,
     ):
+        load_runtime_secrets()
         self.searxng_url = searxng_url
-        self.groq_key    = groq_key or self._load_key_from_env()
+        self.groq_key    = groq_key or os.getenv("GROQ_API_KEY", "")
         self.model       = model
         self.session     = requests.Session()
         self.session.headers.update({
             "User-Agent": "MCP-Research-Agent/1.0"
         })
-
-    def _load_key_from_env(self) -> str:
-        """Coba baca GROQ_API_KEY dari file .env telegram jika env var kosong."""
-        env_files = [
-            "/home/aseps/MCP/mcp-unified/integrations/telegram/.env",
-            "/home/aseps/MCP/mcp-unified/.env",
-            "/home/aseps/MCP/.env",
-        ]
-        for path in env_files:
-            if os.path.exists(path):
-                with open(path) as f:
-                    for line in f:
-                        if line.startswith("GROQ_API_KEY="):
-                            return line.strip().split("=", 1)[1]
-        return ""
 
     def _is_blocked(self, url: str) -> bool:
         return any(d in url for d in BLOCKED_DOMAINS)

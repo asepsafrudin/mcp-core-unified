@@ -5,6 +5,7 @@ import json
 import asyncio
 from typing import Dict, Any, List, Optional
 from observability.logger import logger
+from execution import registry
 
 class WorkspaceManager:
     """
@@ -53,6 +54,7 @@ class WorkspaceManager:
 workspace_manager = WorkspaceManager()
 
 # Exposed tools
+@registry.register
 async def create_workspace(task_id: str = None) -> Dict[str, Any]:
     """Create a temporary workspace for a task."""
     try:
@@ -61,6 +63,7 @@ async def create_workspace(task_id: str = None) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@registry.register
 async def cleanup_workspace(task_id: str) -> Dict[str, Any]:
     """Delete a workspace."""
     try:

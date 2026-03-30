@@ -6,7 +6,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${GREEN}🛑 SQL Bot Stopper${NC}"
+echo -e "${GREEN}🛑 SQL Bot Stopper (Legacy Service)${NC}"
 echo "==================="
 
 if [ -f sql_bot.pid ]; then
@@ -32,7 +32,7 @@ else
     echo -e "${YELLOW}⚠️  PID file not found${NC}"
     echo "Checking for running processes..."
     
-    PID=$(pgrep -f "bot_server_sql_focused.py")
+    PID=$(pgrep -f "legacy/bot_server_sql_focused.py")
     if [ -n "$PID" ]; then
         echo "Found process: $PID"
         kill $PID

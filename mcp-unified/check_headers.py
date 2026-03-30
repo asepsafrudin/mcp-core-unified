@@ -1,11 +1,12 @@
 import os
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
 
 PROJECT_ROOT = "/home/aseps/MCP/mcp-unified"
 sys.path.insert(0, PROJECT_ROOT)
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+from core.secrets import load_runtime_secrets
+
+load_runtime_secrets()
 from integrations.google_workspace.client import get_google_client
 
 def check_header(spreadsheet_id, sheet_name):
