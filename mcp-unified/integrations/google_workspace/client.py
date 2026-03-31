@@ -60,9 +60,9 @@ class GoogleWorkspaceClient:
     def _get_credentials_path(self) -> str:
         """Get credentials path from environment."""
         root_dir = "/home/aseps/MCP"
-        # Default path based on user information structure
-        default_dir = os.path.join(root_dir, "domains/regional_sync/PUU 2026/MCP/credential/google")
-        default_file = "mcp-unified-sa.json" # Placeholder name
+        # Default path - use service account credentials
+        default_dir = os.path.join(root_dir, "config/credentials/google")
+        default_file = "mcp-gmail-482015-682b788ee191.json"  # Service account file
         
         creds_dir = os.getenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH", default_dir)
         creds_file = os.getenv("GOOGLE_WORKSPACE_SERVICE_ACCOUNT_FILE", default_file)

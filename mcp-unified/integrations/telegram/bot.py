@@ -23,7 +23,7 @@ from integrations.telegram.services.tool_executor import (
     ToolExecutor,
     TELEGRAM_CHAT_TOOL_DEFINITIONS,
 )
-from integrations.telegram.handlers import CommandHandlers, MessageHandlers, MediaHandlers
+from integrations.telegram.handlers import CommandHandlers, MessageHandlers, MediaHandlers, FeedbackHandler
 from integrations.telegram.middleware import AuthMiddleware, LoggingMiddleware, RateLimitMiddleware
 from integrations.telegram.workers import MessageWorker
 from integrations.telegram.utils import setup_logging
@@ -111,6 +111,7 @@ class TelegramBot:
         self.command_handlers: Optional[CommandHandlers] = None
         self.message_handlers: Optional[MessageHandlers] = None
         self.media_handlers: Optional[MediaHandlers] = None
+        self.feedback_handler: Optional[FeedbackHandler] = None
         
         # Application dan state
         self.application: Optional[Application] = None
@@ -144,11 +145,13 @@ class TelegramBot:
             self.command_handlers = CommandHandlers(self)
             self.message_handlers = MessageHandlers(self)
             self.media_handlers = MediaHandlers(self)
+            self.feedback_handler = FeedbackHandler(self)
             
             # Register handlers
             self.command_handlers.register()
             self.message_handlers.register()
             self.media_handlers.register()
+            self.feedback_handler.register()
             
             logger.info("✅ Bot initialized successfully")
             return True

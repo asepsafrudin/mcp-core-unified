@@ -33,6 +33,22 @@ DB_PARAMS = {
 pool = psycopg_pool.AsyncConnectionPool(min_size=2, max_size=10, kwargs=DB_PARAMS, open=False)
 
 
+async def ensure_pool_open():
+    """
+    Ensure the database connection pool is open before use.
+    
+    [REVIEWER] This is a safety mechanism to handle cases where
+    the pool might not be initialized properly during startup.
+    """
+    if not pool._opened:
+        try:
+            await pool.open()
+            logger.info("pool_opened_on_demand")
+        except Exception as e:
+            logger.error("pool_open_failed", error=str(e))
+            raise
+
+
 async def initialize_db():
     """
     Initialize database schema with namespace support.
@@ -242,6 +258,9 @@ async def memory_save(
         metadata = {}
     
     try:
+        # Ensure pool is open before using
+        await ensure_pool_open()
+        
         logger.info("saving_memory", key=key, namespace=namespace)
         
         # [REVIEWER] Handle embedding failure gracefully - save without vector
@@ -305,6 +324,8 @@ async def memory_search(
         Dict with success status and list of matching memories
     """
     try:
+        # Ensure pool is open before using
+        await ensure_pool_open()
         # [REVIEWER] Fallback to keyword search if embedding unavailable
         try:
             query_emb = await get_embedding(query)
@@ -401,6 +422,9 @@ async def memory_list(
         Dict with success status, list of memories, and total count
     """
     try:
+        # Ensure pool is open before using
+        await ensure_pool_open()
+        
         limit = min(limit, 50)
         
         logger.info("listing_memories", namespace=namespace, limit=limit, offset=offset)

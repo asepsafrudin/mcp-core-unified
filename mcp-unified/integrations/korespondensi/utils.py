@@ -11,18 +11,51 @@ def parse_posisi_timeline(posisi_str: str, sender: Optional[str] = None) -> List
     Parses a complex POSISI string into a structured timeline of events.
     Supports units (SES, BU, etc.), dates (D/M), actions (KOREKSI, TTD),
     and personnel (names in brackets).
+    
+    Format yang didukung:
+    1. Normal: "SES 9/3 PUU 11/3" → Sekretaris → PUU
+    2. Multi-unit: "PRC, KEU, PUU, Umum 6/1" → Disposisi ke 4 unit sekaligus
+    3. Multi-step: "SES 5/2 KOREKSI 5/2 SES 5/2 KOREKSI 6/2 SES 10/2 PUU 11/2"
     """
     import re
     if not posisi_str or str(posisi_str).upper() == "NULL":
         return []
 
-    # Combined pattern for dates, times, brackets, and words
-    pattern = re.compile(r'(\d{1,2}/\d{1,2})|(\d{1,2}\.?\d{2}\.?\d{0,2})|(\([^\)]+\))|([a-zA-Z\d\.\-]+)', re.IGNORECASE)
-    matches = pattern.finditer(posisi_str)
-    
     units = ["SES", "TU", "BU", "KEU", "PRC", "PUU", "PEIPD", "SUPD", "SD", "DIRJEN", "DITJEN", "BANGDA", "UMUM"]
     actions = ["KOREKSI", "REVISI", "TTD", "PARAFA", "PARAF", "ST", "SISTEM", "BAGI", "DITERIMA", "DONE", "SELESAI", "PROSES", "DJ"]
     systems = ["SRIKANDI", "SIMND", "POOLING"]
+
+    # ── Pre-check: Multi-unit comma-separated format ──────────────────────
+    # Pattern: "Unit1, Unit2, Unit3, ... DD/M" (e.g., "PRC, KEU, PUU, Umum 6/1")
+    multi_unit_pattern = re.compile(
+        r'^([A-Za-z]+(?:\s*,\s*[A-Za-z]+)+)\s+(\d{1,2}/\d{1,2})$'
+    )
+    multi_match = multi_unit_pattern.match(posisi_str.strip())
+    
+    if multi_match:
+        units_part = multi_match.group(1)  # "PRC, KEU, PUU, Umum"
+        shared_date = multi_match.group(2)  # "6/1"
+        
+        # Extract individual units
+        unit_names = [u.strip().upper() for u in units_part.split(',')]
+        
+        timeline = []
+        for unit_name in unit_names:
+            # Map to canonical name if available
+            canonical = next((u for u in units if u == unit_name), unit_name)
+            timeline.append({
+                "unit": canonical,
+                "date": shared_date,
+                "action": "DISPOSISI",
+                "notes": f"Multi-unit batch: {units_part}"
+            })
+        
+        return timeline
+
+    # ── Standard parsing for non-multi-unit format ────────────────────────
+    # Combined pattern for dates, times, brackets, and words
+    pattern = re.compile(r'(\d{1,2}/\d{1,2})|(\d{1,2}\.?\d{2}\.?\d{0,2})|(\([^\)]+\))|([a-zA-Z\d\.\-]+)', re.IGNORECASE)
+    matches = pattern.finditer(posisi_str)
 
     timeline = []
     current_unit = "UNKNOWN"
@@ -141,8 +174,61 @@ def parse_posisi_timeline(posisi_str: str, sender: Optional[str] = None) -> List
             
     return merged
 
+def extract_puu_received_date(posisi_str: str) -> Optional[str]:
+    """
+    Ekstrak tanggal diterima PUU dari kolom POSISI.
+    
+    Semua data yang mengandung "PUU" diikuti DD/M dianggap sebagai 
+    "Surat Masuk PUU" (korespondensi internal ditujukan ke Kelompok Substansi PUU).
+    DD/M setelah "PUU" = tanggal diterima oleh PUU.
+    
+    Format yang didukung:
+    1. Normal: "SES 9/3 PUU 11/3" → tanggal diterima PUU = 11/3
+    2. Multi-unit: "PRC, KEU, PUU, Umum 6/1" → tanggal diterima PUU = 6/1
+    3. Complex: "SES 5/2 KOREKSI 5/2 SES 10/2 PUU 11/2" → tanggal diterima PUU = 11/2
+    
+    Args:
+        posisi_str: String dari kolom POSISI
+        
+    Returns:
+        String tanggal dalam format "DD/M" atau None jika tidak ada PUU
+    """
+    if not posisi_str or str(posisi_str).upper() == "NULL":
+        return None
+    
+    import re
+    
+    posisi_upper = posisi_str.upper().strip()
+    
+    # Cek apakah mengandung PUU
+    if "PUU" not in posisi_upper:
+        return None
+    
+    # Pattern 1: Multi-unit format "Unit1, Unit2, PUU, Unit3 DD/M"
+    # Contoh: "PRC, KEU, PUU, Umum 6/1"
+    multi_unit_pattern = re.compile(
+        r'^[A-Za-z\s,]+PUU[A-Za-z\s,]*\s+(\d{1,2}/\d{1,2})$'
+    )
+    multi_match = multi_unit_pattern.match(posisi_str.strip())
+    if multi_match:
+        return multi_match.group(1)
+    
+    # Pattern 2: Standard format "...PUU DD/M..."
+    # Cari PUU diikuti tanggal
+    puu_date_pattern = re.compile(r'PUU\s+(\d{1,2}/\d{1,2})', re.IGNORECASE)
+    match = puu_date_pattern.search(posisi_str)
+    if match:
+        return match.group(1)
+    
+    return None
+
+
 def parse_posisi(posisi_str: str) -> Dict[str, Any]:
-    """Compatibility wrapper for simple status check."""
+    """
+    Compatibility wrapper for simple status check.
+    
+    Juga mengekstrak tanggal diterima PUU untuk verifikasi dengan mail merge.
+    """
     timeline = parse_posisi_timeline(posisi_str)
     if not timeline:
         return {"original": str(posisi_str), "status": "PENDING", "is_done": False}
@@ -150,13 +236,18 @@ def parse_posisi(posisi_str: str) -> Dict[str, Any]:
     last_event = timeline[-1]
     is_done = any(ev['action'] in ['SELESAI', 'TTD', 'DJ'] for ev in timeline)
     
+    # Ekstrak tanggal diterima PUU
+    puu_received_date = extract_puu_received_date(posisi_str)
+    
     return {
         "original": str(posisi_str),
         "status": last_event['action'],
         "owner": last_event['unit'],
         "last_date": last_event['date'],
         "is_done": is_done,
-        "timeline_count": len(timeline)
+        "timeline_count": len(timeline),
+        "puu_received_date": puu_received_date,  # Tanggal diterima oleh PUU
+        "is_surat_masuk_puu": puu_received_date is not None  # Flag surat masuk PUU
     }
 
 async def send_telegram_notification(text: str):
