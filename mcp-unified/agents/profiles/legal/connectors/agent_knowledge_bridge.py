@@ -16,7 +16,7 @@ Features:
 
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from .kb_connector import KBConnector
 from .db_connector import DBKnowledgeConnector, KnowledgeQueryResult
 from .dms_connector import DMSKnowledgeConnector, get_dms_connector
+from knowledge.sharing.namespace_manager import NamespaceManager
 from observability.logger import logger
 
 
@@ -81,11 +82,13 @@ class AgentKnowledgeBridge:
         self,
         kb_connector: KBConnector = None,
         db_connector: DBKnowledgeConnector = None,
-        dms_connector: DMSKnowledgeConnector = None
+        dms_connector: DMSKnowledgeConnector = None,
+        namespace_manager: NamespaceManager = None
     ):
         self.kb_connector = kb_connector or KBConnector()
         self.db_connector = db_connector or DBKnowledgeConnector()
         self.dms_connector = dms_connector or get_dms_connector()
+        self.namespace_manager = namespace_manager or NamespaceManager()
         self._initialized = False
         self._dms_initialized = False
     
@@ -121,8 +124,11 @@ class AgentKnowledgeBridge:
         query: str,
         sources: List[KnowledgeSource] = None,
         namespace: str = "default",
+        namespaces: Optional[List[str]] = None,
         top_k: int = 5,
-        aggregate: bool = True
+        aggregate: bool = True,
+        agent_id: Optional[str] = None,
+        dms_filters: Optional[Dict[str, str]] = None
     ) -> UnifiedKnowledgeResult:
         """
         Query knowledge dari multiple sources.
@@ -130,9 +136,12 @@ class AgentKnowledgeBridge:
         Args:
             query: Query text
             sources: List of sources to query (default: ALL)
-            namespace: Database namespace
+            namespace: Database namespace (single namespace, backward compatible)
+            namespaces: Optional list namespace untuk query lintas namespace
             top_k: Number of results per source
             aggregate: Aggregate results into single context
+            agent_id: Optional agent ID untuk access-filtering namespace
+            dms_filters: Filter untuk DMS (jenis_dokumen, instansi, tahun, category, source)
         
         Returns:
             UnifiedKnowledgeResult
@@ -143,9 +152,24 @@ class AgentKnowledgeBridge:
         # Determine which sources to query
         query_db = KnowledgeSource.ALL in sources or KnowledgeSource.DATABASE in sources
         query_file = KnowledgeSource.ALL in sources or KnowledgeSource.FILE_BASED in sources
+        query_dms = KnowledgeSource.ALL in sources or KnowledgeSource.DMS in sources
         
         file_results = []
-        db_result = None
+        db_results_aggregated: List[Dict[str, Any]] = []
+        db_context_parts: List[str] = []
+        db_total_documents = 0
+        dms_results: List[Dict[str, Any]] = []
+        dms_context = ""
+        query_namespaces, invalid_namespaces = await self._resolve_query_namespaces(
+            namespace=namespace,
+            namespaces=namespaces,
+            agent_id=agent_id
+        )
+        if invalid_namespaces:
+            logger.warning(
+                "knowledge_bridge_invalid_namespaces_ignored",
+                invalid_namespaces=invalid_namespaces
+            )
         
         # Query file-based KB
         if query_file:
@@ -160,35 +184,123 @@ class AgentKnowledgeBridge:
         # Query database
         if query_db and self._initialized:
             try:
-                db_result = await self.db_connector.query(
-                    query=query,
-                    namespace=namespace,
-                    top_k=top_k
-                )
+                for ns in query_namespaces:
+                    db_result = await self.db_connector.query(
+                        query=query,
+                        namespace=ns,
+                        top_k=top_k
+                    )
+                    if db_result and db_result.success:
+                        db_total_documents += db_result.total_documents
+                        if db_result.context:
+                            db_context_parts.append(
+                                f"=== Informasi dari Database Knowledge (namespace: {ns}) ===\n"
+                                f"{db_result.context}"
+                            )
+                        for source in db_result.sources:
+                            source_with_namespace = dict(source)
+                            source_with_namespace.setdefault("metadata", {})
+                            source_with_namespace["namespace"] = ns
+                            db_results_aggregated.append(source_with_namespace)
                 logger.info("db_kb_query_complete",
                            query=query[:50],
-                           results=db_result.total_documents if db_result else 0)
+                           namespaces=query_namespaces,
+                           results=db_total_documents)
             except Exception as e:
                 logger.error("db_kb_query_failed", error=str(e))
+
+        # Query DMS
+        if query_dms:
+            try:
+                dms_result = await self.query_dms(
+                    query=query,
+                    filters=dms_filters,
+                    top_k=top_k
+                )
+                if dms_result and dms_result.success:
+                    dms_results = dms_result.documents
+                    dms_context = dms_result.context or ""
+                logger.info(
+                    "dms_kb_query_complete",
+                    query=query[:50],
+                    results=len(dms_results)
+                )
+            except Exception as e:
+                logger.error("dms_kb_query_failed", error=str(e))
         
         # Aggregate results
         if aggregate:
-            return self._aggregate_results(query, file_results, db_result)
+            synthetic_db_result = KnowledgeQueryResult(
+                success=True,
+                query=query,
+                context="\n\n".join(db_context_parts),
+                sources=db_results_aggregated,
+                total_documents=db_total_documents,
+                namespace=",".join(query_namespaces) if query_namespaces else namespace
+            )
+            return self._aggregate_results(
+                query=query,
+                file_results=file_results,
+                db_result=synthetic_db_result,
+                dms_results=dms_results,
+                dms_context=dms_context
+            )
         else:
+            context_parts = [part for part in ["\n\n".join(db_context_parts), dms_context] if part]
             return UnifiedKnowledgeResult(
                 success=True,
                 query=query,
-                context=db_result.context if db_result else "",
+                context="\n\n".join(context_parts),
                 file_results=file_results,
-                db_results=db_result.sources if db_result else [],
+                db_results=db_results_aggregated,
+                dms_results=dms_results,
                 sources=[]
             )
+
+    async def _resolve_query_namespaces(
+        self,
+        namespace: str = "default",
+        namespaces: Optional[List[str]] = None,
+        agent_id: Optional[str] = None
+    ) -> Tuple[List[str], List[str]]:
+        """
+        Resolve namespace input menjadi daftar namespace valid dan accessible.
+
+        Returns:
+            Tuple (valid_namespaces, invalid_namespaces)
+        """
+        requested = [ns for ns in (namespaces or [namespace]) if ns]
+        if not requested:
+            requested = ["default"]
+
+        try:
+            available = await self.namespace_manager.list_namespaces(agent_id=agent_id)
+            available_names = {item.get("name") for item in available}
+        except Exception:
+            # Fallback: jika namespace manager bermasalah, lanjutkan requested apa adanya
+            return list(dict.fromkeys(requested)), []
+
+        valid = []
+        invalid = []
+        for ns in requested:
+            if ns in available_names:
+                valid.append(ns)
+            else:
+                invalid.append(ns)
+
+        if not valid:
+            # Backward-compatible fallback to provided namespace
+            valid = [namespace or "default"]
+
+        return list(dict.fromkeys(valid)), invalid
     
     def _aggregate_results(
         self,
         query: str,
         file_results: List[Dict],
-        db_result: KnowledgeQueryResult
+        db_result: KnowledgeQueryResult,
+        dms_results: Optional[List[Dict[str, Any]]] = None,
+        dms_context: str = ""
     ) -> UnifiedKnowledgeResult:
         """
         Aggregate results dari multiple sources.
@@ -245,6 +357,31 @@ class AgentKnowledgeBridge:
                 if result.get("type") == "pasal":
                     citation = f"Pasal {result.get('nomor')} UU 23/2014"
                     citations.append(citation)
+
+        # Add DMS results
+        if dms_results:
+            context_parts.append("\n=== Informasi dari Document Management System ===\n")
+            if dms_context:
+                context_parts.append(dms_context)
+
+            for doc in dms_results:
+                all_sources.append({
+                    "source": "dms",
+                    "id": doc.get("id"),
+                    "file_name": doc.get("file_name"),
+                    "metadata": {
+                        "source_name": doc.get("source_name"),
+                        "labels": doc.get("label_dict", {}),
+                        "government_metadata": doc.get("government_metadata", {})
+                    }
+                })
+
+                gov_meta = doc.get("government_metadata", {}) or {}
+                jenis = gov_meta.get("jenis_dokumen")
+                nomor = gov_meta.get("nomor_dokumen")
+                tahun = gov_meta.get("tahun_dokumen")
+                if jenis and nomor and tahun:
+                    citations.append(f"{jenis} Nomor {nomor} Tahun {tahun}")
         
         # Combine context
         full_context = "\n".join(context_parts)
@@ -256,6 +393,7 @@ class AgentKnowledgeBridge:
             sources=all_sources,
             file_results=file_results,
             db_results=db_result.sources if db_result else [],
+            dms_results=dms_results or [],
             citations=list(set(citations))  # Remove duplicates
         )
     
@@ -423,8 +561,11 @@ class AgentKnowledgeBridge:
         self,
         query: str,
         namespace: str = "default",
+        namespaces: Optional[List[str]] = None,
         top_k: int = 5,
-        include_sources: bool = True
+        include_sources: bool = True,
+        agent_id: Optional[str] = None,
+        dms_filters: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
         Get context untuk LLM dengan format yang optimal.
@@ -432,8 +573,11 @@ class AgentKnowledgeBridge:
         Args:
             query: User query
             namespace: Database namespace
+            namespaces: Optional list namespace untuk cross-namespace retrieval
             top_k: Number of documents
             include_sources: Include source references
+            agent_id: Optional agent ID untuk access-filtering namespace
+            dms_filters: Filter untuk DMS saat sumber DMS ikut di-query
         
         Returns:
             Dict dengan context dan metadata
@@ -441,7 +585,10 @@ class AgentKnowledgeBridge:
         result = await self.query(
             query=query,
             namespace=namespace,
-            top_k=top_k
+            namespaces=namespaces,
+            top_k=top_k,
+            agent_id=agent_id,
+            dms_filters=dms_filters
         )
         
         if not result.success:
@@ -518,6 +665,22 @@ class AgentKnowledgeBridge:
             namespace=namespace,
             limit=limit
         )
+
+    async def list_namespaces(self, agent_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        List namespace yang tersedia (dengan filtering akses bila agent_id diberikan).
+        """
+        return await self.namespace_manager.list_namespaces(agent_id=agent_id)
+
+    async def get_namespace_info(
+        self,
+        namespace: str,
+        agent_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get detail informasi namespace tertentu.
+        """
+        return await self.namespace_manager.get_namespace_info(namespace=namespace, agent_id=agent_id)
     
     async def close(self):
         """Cleanup resources."""

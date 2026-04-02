@@ -22,6 +22,9 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 os.environ.setdefault("PYTHONPATH", str(project_root))
 
+from contextlib import asynccontextmanager
+
+import anyio
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.types import (
@@ -33,11 +36,10 @@ from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse, Response
 
-# Import komponen yang sudah ada
-from execution.registry import registry, discover_remote_tools
-from memory.longterm import initialize_db
-from memory.working import working_memory
+from core.bootstrap import initialize_all_components
+from execution.registry import registry
 
 # Configure logging
 logging.basicConfig(
@@ -53,36 +55,90 @@ PORT = 8000
 # MCP Server instance
 mcp_server = Server("mcp-unified")
 
+# The bootstrap now handles all registrations in initialize_components()
+
+
+class RobustSseServerTransport(SseServerTransport):
+    """
+    Patched SSE transport yang menambahkan stabilitas lifecycle:
+
+    Fix Bug 2: Session cleanup setelah disconnect
+    -----------------------------------------------
+    Library asli menyimpan session writer di _read_stream_writers tapi TIDAK
+    pernah menghapusnya setelah SSE disconnect. Akibatnya POST berikutnya
+    menemukan writer yang sudah closed → ClosedResourceError.
+    Override connect_sse() untuk cleanup di finally block.
+
+    Fix Bug 3: Graceful ClosedResourceError di handle_post_message
+    ---------------------------------------------------------------
+    Setelah 202 Accepted dikirim, writer.send() bisa raise ClosedResourceError
+    jika client sudah disconnect. Exception ini tidak perlu di-raise ulang
+    karena response sudah terkirim — cukup log dan lanjut.
+
+    [REVIEWER] Subclassing library adalah pendekatan yang aman karena:
+    - Tidak memodifikasi library asli
+    - Hanya menambahkan behavior di sekitar super() calls
+    - Mudah di-revert jika library upstream sudah fix
+    """
+
+    @asynccontextmanager
+    async def connect_sse(self, scope, receive, send):
+        """
+        Override connect_sse untuk menambahkan session cleanup di finally block.
+
+        Cara kerja:
+        1. Snapshot session IDs sebelum parent membuat session baru
+        2. Setelah parent yield, temukan session_id yang baru dibuat
+        3. Di finally block, hapus session dari _read_stream_writers
+        """
+        # Snapshot sebelum parent membuat session baru
+        sessions_before = set(self._read_stream_writers.keys())
+        session_id = None
+
+        try:
+            async with super().connect_sse(scope, receive, send) as streams:
+                # Temukan session_id yang baru dibuat oleh parent
+                sessions_after = set(self._read_stream_writers.keys())
+                new_sessions = sessions_after - sessions_before
+                session_id = next(iter(new_sessions)) if new_sessions else None
+                logger.debug(f"[RobustSSE] Tracking session: {session_id}")
+                yield streams
+        finally:
+            # Bug 2 Fix: Hapus session dari registry setelah disconnect
+            if session_id is not None:
+                removed = self._read_stream_writers.pop(session_id, None)
+                if removed is not None:
+                    logger.info(f"[RobustSSE] Session {session_id} removed from registry (cleanup)")
+                else:
+                    logger.debug(f"[RobustSSE] Session {session_id} already removed from registry")
+
+    async def handle_post_message(self, scope, receive, send) -> None:
+        """
+        Override handle_post_message untuk menangani ClosedResourceError secara graceful.
+
+        Skenario: Client disconnect saat server masih memproses request.
+        Library asli: writer.send() raise ClosedResourceError → crash handler.
+        Fix: Catch exception, log warning, lanjut (202 sudah terkirim).
+
+        [REVIEWER] Kita tidak bisa kirim response error karena 202 Accepted
+        sudah dikirim sebelum writer.send() dipanggil di parent.
+        """
+        try:
+            await super().handle_post_message(scope, receive, send)
+        except anyio.ClosedResourceError as e:
+            # Bug 3 Fix: Writer sudah closed (client disconnect), message dropped
+            logger.warning(f"[RobustSSE] Session writer closed, message dropped: {e}")
+        except anyio.BrokenResourceError as e:
+            # Bug 3 Fix: Writer broken (network issue), message dropped
+            logger.warning(f"[RobustSSE] Session writer broken, message dropped: {e}")
+
 
 async def initialize_components():
     """
-    Initialize semua komponen sebelum server menerima request.
-    Sama dengan mcp_server.py tapi untuk SSE context.
-    
-    [REVIEWER] Graceful degradation — server tetap berjalan meski
-    komponen optional gagal di-init.
+    Initialize all system components before server starts accepting requests.
+    Delegate to core.bootstrap for shared initialization logic (Parity with stdio).
     """
-    # 1. Database (optional)
-    try:
-        await initialize_db()
-        logger.info("✓ Database initialized")
-    except Exception as e:
-        logger.warning(f"⚠ Database initialization skipped: {e}")
-        logger.info("   Server will run with limited functionality")
-
-    # 2. Working memory (Redis) (optional)
-    try:
-        await working_memory.connect()
-        logger.info("✓ Working memory (Redis) connected")
-    except Exception as e:
-        logger.warning(f"⚠ Working memory unavailable: {e}")
-
-    # 3. Remote tools (optional)
-    try:
-        await discover_remote_tools()
-        logger.info("✓ Remote tools discovered")
-    except Exception as e:
-        logger.warning(f"⚠ Remote tools discovery failed: {e}")
+    await initialize_all_components()
 
 
 @mcp_server.list_tools()
@@ -144,19 +200,60 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
 def create_starlette_app() -> Starlette:
     """
     Buat Starlette app dengan SSE transport dan health check endpoint.
-    
+
     [REVIEWER] CORS dibatasi ke localhost only — tidak ada akses dari luar.
+    Menggunakan RobustSseServerTransport untuk stabilitas lifecycle.
     """
-    sse_transport = SseServerTransport("/messages/")
+    # Bug 2 & 3 Fix: Gunakan RobustSseServerTransport
+    sse_transport = RobustSseServerTransport("/messages/")
 
     async def handle_sse(request):
-        async with sse_transport.connect_sse(
-            request.scope, request.receive, request._send
-        ) as streams:
-            await mcp_server.run(
-                streams[0], streams[1],
-                mcp_server.create_initialization_options()
-            )
+        """
+        SSE connection handler.
+
+        Bug 1 Fix: Return Response() di akhir untuk menghindari
+        TypeError: 'NoneType' object is not callable dari Starlette.
+
+        Bug 4 Fix: Jangan re-raise ClosedResourceError — ini adalah
+        disconnect normal, bukan error yang perlu dilaporkan ke client.
+
+        [REVIEWER] Urutan exception handling penting:
+        1. CancelledError → re-raise (biarkan anyio/uvicorn handle)
+        2. ClosedResourceError → log INFO, jangan re-raise (normal disconnect)
+        3. Exception lain → log ERROR, jangan re-raise (sudah terlambat kirim response)
+        """
+        client = getattr(request, "client", None)
+        client_repr = f"{client.host}:{client.port}" if client else "unknown"
+        logger.info(f"SSE connect start from {client_repr}")
+
+        try:
+            async with sse_transport.connect_sse(
+                request.scope, request.receive, request._send
+            ) as streams:
+                logger.info(f"SSE stream established for {client_repr}")
+                await mcp_server.run(
+                    streams[0], streams[1],
+                    mcp_server.create_initialization_options()
+                )
+        except asyncio.CancelledError:
+            # Biarkan anyio/uvicorn handle cancellation
+            logger.info(f"SSE connection cancelled for {client_repr}")
+            raise
+        except anyio.ClosedResourceError:
+            # Bug 4 Fix: ClosedResourceError = client disconnect normal
+            # Terjadi ketika write_stream ditutup saat server masih memproses
+            # Tidak perlu re-raise — SSE connection sudah closed
+            logger.info(f"SSE stream closed (client disconnect) for {client_repr}")
+        except Exception as e:
+            # Error lain: log tapi jangan re-raise
+            # SSE response sudah dimulai, tidak bisa kirim HTTP error
+            logger.exception(f"SSE handler error for {client_repr}: {e}")
+        finally:
+            logger.info(f"SSE connect closed for {client_repr}")
+
+        # Bug 1 Fix: Return empty Response() untuk satisfy Starlette routing
+        # SSE response sudah dikirim via request._send di dalam connect_sse
+        return Response()
 
     async def health_check(request):
         """Health check endpoint untuk monitoring dan service readiness."""

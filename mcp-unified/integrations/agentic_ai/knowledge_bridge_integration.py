@@ -6,6 +6,7 @@ Auto-save hasil scraping ke knowledge database.
 """
 
 import asyncio
+import hashlib
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -21,6 +22,20 @@ from agents.profiles.legal.connectors.agent_knowledge_bridge import (
 from extractors.base_extractor import BaseExtractor
 
 logger = logging.getLogger('KnowledgeBridgeIntegration')
+
+
+def extraction_doc_id(source: str, item: Dict[str, Any], index: int, base_url: str) -> str:
+    """
+    ID dokumen stabil per item: utama dari URL artikel (re-run update row yang sama di pgvector).
+    Fallback: hash dari source + base_url + title + index jika URL kosong.
+    """
+    item_url = (item.get("url") or "").strip()
+    if item_url:
+        h = hashlib.sha256(item_url.encode("utf-8")).hexdigest()[:16]
+        return f"ext_{source}_{h}"
+    key = f"{source}|{base_url}|{item.get('title', '')}|{index}"
+    h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+    return f"ext_{source}_{h}"
 
 
 class ExtractorKnowledgeBridge:
@@ -72,7 +87,7 @@ class ExtractorKnowledgeBridge:
         
         if not results:
             logger.warning(f"⚠️ No results to save from {source}")
-            return {"saved": 0, "skipped": 0, "errors": 0}
+            return {"saved": 0, "skipped": 0, "errors": 0, "total": 0}
         
         saved = 0
         skipped = 0
@@ -80,9 +95,7 @@ class ExtractorKnowledgeBridge:
         
         for i, item in enumerate(results):
             try:
-                # Generate unique doc_id
-                title = item.get("title", "")[:50]
-                doc_id = f"{source}_{datetime.now().strftime('%Y%m%d')}_{i}_{hash(title) % 10000}"
+                doc_id = extraction_doc_id(source, item, i, url)
                 
                 # Prepare content
                 content_parts = [
@@ -111,7 +124,8 @@ class ExtractorKnowledgeBridge:
                     "regulation_type": item.get("type", "unknown"),
                     "number": item.get("number", ""),
                     "date": item.get("date", ""),
-                    "url": item.get("url", "")
+                    "url": item.get("url", ""),
+                    "doc_id_scheme": "url_sha256_v1",
                 }
                 
                 # Save to knowledge base
@@ -139,7 +153,7 @@ class ExtractorKnowledgeBridge:
             "errors": errors,
             "total": len(results),
             "source": source,
-            "namespace": namespace
+            "namespace": namespace,
         }
         
         logger.info(
@@ -170,9 +184,8 @@ class ExtractorKnowledgeBridge:
             await self.initialize()
         
         try:
-            # Generate doc_id
-            title = item.get("title", "")[:50]
-            doc_id = f"{source}_{datetime.now().strftime('%Y%m%d')}_{hash(title) % 10000}"
+            base_url = item.get("source_page_url") or item.get("url") or ""
+            doc_id = extraction_doc_id(source, item, 0, base_url)
             
             # Prepare content
             content = f"""Title: {item.get('title', 'N/A')}
@@ -188,6 +201,7 @@ Content: {item.get('content', 'N/A')}"""
                 "source": source,
                 "type": "regulation",
                 "extracted_at": datetime.now().isoformat(),
+                "doc_id_scheme": "url_sha256_v1",
                 **{k: v for k, v in item.items() if v}
             }
             
