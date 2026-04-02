@@ -277,16 +277,33 @@ class DailyReportService:
             return f"   (Gagal mengambil data LTM: {e})"
 
     async def generate_report(self) -> Tuple[str, List[JobReport]]:
-        """Generate the daily report message."""
+        """Generate the daily report — menggunakan output /dashboard."""
+        try:
+            import sys as _sys
+            _sys.path.insert(0, "/home/aseps/MCP/mcp-unified")
+            from services.correspondence_dashboard import CorrespondenceDashboard
+            message = CorrespondenceDashboard().get_recent_summary()
+            return message, []
+        except Exception as e:
+            now = datetime.now()
+            message = (
+                f"📊 *DASHBOARD KORESPONDENSI PUU*\n"
+                f"_{now.strftime('%d %B %Y, %H:%M')} WIB_\n\n"
+                f"⚠️ Gagal memuat data: `{str(e)}`\n"
+            )
+            return message, []
+
+    async def _generate_report_legacy(self) -> Tuple[str, List[JobReport]]:
+        """(Legacy) Job cron status report — tidak digunakan lagi."""
         now = datetime.now()
         date_str = now.strftime("%d %B %Y")
-        
+
         reports = []
         for job_id, config in self.JOBS.items():
             report = self.analyze_job_log(config)
             report.job_id = job_id
             reports.append(report)
-        
+
         success_count = sum(1 for r in reports if "✅" in r.status)
         failed_count = sum(1 for r in reports if "❌" in r.status)
         unknown_count = len(reports) - success_count - failed_count
@@ -395,21 +412,20 @@ _• Waktu dalam format WIB (UTC+7)_
         print(f"💾 Laporan disimpan ke: {report_file}")
     
     async def send_daily_report(self) -> bool:
-        """Generate and send daily report."""
-        print("📊 Daily Job Report")
+        """Generate and send daily dashboard report ke Telegram."""
+        print("📊 Daily Dashboard Report")
         print("=" * 50)
         print(f"Waktu: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print()
-        
-        message, reports = await self.generate_report()
-        self.save_report_json(reports)
-        
+
+        message, _ = await self.generate_report()
+
         success = await self.send_telegram_message(message)
-        
+
         if not success:
-            print("\n📋 LAPORAN:")
+            print("\n📋 PESAN:")
             print(message)
-        
+
         print("\n✅ Selesai!")
         return success
 

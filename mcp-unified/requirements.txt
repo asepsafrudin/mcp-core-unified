@@ -24,7 +24,12 @@ psycopg-pool
 pgvector
 
 # Cache (Opsional - untuk working memory)
-redis
+redis[hiredis]
+
+# OpenHands Integration (TASK-035)
+# SDK v1.6.0 stabil dan aktif dikembangkan (MIT License)
+# Diperlukan Docker untuk sandbox mode, atau set OPENHANDS_USE_SANDBOX=false
+openhands-ai>=1.6.0
 
 # HTTP Client
 httpx
@@ -60,3 +65,5 @@ ruff>=0.1.0
 rope>=0.20.0
 jedi>=0.18.0
 networkx>=3.0
+paddlepaddle
+paddleocr

@@ -5,6 +5,7 @@ Modul:
   1. /surat-puu/dashboard       - Surat untuk Substansi PUU (surat_untuk_substansi_puu)
   2. /surat-puu/masuk-internal  - Surat Masuk Internal PUU (surat_masuk_puu)
   3. /surat-puu/keluar          - Surat Keluar PUU (surat_keluar_puu)
+  4. /surat-puu/sync            - Sync Center (ETL & GDrive)
 
 Port: 8081
 Credentials: admin/admin123, reviewer/reviewer123, viewer/viewer123
@@ -25,10 +26,11 @@ import io
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from fastapi import FastAPI, Request, Form, Cookie
+from fastapi import FastAPI, Request, Form, Cookie, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import uvicorn
 import psycopg
+import subprocess
 from psycopg.rows import dict_row
 from knowledge.admin.auth import get_auth_manager
 
@@ -53,7 +55,7 @@ def fetch_surat_puu(search="", status_filter="", date_from="", date_to="", tgl_f
         SELECT sp.id, sp.surat_id, sp.agenda, sp.surat_dari, sp.nomor_surat,
                sp.disposisi_kepada, sp.isi_disposisi, sp.tanggal_disposisi,
                sp.status, sp.catatan_internal, sp.tanggal_diterima, sp.tanggal_selesai,
-               sp.created_at, sp.updated_at, sdl.perihal
+               sp.created_at, sp.updated_at, sdl.perihal, sp.doc_url
         FROM surat_untuk_substansi_puu sp
         LEFT JOIN surat_dari_luar_bangda sdl ON sp.surat_id = sdl.id
         WHERE 1=1
@@ -105,7 +107,7 @@ def get_substansi_stats():
             return {"by_status": {r["status"]: r["count"] for r in rows}, "total": total,
                     "with_date": with_date, "without_date": total - with_date}
 
-# ---------- Surat Masuk Internal PUU ----------
+# ---------- Surat Masuk Internal PUU (Korespondensi) ----------
 
 def fetch_surat_masuk(search="", tgl_filter="", date_from="", date_to=""):
     q = """
@@ -181,6 +183,33 @@ def get_keluar_stats():
             cur.execute("SELECT COUNT(*) as c FROM surat_keluar_puu WHERE tujuan IS NULL OR tujuan=''")
             tanpa_tujuan = cur.fetchone()["c"]
             return {"total": total, "bulan_ini": bulan_ini, "tanpa_tujuan": tanpa_tujuan}
+
+def fetch_disposisi_documents(search=""):
+    q = """
+        SELECT 
+            ld.id as ld_id,
+            ld.agenda_puu,
+            ld.tgl_diterima,
+            sp.nomor_nd,
+            sp.hal,
+            sp.dari,
+            dd.doc_url,
+            dd.sync_status,
+            dd.generation_status,
+            dd.error_message
+        FROM lembar_disposisi ld
+        JOIN surat_masuk_puu sp ON sp.id = ld.surat_id
+        LEFT JOIN disposisi_documents dd ON dd.lembar_disposisi_id = ld.id
+        WHERE 1=1
+    """
+    p = []
+    if search:
+        q += " AND (ld.agenda_puu ILIKE %s OR sp.nomor_nd ILIKE %s OR sp.hal ILIKE %s)"
+        s = f"%{search}%"; p += [s, s, s]
+    q += " ORDER BY ld.id DESC"
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(q, p); return cur.fetchall()
 
 # ================================================================
 # APP
@@ -259,6 +288,8 @@ def navbar_html(username, active_tab):
         ("/surat-puu/dashboard", "📋 Substansi PUU"),
         ("/surat-puu/masuk-internal", "📥 Surat Masuk PUU"),
         ("/surat-puu/keluar", "📤 Surat Keluar PUU"),
+        ("/surat-puu/arsip-disposisi", "📄 Lembar Disposisi"),
+        ("/surat-puu/sync", "🔄 Sync Center"),
     ]
     tab_html = "".join(
         f'<a href="{url}" class="{"active" if url == active_tab else ""}">{label}</a>'
@@ -390,7 +421,7 @@ async def page_substansi(
         </div>
         <table><thead><tr>
           <th>ID</th><th>Agenda</th><th>Surat Dari</th><th>Nomor Surat</th>
-          <th>Perihal</th><th>Tgl Disposisi</th><th>Tgl Diterima</th><th>Status</th><th>Aksi</th>
+          <th>Perihal</th><th>Tgl Disposisi</th><th>Tgl Diterima</th><th>Status</th><th>Dokumen</th><th>Aksi</th>
         </tr></thead><tbody>
         {% for r in records %}
         <tr>
@@ -402,6 +433,13 @@ async def page_substansi(
           <td>{{ r.tanggal_disposisi.strftime('%d/%m/%Y') if r.tanggal_disposisi else '-' }}</td>
           <td>{{ r.tanggal_diterima.strftime('%d/%m/%Y') if r.tanggal_diterima else '<span class=text-muted>Belum diisi</span>' }}</td>
           <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
+          <td>
+            {% if r.doc_url %}
+              <a href="{{ r.doc_url }}" target="_blank" class="btn btn-primary btn-sm">Buka ↗</a>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
           <td><button class="btn btn-primary btn-sm" onclick="showModal({{ r.id }},{
             modalTanggal:'{{ r.tanggal_diterima.strftime(\'%Y-%m-%d\') if r.tanggal_diterima else \'\' }}',
             modalStatus:'{{ r.status }}',
@@ -642,6 +680,256 @@ async def export_keluar(surat_puu_token: Optional[str] = Cookie(None), search: s
     out.seek(0)
     return Response(content=out.getvalue(), media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=keluar_puu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"})
+
+# ================================================================
+# MODULE 4 — SYNC CENTER
+# ================================================================
+
+def get_sync_status():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT unit_name, last_synced_at, last_row_count FROM korespondensi_source_config ORDER BY id")
+            sources = cur.fetchall()
+            cur.execute("SELECT started_at, finished_at, inserted_rows, total_rows FROM correspondence_sync_runs ORDER BY started_at DESC LIMIT 5")
+            history = cur.fetchall()
+            return {"sources": sources, "history": history}
+
+def run_script(script_name: str):
+    root_dir = Path(__file__).parent.parent.parent.parent
+    script_path = root_dir / "scripts" / script_name
+    venv_python = root_dir / ".venv" / "bin" / "python3"
+    
+    import os
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(root_dir / "mcp-unified")
+    # Explicitly set credentials for 2026 Master ETL
+    if script_name == "etl_surat_luar_2026.py":
+        env["GOOGLE_WORKSPACE_TOKEN_FILE"] = "/home/aseps/MCP/config/credentials/google/puubangda/token.json"
+        env["GOOGLE_WORKSPACE_CREDENTIALS_PATH"] = "/home/aseps/MCP/config/credentials/google/puubangda"
+
+    try:
+        # Menjalankan script secara background dengan output ke log jika perlu
+        subprocess.run([str(venv_python), str(script_path)], 
+                     cwd=str(root_dir / "mcp-unified"),
+                     env=env,
+                     check=True, capture_output=True)
+        return True
+    except Exception as e:
+        print(f"Sync execution failed ({script_name}): {e}")
+        return False
+
+@app.get("/surat-puu/sync", response_class=HTMLResponse)
+async def page_sync(surat_puu_token: Optional[str] = Cookie(None)):
+    auth = verify_session(surat_puu_token)
+    if not auth: return RedirectResponse("/surat-puu/login", 303)
+    data = get_sync_status()
+    from jinja2 import Template
+    
+    html = """<!DOCTYPE html><html><head><title>Sync Center</title>""" + SHARED_STYLE + """
+    <style>
+      .sync-box { display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; margin-bottom:30px; }
+      .sync-card { background:white; padding:20px; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.05); border:1px solid #e0e0e0; display:flex; flex-direction:column; }
+      .sync-card h2 { font-size:15px; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+      .sync-card p { font-size:12px; color:#666; margin-bottom:15px; line-height:1.5; flex-grow:1; }
+      .btn-sync { width:100%; padding:10px; background:#1a237e; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer; font-size:13px; }
+      .btn-sync:hover { background:#283593; }
+      .btn-sync:disabled { background:#ccc; cursor:not-allowed; }
+      .status-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:20px; }
+      .status-table th { background:#f8f9fa; color:#444; font-weight:600; padding:8px; text-align:left; border-bottom:1px solid #eee; }
+      .status-table td { padding:8px; border-bottom:1px solid #eee; }
+      .footer-note { font-size:10px; color:#999; margin-top:10px; font-style:italic; }
+    </style>
+    </head><body>
+    """ + navbar_html(auth.user_id, "/surat-puu/sync") + """
+    <div class="container">
+      <div class="sync-box">
+        <div class="sync-card">
+          <h2>🌐 Sync Master Bangda (ULA)</h2>
+          <p>Tarik data <strong>Master Inbound 2026</strong> dari ULA (Unit Layanan Administrasi). Data ini berisi seluruh surat dari luar Ditjen Bangda.</p>
+          <form method="POST" action="/surat-puu/sync/master">
+            <button type="submit" class="btn-sync" style="background:#2e7d32" onclick="this.disabled=true; this.textContent='🌐 Menjalankan Master ETL...'; this.form.submit();">🚀 Sync Master Surat Luar</button>
+          </form>
+          <div class="footer-note">Gunakan untuk memperbarui data 'Master Inbound' (502+ baris).</div>
+        </div>
+
+        <div class="sync-card">
+          <h2>📥 Sync Korespondensi Internal</h2>
+          <p>Tarik data dari <strong>6 Spreadsheet Unit</strong>. Termasuk filtering PUU dan sinkronisasi ke tabel surat_masuk_puu (internal).</p>
+          <form method="POST" action="/surat-puu/sync/etl">
+            <button type="submit" class="btn-sync" onclick="this.disabled=true; this.textContent='📦 Menjalankan ETL...'; this.form.submit();">🚀 Sync Korespondensi Internal</button>
+          </form>
+          <div class="footer-note">Gunakan jika ada disposisi baru yang didisposisikan ke substansi PUU.</div>
+        </div>
+        
+        <div class="sync-card">
+          <h2>☁️ Sinkronisasi GDrive Disposisi</h2>
+          <p>Sinkronkan status file disposisi lokal dengan <strong>Google Drive</strong> untuk kearsipan digital.</p>
+          <form method="POST" action="/surat-puu/sync/gdrive">
+            <button type="submit" class="btn-sync" style="background:#4285F4" onclick="this.disabled=true; this.textContent='☁️ Mensinkronkan GDrive...'; this.form.submit();">☁️ Sinkron GDrive (Disposisi)</button>
+          </form>
+          <div class="footer-note">Jalankan secara rutin setelah proses Mail Merge.</div>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <div class="table-info">📊 Status Sumber Data (GSheets API)</div>
+        <table class="status-table">
+          <thead><tr><th>Unit / Sheet</th><th>Baris Terakhir</th><th>Sinkron Terakhir</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for s in data.sources %}
+            <tr>
+              <td><strong>{{ s.unit_name }}</strong></td>
+              <td>{{ s.last_row_count }} baris</td>
+              <td>{{ s.last_synced_at.strftime('%d/%m/%Y %H:%M') if s.last_synced_at else '-' }}</td>
+              <td><span class="badge badge-selesai">Active</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="table-container" style="margin-top:20px;">
+        <div class="table-info">🕒 Riwayat Eksekusi ETL</div>
+        <table class="status-table">
+          <thead><tr><th>Waktu Mulai</th><th>Selesai</th><th>Record Baru</th><th>Total</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for h in data.history %}
+            <tr>
+              <td>{{ h.started_at.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+              <td>{{ h.finished_at.strftime('%H:%M:%S') if h.finished_at else 'Running...' }}</td>
+              <td><span style="color:green">+{{ h.inserted_rows }}</span></td>
+              <td>{{ h.total_rows }}</td>
+              <td><span class="badge badge-diterima">Success</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    </body></html>"""
+    return Template(html).render(data=data)
+
+@app.post("/surat-puu/sync/master")
+async def trigger_master(background_tasks: BackgroundTasks, surat_puu_token: Optional[str] = Cookie(None)):
+    if not verify_session(surat_puu_token): return RedirectResponse("/surat-puu/login", 303)
+    background_tasks.add_task(run_script, "etl_surat_luar_2026.py")
+    return RedirectResponse("/surat-puu/sync?msg=Master_Started", 303)
+
+@app.post("/surat-puu/sync/etl")
+async def trigger_etl(background_tasks: BackgroundTasks, surat_puu_token: Optional[str] = Cookie(None)):
+    if not verify_session(surat_puu_token): return RedirectResponse("/surat-puu/login", 303)
+    background_tasks.add_task(run_script, "etl_korespondensi_db_centric.py")
+    return RedirectResponse("/surat-puu/sync?msg=ETL_Started", 303)
+
+@app.post("/surat-puu/sync/gdrive")
+async def trigger_gdrive(background_tasks: BackgroundTasks, surat_puu_token: Optional[str] = Cookie(None)):
+    if not verify_session(surat_puu_token): return RedirectResponse("/surat-puu/login", 303)
+    background_tasks.add_task(run_script, "sync_disposisi_to_gdrive.py")
+    return RedirectResponse("/surat-puu/sync?msg=GDrive_Started", 303)
+
+# ================================================================
+# MODULE 5 — ARSIP LEMBAR DISPOSISI
+# ================================================================
+
+@app.get("/surat-puu/arsip-disposisi", response_class=HTMLResponse)
+async def page_arsip_disposisi(
+    surat_puu_token: Optional[str] = Cookie(None),
+    search: str = ""
+):
+    auth = verify_session(surat_puu_token)
+    if not auth: return RedirectResponse("/surat-puu/login", 303)
+    records = fetch_disposisi_documents(search=search)
+    from jinja2 import Template
+
+    html = """<!DOCTYPE html><html><head><title>Arsip Lembar Disposisi</title>""" + SHARED_STYLE + """
+    <style>
+        .btn-action { padding:6px 12px; background:#2e7d32; color:white; border:none; border-radius:4px; font-weight:600; cursor:pointer; font-size:12px; text-decoration:none; display:inline-block; }
+        .btn-sync-action { background:#1565c0; }
+        .status-ready { color:#2e7d32; font-weight:bold; }
+        .status-pending { color:#f57c00; }
+        .status-error { color:#d32f2f; }
+        .action-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    </style>
+    </head><body>
+    """ + navbar_html(auth.user_id, "/surat-puu/arsip-disposisi") + """
+    <div class="container">
+      <div class="action-bar">
+        <h2 style="font-size:18px; color:#1a237e;">📄 Arsip Lembar Disposisi (Mail Merge)</h2>
+        <div style="display:flex; gap:10px;">
+            <form method="POST" action="/surat-puu/disposisi/generate">
+                <button type="submit" class="btn-action" onclick="this.disabled=true; this.textContent='⏳ Generating...'; this.form.submit();">🚀 Generate DOCX (Local)</button>
+            </form>
+            <form method="POST" action="/surat-puu/disposisi/sync">
+                <button type="submit" class="btn-action btn-sync-action" onclick="this.disabled=true; this.textContent='⏳ Syncing...'; this.form.submit();">☁️ Sync to Google Drive</button>
+            </form>
+            <form method="POST" action="/surat-puu/disposisi/mailmerge">
+                <button type="submit" class="btn-action" style="background:#673ab7" onclick="this.disabled=true; this.textContent='⏳ Mailing...'; this.form.submit();">📝 Mailmerge External (GDocs)</button>
+            </form>
+        </div>
+      </div>
+
+      <form method="GET" action="/surat-puu/arsip-disposisi" class="filter-bar">
+        <div class="filter-group"><label>Cari</label><input type="text" name="search" value="{{ search }}" placeholder="Agenda, Nomor ND, Hal..."></div>
+        <button type="submit" class="btn-filter">Cari</button>
+        <a href="/surat-puu/arsip-disposisi" class="btn-reset">Reset</a>
+      </form>
+
+      <div class="table-container">
+        <div class="table-info">Ditemukan {{ records|length }} lembar disposisi</div>
+        <table><thead><tr>
+          <th>Agenda PUU</th><th>Nomor ND</th><th>Hal</th><th>Tgl Diterima</th><th>Status Sync</th><th>Link Dokumen</th>
+        </tr></thead><tbody>
+        {% for r in records %}
+        <tr>
+          <td><strong>{{ r.agenda_puu or '-' }}</strong></td>
+          <td>{{ r.nomor_nd or '-' }}</td>
+          <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ r.hal or '' }}">{{ r.hal or '-' }}</td>
+          <td>{{ r.tgl_diterima.strftime('%d/%m/%Y') if r.tgl_diterima else '-' }}</td>
+          <td>
+            {% if r.sync_status == 'synced' %}
+              <span class="badge badge-selesai">✓ Synced</span>
+            {% elif r.generation_status == 'local_ready' %}
+              <span class="badge badge-pending">Ready to Sync</span>
+            {% elif r.generation_status == 'failed' %}
+              <span class="badge badge-danger" title="{{ r.error_message }}">⚠ Failed</span>
+            {% else %}
+              <span class="text-muted">No Document</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.doc_url %}
+              <a href="{{ r.doc_url }}" target="_blank" class="btn btn-primary btn-sm">Buka Dokumen ↗</a>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody></table>
+        {% if not records %}<div style="padding:40px;text-align:center;color:#999">Tidak ada data lembar disposisi</div>{% endif %}
+      </div>
+    </div>
+    </body></html>"""
+
+    return Template(html).render(records=records, search=search)
+
+@app.post("/surat-puu/disposisi/generate")
+async def trigger_generate_disposisi(background_tasks: BackgroundTasks, surat_puu_token: Optional[str] = Cookie(None)):
+    if not verify_session(surat_puu_token): return RedirectResponse("/surat-puu/login", 303)
+    background_tasks.add_task(run_script, "generate_disposisi_docs.py")
+    return RedirectResponse("/surat-puu/arsip-disposisi?msg=Generation_Started", 303)
+
+@app.post("/surat-puu/disposisi/sync")
+async def trigger_sync_disposisi(background_tasks: BackgroundTasks, surat_puu_token: Optional[str] = Cookie(None)):
+    if not verify_session(surat_puu_token): return RedirectResponse("/surat-puu/login", 303)
+    background_tasks.add_task(run_script, "sync_disposisi_to_gdrive.py")
+    return RedirectResponse("/surat-puu/arsip-disposisi?msg=Sync_Started", 303)
+
+@app.post("/surat-puu/disposisi/mailmerge")
+async def trigger_mailmerge_external(background_tasks: BackgroundTasks, surat_puu_token: Optional[str] = Cookie(None)):
+    if not verify_session(surat_puu_token): return RedirectResponse("/surat-puu/login", 303)
+    background_tasks.add_task(run_script, "mailmerge_puu_surat.py")
+    return RedirectResponse("/surat-puu/arsip-disposisi?msg=Mailmerge_Started", 303)
 
 # ================================================================
 # MAIN

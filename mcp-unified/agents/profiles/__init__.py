@@ -23,6 +23,7 @@ from .research_agent import ResearchAgent
 from .filesystem_agent import FilesystemAgent
 from .legal_agent import LegalAgent
 from .office_admin_agent import OfficeAdminAgent
+from .app_developer_agent import AppDeveloperAgent
 
 __all__ = [
     "CodeAgent",
@@ -31,4 +32,5 @@ __all__ = [
     "FilesystemAgent",
     "LegalAgent",
     "OfficeAdminAgent",
+    "AppDeveloperAgent",
 ]

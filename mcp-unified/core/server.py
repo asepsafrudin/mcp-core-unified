@@ -9,11 +9,49 @@ import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from memory.longterm import initialize_db
+from memory.longterm import initialize_db, memory_list
 from memory.working import working_memory
 from messaging.queue_client import mq_client
 from security.auth import auth_manager
 from security.audit import audit_logger, AuditEventType, AuditSeverity
+
+# Tool imports for SSE parity with stdio MCP server
+from scheduler.tools import get_scheduler_tools
+from integrations.gdrive.tools import (
+    gdrive_list_files,
+    gdrive_search_files,
+    gdrive_get_file_info,
+    gdrive_create_folder,
+    gdrive_upload_file,
+    gdrive_download_file,
+    gdrive_delete_file,
+)
+from integrations.google_workspace.tools import (
+    gmail_list_messages,
+    gmail_send_message,
+    calendar_list_events,
+    people_list_contacts,
+    people_search_contacts,
+    sheets_read_values,
+)
+from integrations.whatsapp.tools import (
+    whatsapp_get_status,
+    whatsapp_send_message,
+    whatsapp_get_qr,
+    whatsapp_list_chats,
+    whatsapp_get_messages,
+)
+from integrations.common.sync import (
+    tool_sync_communications,
+    tool_get_unified_history,
+)
+from knowledge.tools import (
+    knowledge_search,
+    knowledge_ingest_text,
+    knowledge_ingest_spreadsheet,
+    knowledge_ingest_googlesheet,
+    knowledge_list_namespaces,
+)
 
 
 async def _audit(
@@ -171,6 +209,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("message_queue_unavailable", error=str(e))
     
+    # Register local tools for SSE runtime
+    try:
+        register_local_tools_for_sse()
+        logger.info("local_tools_registered_for_sse")
+    except Exception as e:
+        logger.warning("local_tools_registration_failed", error=str(e))
+
     # Discover remote MCP tools
     try:
         # Lazy import to avoid circular dependency
@@ -228,6 +273,33 @@ async def add_correlation_id_middleware(request: Request, call_next):
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "version": settings.VERSION}
+
+
+@app.get("/ltm/latest")
+async def get_ltm_latest(
+    namespace: str = "default",
+    limit: int = 2,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Ambil data LTM terbaru dari server dengan batas maksimal 2 item.
+    """
+    safe_limit = max(1, min(limit, 2))
+    result = await memory_list(namespace=namespace, limit=safe_limit, offset=0)
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.get("error", "Failed to fetch LTM data"),
+        )
+
+    return {
+        "success": True,
+        "namespace": namespace,
+        "limit": safe_limit,
+        "total": result.get("total", 0),
+        "memories": result.get("memories", []),
+    }
 
 from observability.metrics import metrics
 from services import service_controller
@@ -457,6 +529,7 @@ async def admin_service_logs(
 # Lazy import to avoid circular dependency
 # execution.registry is not part of core layer
 _registry = None
+_tools_registered = False
 
 def get_registry():
     global _registry
@@ -464,6 +537,121 @@ def get_registry():
         from execution.registry import registry
         _registry = registry
     return _registry
+
+def register_local_tools_for_sse():
+    """Register local tools for SSE runtime to match stdio MCP registry."""
+    global _tools_registered
+    if _tools_registered:
+        return
+
+    registry = get_registry()
+
+    # Scheduler tools
+    try:
+        scheduler_tools = get_scheduler_tools()
+        for tool_func in scheduler_tools:
+            registry.register(tool_func)
+        logger.info("sse_registered_scheduler_tools", count=len(scheduler_tools))
+    except Exception as e:
+        logger.warning("sse_register_scheduler_tools_failed", error=str(e))
+
+    # Google Drive tools
+    try:
+        gdrive_tools = [
+            gdrive_list_files,
+            gdrive_search_files,
+            gdrive_get_file_info,
+            gdrive_create_folder,
+            gdrive_upload_file,
+            gdrive_download_file,
+            gdrive_delete_file,
+        ]
+        for tool_func in gdrive_tools:
+            registry.register(tool_func)
+        logger.info("sse_registered_gdrive_tools", count=len(gdrive_tools))
+    except Exception as e:
+        logger.warning("sse_register_gdrive_tools_failed", error=str(e))
+
+    # Google Workspace tools
+    try:
+        gw_tools = [
+            gmail_list_messages,
+            gmail_send_message,
+            calendar_list_events,
+            people_list_contacts,
+            people_search_contacts,
+            sheets_read_values,
+        ]
+        for tool_func in gw_tools:
+            registry.register(tool_func)
+        logger.info("sse_registered_google_workspace_tools", count=len(gw_tools))
+    except Exception as e:
+        logger.warning("sse_register_google_workspace_tools_failed", error=str(e))
+
+    # WhatsApp tools
+    try:
+        wa_tools = [
+            whatsapp_get_status,
+            whatsapp_send_message,
+            whatsapp_get_qr,
+            whatsapp_list_chats,
+            whatsapp_get_messages,
+        ]
+        for tool_func in wa_tools:
+            registry.register(tool_func)
+        logger.info("sse_registered_whatsapp_tools", count=len(wa_tools))
+    except Exception as e:
+        logger.warning("sse_register_whatsapp_tools_failed", error=str(e))
+
+    # Unified sync tools
+    try:
+        sync_tools = [
+            tool_sync_communications,
+            tool_get_unified_history,
+        ]
+        for tool_func in sync_tools:
+            registry.register(tool_func)
+        logger.info("sse_registered_sync_tools", count=len(sync_tools))
+    except Exception as e:
+        logger.warning("sse_register_sync_tools_failed", error=str(e))
+
+    # Knowledge tools
+    try:
+        kn_tools = [
+            knowledge_search,
+            knowledge_ingest_text,
+            knowledge_ingest_spreadsheet,
+            knowledge_ingest_googlesheet,
+            knowledge_list_namespaces,
+        ]
+        for tool_func in kn_tools:
+            registry.register(tool_func)
+        logger.info("sse_registered_knowledge_tools", count=len(kn_tools))
+    except Exception as e:
+        logger.warning("sse_register_knowledge_tools_failed", error=str(e))
+
+    # Semantic tools (auto-registration)
+    try:
+        import tools.code.semantic_tools  # noqa: F401
+        logger.info("sse_registered_semantic_tools")
+    except Exception as e:
+        logger.warning("sse_register_semantic_tools_failed", error=str(e))
+
+    # Blackbox tools (auto-registration)
+    try:
+        import integrations.blackbox.tools  # noqa: F401
+        logger.info("sse_registered_blackbox_tools")
+    except Exception as e:
+        logger.warning("sse_register_blackbox_tools_failed", error=str(e))
+
+    # Monitoring tools (auto-registration)
+    try:
+        import core.monitoring.health_tools  # noqa: F401
+        logger.info("sse_registered_monitoring_tools")
+    except Exception as e:
+        logger.warning("sse_register_monitoring_tools_failed", error=str(e))
+
+    _tools_registered = True
 
 from pydantic import BaseModel
 
