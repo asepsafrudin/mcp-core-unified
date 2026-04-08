@@ -1134,6 +1134,10 @@ class OllamaChatService(AIService):
         # Fallback to normal response
         resp = await self.generate_response(kwargs.get('user_id', 0), kwargs.get('message', ''))
         return resp.text
+    
+    async def generate_with_image(self, *args, **kwargs) -> AIResponse:
+        """Ollama simple implementation doesn't support images yet here."""
+        raise NotImplementedError("Ollama service currently doesn't support images in this implementation.")
 
 
 # ==============================================================================
@@ -1210,7 +1214,7 @@ class AIServiceManager:
                 logger.warning(f"⚠️ Failed to initialize OpenAI: {e}")
         
         # --- Provider 4: Ollama (LOCAL NUCLEAR FALLBACK) ---
-        if self.config.ai.ollama_url:
+        if getattr(self.config.ai, "ollama_url", None):
             try:
                 ollama = OllamaChatService(
                     base_url=self.config.ai.ollama_url,

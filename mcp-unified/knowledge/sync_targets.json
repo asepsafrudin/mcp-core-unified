@@ -1,0 +1,26 @@
+[
+    {
+        "name": "Sekretariat - Surat Masuk",
+        "spreadsheet_id": "1GRLdIr0ONXKTGWxPqyJW9vgcwgaYkU8YdN6eAoVPAeQ",
+        "range_name": "Surat Masuk!A1:Z1000",
+        "namespace": "korespondensi_sekretariat_eksternal"
+    },
+    {
+        "name": "Sekretariat - Surat Masuk Internal (Kompilasi)",
+        "spreadsheet_id": "1GRLdIr0ONXKTGWxPqyJW9vgcwgaYkU8YdN6eAoVPAeQ",
+        "range_name": "Kompilasi!A1:Z1000",
+        "namespace": "korespondensi_sekretariat_internal_masuk"
+    },
+    {
+        "name": "Sekretariat - Disposisi PUU",
+        "spreadsheet_id": "1GRLdIr0ONXKTGWxPqyJW9vgcwgaYkU8YdN6eAoVPAeQ",
+        "range_name": "'Dispo PUU'!A1:Z1000",
+        "namespace": "korespondensi_sekretariat_dispo_puu"
+    },
+    {
+        "name": "Sekretariat - Surat Keluar PUU",
+        "spreadsheet_id": "1tSqu5XljsU9a-ZCS_yk0dswWQgsHEWS9IhF32i4Ll9Y",
+        "range_name": "'Surat Keluar PUU'!A1:Z1000",
+        "namespace": "korespondensi_sekretariat_internal"
+    }
+]

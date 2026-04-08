@@ -1,0 +1,12 @@
+
+# 🤖 MCP Unified Agent Rules
+
+Always refer to the following local rulebook for the standard tool usage, planning flow, and namespace isolation in this project:
+
+- **Path**: `/home/aseps/MCP/mcp-unified/AGENT_RULES.md`
+
+## Key Execution Patterns:
+1. **Namespace Isolation**: ALWAYS provide the `namespace` parameter when calling tools from `intelligence/` (planning) or `memory/` (LTM). Use the current project folder name (e.g., 'mcp-unified' or 'korespondensi-server').
+2. **Local Planning**: Before delegating complex tasks to other agents or OpenHands, use `create_plan` first to establish a local reasoning chain.
+3. **OpenHands Observability**: For long-running coding tasks, use `mcp://openhands/task/{task_id}/logs` to observe real-time progress.
+4. **App Development**: Use `AppDeveloperAgent` for end-to-end coding tasks via `run_coding_task`.
