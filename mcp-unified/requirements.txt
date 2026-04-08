@@ -48,6 +48,7 @@ bcrypt>=4.1.0
 # Vision Tools (Opsional)
 Pillow>=10.0.0
 pymupdf>=1.23.0
+google-cloud-vision>=3.4.0
 
 # Office Document Processing (Opsional)
 python-docx>=1.0.0

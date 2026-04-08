@@ -30,21 +30,23 @@ Server ini dibangun dengan mempertimbangkan skalabilitas, ketahanan, dan observa
 
 ```
 mcp-unified/
-├── execution/        # Logika eksekusi tool, registry (tools, resources, prompts), workspace, dan discovery engine
-├── plugins/          # Tempat menaruh custom tools, resources, dan prompts (Hot-reloadable)
+├── agents/           # Logika agen (App Developer, Code Agent, Research, dll)
+├── core/             # Core logic (FastAPI server, auth, middleware)
+├── domains/          # Definisi domain talent (development, legal, communications)
+├── execution/        # Logika eksekusi tool, registry, workspace, dan discovery engine
+├── plugins/          # Custom tools, resources, dan prompts (Hot-reloadable)
 ├── intelligence/     # Komponen cerdas (planner, self-healing)
-├── memory/           # Manajemen memori (jangka panjang & kerja) dengan PostgreSQL + pgvector
-├── messaging/        # Klien untuk message queue (RabbitMQ)
+├── integrations/     # Integrasi eksternal (Telegram, WhatsApp, GDrive, OpenHands)
+├── memory/           # Manajemen memori (PostgreSQL + pgvector)
+├── messaging/        # Message queue (RabbitMQ)
+├── monitoring/       # Health checks dan dashboard background services
 ├── observability/    # Logging terstruktur dan metrik
-├── simulation/       # Simulasi dan testing (greyware operations)
-├── scripts/          # Runner scripts (run_api.sh, run_sse.sh)
+├── scheduler/        # Sistem penjadwalan tugas (daemon)
+├── simulation/       # Simulasi dan testing
+├── scripts/          # Runner scripts (run_api.sh, run_sse.sh, run_mcp_with_services.sh)
 ├── tests/            # Tes unit dan integrasi
 ├── mcp_server.py     # Entry point untuk MCP SDK (stdio protocol)
-├── worker_node.py    # Worker node untuk mode terdistribusi (RabbitMQ)
-├── run.sh            # Skrip untuk menjalankan FastAPI HTTP server
-├── run_api.sh         # Wrapper -> scripts/run_api.sh (kompatibilitas)
-├── run_sse.sh         # Wrapper -> scripts/run_sse.sh (kompatibilitas)
-├── Makefile           # Shortcut targets (run/test)
+├── worker_node.py    # Worker node untuk mode terdistribusi
 ├── requirements.txt  # Dependensi Python
 └── README.md         # Dokumentasi ini
 ```
@@ -270,9 +272,35 @@ Konfigurasi server diatur melalui environment variable. Salin file `.env.example
     {"isError": true, "content": [{"type": "text", "text": "error message"}]}
     ```
 
-## Testing
+## 🤖 Agen Cerdas (Intelligence Layer)
 
-Jalankan test suite dengan pytest:
+`mcp-unified` bukan sekadar server tool, tetapi juga mengelola agen cerdas yang memiliki spesialisasi domain.
+
+### Daftar Agen yang Tersedia:
+
+1.  **App Developer Agent** (`app_developer_agent`): 
+    *   **Peran**: Spesialis pengembangan aplikasi ujung-ke-ujung.
+    *   **Kapasitas**: Scaffolding, CRUD generation, DB migrations, Full-stack development.
+    *   **Integrasi**: Menggunakan **OpenHands SDK** untuk eksekusi tugas coding di lingkungan terisolasi (sandbox).
+
+2.  **Code Agent** (`code_agent`):
+    *   **Peran**: Analisis dan review kode.
+    *   **Kapasitas**: Security audit, refactoring, quality checks, bug finding.
+
+3.  **Research Agent** (`research_agent`):
+    *   **Peran**: Pengumpulan dan sintesis informasi.
+    *   **Kapasitas**: Web browsing, documentation analysis, summarization.
+
+4.  **Legal Agent** (`legal_agent`):
+    *   **Peran**: Analisis dokumen hukum dan regulasi.
+    *   **Kapasitas**: Pencarian UU, cek kepatuhan regulasi, ekstraksi klausa dokumen.
+
+### Cara Kerja Agen:
+Agen menerima tugas → Melakukan penalaran (*Reasoning*) → Membuat rencana (*Planning*) → Menggunakan tool yang relevan (via MCP Registry) → Mengembalikan hasil.
+
+---
+
+## Testing
 
 ```bash
 # Jalankan semua test

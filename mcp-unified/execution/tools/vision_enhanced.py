@@ -805,26 +805,15 @@ async def analyze_with_ocr_fallback(
                 falling_back_to="ocr")
     
     try:
-        # Try PaddleOCR
-        from paddleocr import PaddleOCR
+        # Use OCREngine from service.py (Unified OCR system)
+        from services.ocr.service import OCREngine
+        engine = OCREngine.get_instance()
+        ocr_result = engine.run_ocr(image_path)
         
-        ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
-        result = ocr.ocr(image_path, cls=True)
-        
-        if result and result[0]:
-            texts = []
-            total_confidence = 0
-            count = 0
-            
-            for line in result[0]:
-                if line:
-                    text, confidence = line[1]
-                    texts.append(text)
-                    total_confidence += confidence
-                    count += 1
-            
-            ocr_text = "\n".join(texts)
-            avg_confidence = total_confidence / count if count > 0 else 0
+        if ocr_result and ocr_result.get("full_text"):
+            ocr_text = ocr_result["full_text"]
+            avg_confidence = ocr_result.get("nlp_quality", {}).get("avg_confidence", 0.95)
+            count = len(ocr_result.get("lines", []))
             
             # Combine dengan vision result
             combined_content = f"""Vision Analysis:
@@ -837,19 +826,18 @@ OCR Text Extraction:
                 success=True,
                 content=combined_content,
                 confidence=avg_confidence,
-                model="hybrid_vision_ocr",
+                model="hybrid_vision_google_ocr",
                 processing_time=vision_result.processing_time,
                 image_path=image_path,
                 metadata={
                     "method": "hybrid",
                     "vision_confidence": vision_result.confidence if vision_result.success else 0,
                     "ocr_confidence": avg_confidence,
-                    "ocr_lines": count
+                    "ocr_lines": count,
+                    "engine": "google_vision"
                 }
             )
         
-    except ImportError:
-        logger.warning("paddleocr_not_available")
     except Exception as e:
         logger.error("ocr_fallback_failed", error=str(e))
     

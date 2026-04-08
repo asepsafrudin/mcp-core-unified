@@ -1,0 +1,7 @@
+images/need_label_2026-04-02T19-59-31_test-2026-02-20T06-45-06-823Z.png	[{"transcription": "Google_Test", "points": [[10, 10], [100, 10], [100, 40], [10, 40]]}]
+images/need_label_2026-04-02T19-59-31_test-2026-02-20T06-45-06-823Z.png	[{"transcription": "Google_Test", "points": [[10, 10], [100, 10], [100, 40], [10, 40]]}]
+images/need_label_2026-04-02T19-59-31_test-2026-02-20T06-45-06-823Z.png	[{"transcription": "Google_Test", "points": [[10, 10], [100, 10], [100, 40], [10, 40]]}]
+images/need_label_2026-04-02T19-59-31_test-2026-02-20T06-45-06-823Z.png	[{"transcription": "Google_Test", "points": [[10, 10], [100, 10], [100, 40], [10, 40]]}]
+images/need_label_2026-04-02T19-59-31_test-2026-02-20T06-45-06-823Z.png	[{"transcription": "Google_Test", "points": [[10, 10], [100, 10], [100, 40], [10, 40]]}]
+images/need_label_2026-04-02T19-59-31_test-2026-02-20T06-45-06-823Z.png	[{"transcription": "Google_Test", "points": [[10, 10], [100, 10], [100, 40], [10, 40]]}]
+images/need_label_2026-04-02T19-59-31_test-2026-02-20T06-45-06-823Z.png	[{"transcription": "Google_Test", "points": [[10, 10], [100, 10], [100, 40], [10, 40]]}]
