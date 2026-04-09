@@ -9,6 +9,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
+from core.gateway import router as gateway_router
 from memory.longterm import initialize_db, memory_list
 from memory.working import working_memory
 from messaging.queue_client import mq_client
@@ -941,3 +942,6 @@ async def get_current_user_info(user: dict = Depends(get_current_user)):
         "permissions": user.get("permissions"),
         "auth_method": user.get("auth_method")
     }
+
+# Gateway Router Inclusion
+app.include_router(gateway_router)
