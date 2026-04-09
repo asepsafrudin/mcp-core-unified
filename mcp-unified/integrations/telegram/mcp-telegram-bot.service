@@ -1,0 +1,27 @@
+[Unit]
+Description=MCP Telegram Bot — AI Agent Gateway via Telegram
+Documentation=file:///home/aseps/MCP/mcp-unified/integrations/telegram/README.md
+After=network.target mcp-unified.service
+Wants=mcp-unified.service
+
+[Service]
+Type=simple
+User=aseps
+WorkingDirectory=/home/aseps/MCP/mcp-unified
+Environment="PYTHONPATH=/home/aseps/MCP/mcp-unified"
+EnvironmentFile=/home/aseps/MCP/.env
+
+ExecStart=/home/aseps/MCP/.venv/bin/python3 /home/aseps/MCP/mcp-unified/integrations/telegram/run.py
+
+Restart=always
+RestartSec=15
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mcp-telegram-bot
+
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
