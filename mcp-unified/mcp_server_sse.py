@@ -40,6 +40,7 @@ from starlette.responses import JSONResponse, Response
 
 from core.bootstrap import initialize_all_components
 from execution.registry import registry
+from core.gateway import reverse_proxy_gateway
 
 # Configure logging
 logging.basicConfig(
@@ -284,6 +285,7 @@ def create_starlette_app() -> Starlette:
             Route("/health", health_check, methods=["GET"]),
             Route("/sse", handle_sse),
             Mount("/messages/", app=sse_transport.handle_post_message),
+            Route("/services/{service_name}/{path:path}", reverse_proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]),
         ],
         middleware=middleware,
     )
