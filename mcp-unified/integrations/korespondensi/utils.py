@@ -204,21 +204,29 @@ def extract_puu_received_date(posisi_str: str) -> Optional[str]:
     if "PUU" not in posisi_upper:
         return None
     
-    # Pattern 1: Multi-unit format "Unit1, Unit2, PUU, Unit3 DD/M"
-    # Contoh: "PRC, KEU, PUU, Umum 6/1"
-    multi_unit_pattern = re.compile(
-        r'^[A-Za-z\s,]+PUU[A-Za-z\s,]*\s+(\d{1,2}/\d{1,2})$'
-    )
-    multi_match = multi_unit_pattern.match(posisi_str.strip())
-    if multi_match:
-        return multi_match.group(1)
-    
-    # Pattern 2: Standard format "...PUU DD/M..."
-    # Cari PUU diikuti tanggal
+    # Pattern 1: Standard format "...PUU DD/M..."
+    # Cari PUU diikuti tanggal secara langsung
     puu_date_pattern = re.compile(r'PUU\s+(\d{1,2}/\d{1,2})', re.IGNORECASE)
     match = puu_date_pattern.search(posisi_str)
     if match:
         return match.group(1)
+
+    # Pattern 2: Komma-separated multi-unit yang berakhir dengan tanggal bersama.
+    # Menangani bentuk sederhana "PRC, KEU, PUU, Umum 6/1" maupun bentuk campuran
+    # seperti "SES 16/3 KOREKSI 16/3 SES 6/4 PUU, BU 6/4".
+    trailing_multi_unit_pattern = re.compile(
+        r'PUU(?:\s*,\s*[A-Za-z]+)+\s+(\d{1,2}/\d{1,2})(?:\s|$)',
+        re.IGNORECASE,
+    )
+    multi_match = trailing_multi_unit_pattern.search(posisi_str)
+    if multi_match:
+        return multi_match.group(1)
+
+    # Pattern 3: Fallback ke parser timeline. Ini menangani format kompleks yang
+    # tetap bisa dipetakan ke event unit PUU dengan tanggal adopsi dari token sebelumnya.
+    for event in parse_posisi_timeline(posisi_str):
+        if str(event.get("unit", "")).upper() == "PUU" and event.get("date"):
+            return str(event["date"])
     
     return None
 
@@ -384,4 +392,3 @@ def format_new_letter_message(source: str, letters: List[Dict[str, Any]]) -> str
         
     msg += f"\n🔗 [Buka Dashboard]({dashboard_url})"
     return msg
-

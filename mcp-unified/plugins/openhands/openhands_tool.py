@@ -6,9 +6,10 @@ Drop-in ke folder plugins/ — auto-discovery oleh mcp-unified.
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
-from execution.registry import registry, resource_registry
+from execution import registry, resource_registry
 from memory.working import working_memory
 
 from .orchestrator import OpenHandsOrchestrator
@@ -185,17 +186,96 @@ async def cancel_coding_task(task_id: str) -> dict[str, Any]:
 # Resources for Observability                                             #
 # ──────────────────────────────────────────────────────────────────────── #
 
+from urllib.parse import urlparse, parse_qs
+
+def _get_task_id_from_uri(uri: str) -> str | None:
+    """Ekstrak task_id dari URI query (misal: mcp://openhands/task/logs?task_id=abcd)"""
+    parsed = urlparse(uri)
+    params = parse_qs(parsed.query)
+    task_id_list = params.get("task_id", [])
+    return task_id_list[0] if task_id_list else None
+
 @resource_registry.register(uri="mcp://openhands/task/logs", name="OpenHands Task Logs")
 async def get_task_logs(uri: str) -> str:
-    """Membaca log eksekusi dari workspace OpenHands. 
-    Notes: Use query param or suffix to specify task_id if needed, 
-    but for now this is a generic placeholder.
     """
-    # Logic to extract task_id from URI if pattern matching was supported
-    # Since it's not, we might need a workaround.
-    return "Log viewer (Pattern matching not yet implemented in ResourceRegistry)"
+    Membaca log eksekusi dari workspace OpenHands. 
+    Gunakan query param untuk spesifik task: mcp://openhands/task/logs?task_id=XYZ
+    """
+    task_id = _get_task_id_from_uri(uri)
+    if not task_id:
+        return "Error: Sertakan task_id dalam URI (misal: mcp://openhands/task/logs?task_id=...)"
+
+    try:
+        orchestrator = await _get_orchestrator()
+        result = await orchestrator.get_status(task_id)
+        if not result or not result.workspace_path:
+            return f"Error: Task {task_id} tidak ditemukan atau tidak memiliki workspace."
+
+        workspace = Path(result.workspace_path)
+        # Cek agent.log (SDK) atau TASK_LOG.md (Mock)
+        paths_to_check = [workspace / "agent.log", workspace / "TASK_LOG.md"]
+        
+        for p in paths_to_check:
+            if p.exists():
+                return p.read_text(encoding="utf-8")
+        
+        return f"Log file belum tersedia untuk task {task_id}."
+    except Exception as e:
+        return f"Error membaca log: {str(e)}"
 
 @resource_registry.register(uri="mcp://openhands/task/status", name="OpenHands Task Full Status")
 async def get_task_full_status(uri: str) -> str:
     """Mendapatkan status lengkap task dalam format JSON."""
-    return "Status viewer (Pattern matching not yet implemented in ResourceRegistry)"
+    task_id = _get_task_id_from_uri(uri)
+    if not task_id:
+        return "Error: Sertakan task_id dalam URI (misal: mcp://openhands/task/status?task_id=...)"
+
+    try:
+        orchestrator = await _get_orchestrator()
+        result = await orchestrator.get_status(task_id)
+        if not result:
+            return f"Error: Task {task_id} tidak ditemukan."
+            
+        return json.dumps(result.to_dict(), indent=2)
+    except Exception as e:
+        return f"Error membaca status: {str(e)}"
+
+
+@resource_registry.register(uri="mcp://openhands/task/env-context", name="OpenHands Task Environment Context")
+async def get_task_env_context(uri: str) -> str:
+    """
+    Menampilkan snapshot environment untuk task OpenHands yang sedang aktif.
+
+    Resource ini membantu debugging koneksi database dan memastikan agent tidak
+    berasumsi bahwa sandbox punya environment yang sama dengan host.
+    """
+    try:
+        orchestrator = await _get_orchestrator()
+        active_tasks = await orchestrator.list_active_tasks()
+
+        if not active_tasks:
+            return "Tidak ada task aktif. Snapshot env context tidak tersedia."
+
+        lines = [
+            "# OpenHands Environment Context",
+            "",
+            f"Active tasks: {len(active_tasks)}",
+            "",
+        ]
+        for task in active_tasks[:10]:
+            workspace = Path(task.workspace_path)
+            env_file = workspace / "ENV_CONTEXT.md"
+            lines.append(f"## Task {task.task_id}")
+            lines.append(f"- Status: {task.status}")
+            lines.append(f"- Workspace: {task.workspace_path}")
+            if env_file.exists():
+                lines.append("")
+                lines.append(env_file.read_text(encoding="utf-8").strip())
+            else:
+                lines.append("- ENV_CONTEXT.md: not found")
+            lines.append("")
+
+        return "\n".join(lines).strip() + "\n"
+    except Exception as e:
+        logger.exception("get_task_env_context error: %s", e)
+        return f"Error membaca environment context: {str(e)}"

@@ -19,6 +19,11 @@ Kamu memiliki akses ke terminal, file system (sandbox), dan web browser.
 2. Gunakan bash untuk mengecek kondisi environment sebelum menulis kode
 3. Simpan progress ke file `TASK_LOG.md` di workspace
 4. Jika menemui error, coba maksimal 3x sebelum report ke orchestrator
+5. Jika task perlu akses PostgreSQL/knowledge base, cek env runtime terlebih dahulu:
+   - `echo $DATABASE_URL`
+   - `echo $PG_HOST $PG_PORT $PG_DATABASE $PG_USER`
+   - Jangan asumsi `localhost:5432` atau `localhost:5433` benar tanpa verifikasi
+   - Pakai credential yang sudah disediakan runtime, jangan hardcode secret baru
 5. Saat task selesai, WAJIB buat file `RESULT.json` dengan format:
    {{
      "status": "success" | "failed" | "partial",
@@ -34,6 +39,7 @@ Kamu memiliki akses ke terminal, file system (sandbox), dan web browser.
 - JANGAN modifikasi file di luar workspace yang ditentukan
 - JANGAN simpan credential atau secret ke file apapun
 - Maksimum durasi eksekusi: sesuai REQUEST_TIMEOUT di config
+- Jika sandbox tidak bisa menjangkau DB host, laporkan secara eksplisit sebelum mencoba workaround yang berisiko
 
 ## Konteks mcp-unified
 Kamu dipanggil dari sistem MCP. Task yang kamu terima sudah divalidasi oleh

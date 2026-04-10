@@ -26,6 +26,22 @@ Server ini dibangun dengan mempertimbangkan skalabilitas, ketahanan, dan observa
 - **Penyimpanan**: Menggunakan PostgreSQL untuk penyimpanan jangka panjang dan Redis untuk memori kerja.
 - **Mode Terdistribusi**: Dukungan untuk worker node dengan RabbitMQ untuk pemrosesan tugas terdistribusi.
 
+## 🔧 Agent Database Access
+
+Untuk agent, IDE, atau OpenHands task yang perlu mengakses knowledge base / PostgreSQL:
+
+- [../docs/06-database/agent-startup-matrix.md](../docs/06-database/agent-startup-matrix.md)
+- [../docs/06-database/agent-db-access-notes.md](../docs/06-database/agent-db-access-notes.md)
+- [../docs/06-database/agent-db-debug-checklist.md](../docs/06-database/agent-db-debug-checklist.md)
+
+Petunjuk cepat:
+- selalu verifikasi `DATABASE_URL` dan `PG_*` di runtime
+- jangan berasumsi `localhost` sandbox sama dengan host machine
+- untuk task OpenHands, cek resource:
+  - `mcp://openhands/task/env-context` (Snapshot environment)
+  - `mcp://openhands/task/logs?task_id=XYZ` (Log eksekusi agent)
+  - `mcp://openhands/task/status?task_id=XYZ` (Status lengkap JSON)
+
 ## Struktur Direktori
 
 ```

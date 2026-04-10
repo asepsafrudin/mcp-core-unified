@@ -7,8 +7,11 @@ import os
 import asyncio
 import logging
 import httpx
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+
+from integrations.whatsapp.anomaly_report import append_anomaly_report_log
 
 logger = logging.getLogger("mcp-notifications")
 
@@ -54,7 +57,12 @@ class NotificationService:
             logger.error(f"Telegram exception: {e}")
             return False
 
-    async def send_whatsapp(self, message: str, to: Optional[str] = None) -> bool:
+    async def send_whatsapp(
+        self,
+        message: str,
+        to: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """Send message to WhatsApp."""
         recipient = to or self.wa_recipient
         if not recipient:
@@ -81,11 +89,59 @@ class NotificationService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 if response.status_code in [200, 201]:
+                    try:
+                        append_anomaly_report_log(
+                            {
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "channel": "whatsapp",
+                                "session": self.wa_session,
+                                "recipient": recipient,
+                                "chat_id": chat_id,
+                                "message": message,
+                                "status": "sent",
+                                "metadata": metadata or {},
+                            }
+                        )
+                    except Exception as log_err:
+                        logger.warning(f"WhatsApp history log failed: {log_err}")
                     return True
                 else:
+                    try:
+                        append_anomaly_report_log(
+                            {
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "channel": "whatsapp",
+                                "session": self.wa_session,
+                                "recipient": recipient,
+                                "chat_id": chat_id,
+                                "message": message,
+                                "status": "failed",
+                                "http_status": response.status_code,
+                                "response_text": response.text[:2000],
+                                "metadata": metadata or {},
+                            }
+                        )
+                    except Exception as log_err:
+                        logger.warning(f"WhatsApp history log failed: {log_err}")
                     logger.error(f"WhatsApp error: {response.status_code} - {response.text}")
                     return False
         except Exception as e:
+            try:
+                append_anomaly_report_log(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "channel": "whatsapp",
+                        "session": self.wa_session,
+                        "recipient": recipient,
+                        "chat_id": chat_id,
+                        "message": message,
+                        "status": "exception",
+                        "error": str(e),
+                        "metadata": metadata or {},
+                    }
+                )
+            except Exception as log_err:
+                logger.warning(f"WhatsApp history log failed: {log_err}")
             logger.error(f"WhatsApp exception: {e}")
             return False
 

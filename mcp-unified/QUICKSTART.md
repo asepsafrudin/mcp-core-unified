@@ -107,6 +107,9 @@ from execution import resource_registry
 @resource_registry.register(uri="mcp://system/status", name="System Status")
 async def get_status():
     return "System is healthy"
+
+# Resource Dinamis (dengan prefix matching)
+# mcp://openhands/task/logs?task_id=XYZ
 ```
 
 ### Prompts (Template Instruksi)

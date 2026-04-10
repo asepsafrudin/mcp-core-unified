@@ -15,6 +15,8 @@ import os
 import asyncio
 import json
 import logging
+import contextlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Setup path
@@ -57,6 +59,15 @@ PORT = 8000
 mcp_server = Server("mcp-unified")
 
 # The bootstrap now handles all registrations in initialize_components()
+
+# In-memory bootstrap state for readiness/diagnostics.
+BOOTSTRAP_STATE = {
+    "phase": "not_started",   # not_started | running | ready | degraded
+    "ready": False,
+    "error": None,
+    "started_at": None,
+    "finished_at": None,
+}
 
 
 class RobustSseServerTransport(SseServerTransport):
@@ -140,6 +151,32 @@ async def initialize_components():
     Delegate to core.bootstrap for shared initialization logic (Parity with stdio).
     """
     await initialize_all_components()
+
+
+async def initialize_components_background():
+    """
+    Run component initialization in background so HTTP endpoints (e.g. /health)
+    are available immediately even if optional dependencies are down.
+    """
+    BOOTSTRAP_STATE["phase"] = "running"
+    BOOTSTRAP_STATE["ready"] = False
+    BOOTSTRAP_STATE["error"] = None
+    BOOTSTRAP_STATE["started_at"] = datetime.now(timezone.utc).isoformat()
+    BOOTSTRAP_STATE["finished_at"] = None
+
+    try:
+        await initialize_components()
+        BOOTSTRAP_STATE["phase"] = "ready"
+        BOOTSTRAP_STATE["ready"] = True
+        logger.info("Bootstrap finished successfully")
+    except Exception as e:
+        # Keep server alive and report degraded readiness.
+        BOOTSTRAP_STATE["phase"] = "degraded"
+        BOOTSTRAP_STATE["ready"] = False
+        BOOTSTRAP_STATE["error"] = str(e)
+        logger.exception(f"Bootstrap failed; server remains available: {e}")
+    finally:
+        BOOTSTRAP_STATE["finished_at"] = datetime.now(timezone.utc).isoformat()
 
 
 @mcp_server.list_tools()
@@ -260,14 +297,30 @@ def create_starlette_app() -> Starlette:
         """Health check endpoint untuk monitoring dan service readiness."""
         from starlette.responses import JSONResponse
         tools_count = len(registry.list_tools())
+        phase = BOOTSTRAP_STATE["phase"]
+
+        if phase == "ready":
+            status = "healthy"
+        elif phase == "degraded":
+            status = "degraded"
+        elif phase == "running":
+            status = "starting"
+        else:
+            status = "starting"
+
         return JSONResponse({
-            "status": "healthy",
+            "status": status,
             "service": "mcp-unified",
             "version": "1.0.0",
             "transport": "SSE",
             "host": HOST,
             "port": PORT,
             "tools_available": tools_count,
+            "ready": BOOTSTRAP_STATE["ready"],
+            "bootstrap_phase": phase,
+            "bootstrap_error": BOOTSTRAP_STATE["error"],
+            "bootstrap_started_at": BOOTSTRAP_STATE["started_at"],
+            "bootstrap_finished_at": BOOTSTRAP_STATE["finished_at"],
         })
 
     # [REVIEWER] Localhost-only CORS
@@ -298,11 +351,9 @@ async def main():
     logger.info(f"Starting on http://{HOST}:{PORT}")
     logger.info("=" * 50)
 
-    # Initialize komponen
-    await initialize_components()
-
-    # Buat dan jalankan app
+    # Buat app dulu agar /health bisa diakses segera.
     app = create_starlette_app()
+    bootstrap_task = asyncio.create_task(initialize_components_background())
 
     config = uvicorn.Config(
         app,
@@ -316,9 +367,15 @@ async def main():
 
     logger.info(f"✓ MCP Hub ready at http://{HOST}:{PORT}/sse")
     logger.info(f"✓ Health check: http://{HOST}:{PORT}/health")
-    logger.info("Waiting for connections...")
+    logger.info("Waiting for connections (bootstrap running in background)...")
 
-    await server.serve()
+    try:
+        await server.serve()
+    finally:
+        if not bootstrap_task.done():
+            bootstrap_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await bootstrap_task
 
 
 if __name__ == "__main__":

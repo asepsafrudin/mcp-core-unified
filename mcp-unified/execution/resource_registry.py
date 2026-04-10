@@ -15,7 +15,7 @@ class ResourceRegistry:
         self._resources: Dict[str, Resource] = {}
         self._handlers: Dict[str, Callable] = {}
 
-    def register(self, uri: str, name: str, description: str = None, mime_type: str = None):
+    def register(self, uri: str, name: str, description: Optional[str] = None, mime_type: Optional[str] = None):
         """
         Decorator or function to register a resource handler.
         
@@ -48,16 +48,22 @@ class ResourceRegistry:
 
     async def read_resource(self, uri: str) -> str:
         """Execute the handler for a specific resource URI."""
-        if uri not in self._handlers:
-            # Try to find a dynamic match if pattern matching is implemented later
+        handler = self._handlers.get(uri)
+        
+        # If no exact match, try prefix matching for dynamic resources (e.g. with query params)
+        if not handler:
+            for registered_uri, registered_handler in self._handlers.items():
+                if uri.startswith(registered_uri):
+                    handler = registered_handler
+                    break
+                    
+        if not handler:
             raise ValueError(f"Resource URI '{uri}' not found in registry.")
         
-        handler = self._handlers[uri]
         try:
             if inspect.iscoroutinefunction(handler):
                 return await handler(uri)
             else:
-                # Run sync handler in thread if needed, or just call directly
                 return handler(uri)
         except Exception as e:
             logger.error("resource_read_error", uri=uri, error=str(e))
