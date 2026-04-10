@@ -154,7 +154,7 @@ class CodingTaskHandler(BaseHandler):
         
         try:
             # Call MCP tool run_coding_task
-            from mcp_unified.plugins.openhands.schemas import CodingTaskRequest
+            from oh_integration.schemas import CodingTaskRequest
             
             # Submit task via orchestrator atau direct MCP call
             task_id = await self._submit_coding_task(

@@ -9,7 +9,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from execution import registry, resource_registry
+from execution.registry import registry
+from execution.resource_registry import resource_registry
 from memory.working import working_memory
 
 from .orchestrator import OpenHandsOrchestrator
