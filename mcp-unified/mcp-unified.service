@@ -13,7 +13,7 @@ EnvironmentFile=/home/aseps/MCP/.env
 
 # [REVIEWER] ExecStart menggunakan python3 langsung
 # Ganti path python3 jika menggunakan virtualenv
-ExecStart=/usr/bin/python3 /home/aseps/MCP/mcp-unified/mcp_server_sse.py
+ExecStart=/home/aseps/MCP/mcp-unified/venv/bin/python3 /home/aseps/MCP/mcp-unified/mcp_server_sse.py
 
 # Restart policy — restart otomatis jika crash, tunggu 5 detik
 Restart=always
