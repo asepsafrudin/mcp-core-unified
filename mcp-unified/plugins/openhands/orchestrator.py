@@ -11,6 +11,7 @@ real SDK integration dengan OpenHands agent.
 import asyncio
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,6 +74,7 @@ class OpenHandsOrchestrator:
         """Submit task ke OpenHands agent. Returns task_id."""
         task_id = str(uuid.uuid4())[:8]
         workspace_path = self._create_workspace(task_id)
+        self._write_env_context(workspace_path)
 
         initial_state = TaskResult.pending(task_id=task_id, workspace_path=str(workspace_path))
         await self._save_task(task_id, initial_state)
@@ -176,6 +178,31 @@ class OpenHandsOrchestrator:
         workspace.mkdir(parents=True, exist_ok=True)
         return workspace
 
+    def _write_env_context(self, workspace_path: Path):
+        """
+        Tulis konteks environment yang aman untuk membantu agent memahami
+        koneksi database yang tersedia tanpa menanam secret mentah ke file.
+        """
+        env_context = workspace_path / "ENV_CONTEXT.md"
+        lines = [
+            "# Runtime Environment Context",
+            "",
+            "Gunakan konteks ini sebelum menjalankan query ke PostgreSQL atau knowledge base.",
+            "",
+            "## Runtime variables",
+            f"- PG_HOST: {os.getenv('PG_HOST', '-')}",
+            f"- PG_PORT: {os.getenv('PG_PORT', '-')}",
+            f"- PG_DATABASE: {os.getenv('PG_DATABASE', '-')}",
+            f"- PG_USER: {os.getenv('PG_USER', '-')}",
+            f"- DATABASE_URL: {os.getenv('DATABASE_URL', '-')}",
+            "",
+            "## Instructions",
+            "- Jangan asumsi localhost default benar tanpa verifikasi.",
+            "- Jika  ***REMOVED_DB_URL***kosong, gunakan PG_* yang disediakan runtime.",
+            "- Jangan hardcode credential baru ke file workspace.",
+        ]
+        env_context.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
     async def _save_task(self, task_id: str, result: TaskResult):
         """Save task state ke Redis dengan TTL 24 jam."""
         await self.redis.set(
@@ -218,6 +245,13 @@ class OpenHandsOrchestrator:
                 system_prompt = OPENHANDS_BASE_SYSTEM_PROMPT.format(
                     workspace_path=str(workspace_path),
                 )
+                env_context = workspace_path / "ENV_CONTEXT.md"
+                if env_context.exists():
+                    system_prompt = (
+                        system_prompt
+                        + "\n\n## Runtime Environment Snapshot\n"
+                        + env_context.read_text(encoding="utf-8")
+                    )
 
                 # ── Cek cancel flag ─────────────────────────────────────
                 cancel_flag = await self.redis.get(

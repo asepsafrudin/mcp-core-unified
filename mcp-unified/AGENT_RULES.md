@@ -50,6 +50,15 @@ Monitoring real-time untuk tugas otonom.
 |--------------|-----------|
 | `mcp://openhands/task/{task_id}/logs` | Lihat log terminal agen otonom. |
 | `mcp://openhands/task/{task_id}/status` | Ambil detail JSON (file yang diubah, dll). |
+| `mcp://openhands/task/env-context` | Lihat snapshot env task aktif, termasuk petunjuk koneksi DB. |
+
+### Catatan akses DB untuk agent
+- Sebelum asumsi koneksi PostgreSQL, cek `DATABASE_URL` dan variabel `PG_*` yang tersedia di runtime.
+- Jangan berasumsi `localhost` di sandbox sama dengan host machine.
+- Jika task butuh knowledge base, baca resource `mcp://openhands/task/env-context` terlebih dahulu.
+- Konteks env task juga disimpan ke file `ENV_CONTEXT.md` di workspace task.
+- Untuk debug cepat, ikuti checklist di `docs/06-database/agent-db-debug-checklist.md`.
+- Untuk catatan hasil investigasi/perbaikan, ikuti format `knowledge/knowledge_template.md`.
 
 ---
 
