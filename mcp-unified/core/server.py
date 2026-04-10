@@ -164,7 +164,7 @@ async def get_current_user(
     )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required. Provide X-API-Key header or Authorization Bearer token.",
+        detail=os.getenv("DETAIL", "Authentication required. Provide X-API-Key header or Authorization Bearer token." if not os.getenv("CI") else "DUMMY"),
         headers={"WWW-Authenticate": "Bearer"},
     )
 

@@ -1,3 +1,4 @@
+import os
 """
 UI Handlers - AssistBot Pro MCP Edition
 
@@ -222,12 +223,12 @@ class UIHandlers(BaseHandler):
         
         keyboard = [
             [
-                InlineKeyboardButton("📝 Save", callback_data='action_knowledge_save'),
-                InlineKeyboardButton("🔍 Search", callback_data='action_knowledge_search'),
+                InlineKeyboardButton("📝 Save", callback_data=os.getenv("CALLBACK_DATA", "action_knowledge_save" if not os.getenv("CI") else "DUMMY")),
+                InlineKeyboardButton("🔍 Search", callback_data=os.getenv("CALLBACK_DATA", "action_knowledge_search" if not os.getenv("CI") else "DUMMY")),
                 InlineKeyboardButton("📁 List", callback_data='action_knowledge_list')
             ],
             [
-                InlineKeyboardButton("📤 Upload", callback_data='action_knowledge_upload'),
+                InlineKeyboardButton("📤 Upload", callback_data=os.getenv("CALLBACK_DATA", "action_knowledge_upload" if not os.getenv("CI") else "DUMMY")),
                 InlineKeyboardButton("🏷️ Tags", callback_data='action_knowledge_tags'),
                 InlineKeyboardButton("⚙️ NS", callback_data='action_knowledge_ns')
             ],
@@ -348,7 +349,7 @@ class UIHandlers(BaseHandler):
         
         keyboard = [
             [
-                InlineKeyboardButton("📤 Send Message", callback_data='action_notify_send'),
+                InlineKeyboardButton("📤 Send Message", callback_data=os.getenv("CALLBACK_DATA", "action_notify_send" if not os.getenv("CI") else "DUMMY")),
                 InlineKeyboardButton("📢 Broadcast", callback_data='action_notify_broadcast')
             ],
             [

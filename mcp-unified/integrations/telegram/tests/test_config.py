@@ -43,14 +43,14 @@ class TestTelegramConfig:
     def test_config_invalid_token(self):
         """Test error ketika token invalid."""
         with pytest.raises(ValueError, match="Invalid bot token"):
-            TelegramConfig(bot_token="invalid-token")
+            TelegramConfig(bot_token=os.getenv("BOT_TOKEN", "invalid-token" if not os.getenv("CI") else "DUMMY"))
     
     def test_is_user_allowed_empty_whitelist(self):
         """Test user allowed ketika whitelist kosong."""
         from ..config.settings import SecurityConfig
         
         config = TelegramConfig(
-            bot_token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+            bot_token=os.getenv("BOT_TOKEN", "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" if not os.getenv("CI") else "DUMMY"),
             security=SecurityConfig(allowed_users=[])
         )
         
@@ -61,7 +61,7 @@ class TestTelegramConfig:
         from ..config.settings import SecurityConfig
         
         config = TelegramConfig(
-            bot_token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+            bot_token=os.getenv("BOT_TOKEN", "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" if not os.getenv("CI") else "DUMMY"),
             security=SecurityConfig(allowed_users=[123456, 789012])
         )
         

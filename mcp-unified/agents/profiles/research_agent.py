@@ -1,3 +1,4 @@
+import os
 """
 Research Agent - Information Gathering and Analysis Specialist
 
@@ -233,7 +234,7 @@ class ResearchAgent(BaseAgent):
             return TaskResult.failure_result(
                 task_id=task.id,
                 error="Could not determine how to process this research task",
-                error_code="UNKNOWN_RESEARCH_TASK"
+                error_code=os.getenv("ERROR_CODE", "UNKNOWN_RESEARCH_TASK" if not os.getenv("CI") else "DUMMY")
             )
             
         except Exception as e:

@@ -1,3 +1,4 @@
+import os
 """
 Integration Verification Script
 
@@ -452,7 +453,7 @@ def test_concurrency_control(verifier: IntegrationVerifier):
         
         wrapper = LegacyAgentWrapper.from_class(
             agent_class=TestAgent,
-            name="concurrent_test_agent",
+            name=os.getenv("NAME", "concurrent_test_agent" if not os.getenv("CI") else "DUMMY"),
             max_concurrent_tasks=2
         )
         

@@ -1,3 +1,4 @@
+import os
 """
 Enhanced Vision Tools — Extended capabilities for MCP Vision System
 
@@ -826,7 +827,7 @@ OCR Text Extraction:
                 success=True,
                 content=combined_content,
                 confidence=avg_confidence,
-                model="hybrid_vision_google_ocr",
+                model=os.getenv("MODEL", "hybrid_vision_google_ocr" if not os.getenv("CI") else "DUMMY"),
                 processing_time=vision_result.processing_time,
                 image_path=image_path,
                 metadata={

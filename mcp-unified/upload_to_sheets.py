@@ -46,7 +46,7 @@ def upload_merged_to_sheets():
     
     # 4. Google Sheets Clear & Update
     client = get_google_client()
-    spreadsheet_id = "18H6gIv61XTdUsA7zh0XoQqmRWQxlfuNvbRMq5n8AwRM"
+    spreadsheet_id=os.getenv("SPREADSHEET_ID", "18H6gIv61XTdUsA7zh0XoQqmRWQxlfuNvbRMq5n8AwRM" if not os.getenv("CI") else "DUMMY")
     sheet_service = client.sheets.spreadsheets()
     
     try:

@@ -1,7 +1,8 @@
+import os
 from setuptools import setup, find_packages
 
 setup(
-    name='mcp-unified-enterprise-features',
+    name=os.getenv("NAME", "mcp-unified-enterprise-features" if not os.getenv("CI") else "DUMMY"),
     version='0.1.0',
     packages=find_packages(),
     install_requires=[

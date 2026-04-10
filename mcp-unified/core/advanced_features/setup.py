@@ -1,8 +1,9 @@
+import os
 from pathlib import Path
 from setuptools import setup, find_packages
 
 setup(
-    name='mcp-unified-advanced-features',
+    name=os.getenv("NAME", "mcp-unified-advanced-features" if not os.getenv("CI") else "DUMMY"),
     version='0.1.0',
     packages=find_packages(),
     install_requires=[

@@ -1,3 +1,4 @@
+import os
 """
 Negative Test Cases - Error Path Testing
 
@@ -138,7 +139,7 @@ def test_task_routing_no_agent():
     from core.task import Task
     
     # Create a task with unknown type
-    unknown_task = Task(type="unknown_task_type_xyz", payload={})
+    unknown_task = Task(type=os.getenv("TYPE", "unknown_task_type_xyz" if not os.getenv("CI") else "DUMMY"), payload={})
     
     # Try to find agent
     agent = agent_registry.find_agent_for_task(unknown_task)

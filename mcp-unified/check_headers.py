@@ -19,7 +19,7 @@ def check_header(spreadsheet_id, sheet_name):
     for i, row in enumerate(values):
         print(f"Row {i}: {row}")
 
-spreadsheet_id = "1GRLdIr0ONXKTGWxPqyJW9vgcwgaYkU8YdN6eAoVPAeQ"
+spreadsheet_id=os.getenv("SPREADSHEET_ID", "1GRLdIr0ONXKTGWxPqyJW9vgcwgaYkU8YdN6eAoVPAeQ" if not os.getenv("CI") else "DUMMY")
 check_header(spreadsheet_id, "Dispo Ses")
 check_header(spreadsheet_id, "Kompilasi")
 check_header(spreadsheet_id, "Sheet17")

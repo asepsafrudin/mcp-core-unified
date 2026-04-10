@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 
 from core.monitoring.health_check import HealthCheckService
 from core.monitoring.telegram_notifier import TelegramNotifier
+from security.auto_remediation import SecurityRemediator
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class SelfHealingAgent:
         self.notifier = notifier or TelegramNotifier()
         self.daily_time = daily_time or os.getenv("SELF_HEALING_DAILY_TIME", "00:05")
         self.recovery_scripts = recovery_scripts or self._load_recovery_scripts()
+        self.remediator = SecurityRemediator(os.getcwd())
 
     def _load_recovery_scripts(self) -> List[str]:
         scripts_env = os.getenv("SELF_HEALING_RECOVERY_SCRIPTS", "")
@@ -37,7 +39,7 @@ class SelfHealingAgent:
         result = await self.health_check.run()
         payload = asdict(result)
 
-        if result.status != "OK":
+        if result.status != "OK" or payload["checks"]["security"].get("status") == "VULNERABLE":
             recovery_result = await self._recover(payload)
             payload["recovery"] = recovery_result
 
@@ -45,7 +47,7 @@ class SelfHealingAgent:
         return payload
 
     async def _recover(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        actions = []
+        actions: List[Dict[str, Any]] = []
         for script in self.recovery_scripts:
             try:
                 logger.info("Running recovery script: %s", script)
@@ -58,6 +60,22 @@ class SelfHealingAgent:
                 })
             except Exception as exc:
                 actions.append({"script": script, "error": str(exc)})
+
+        # Security Remediation SOP
+        security_status = payload.get("checks", {}).get("security", {})
+        if security_status.get("status") == "VULNERABLE":
+            logger.info("Executing Security Auto-Remediation SOP...")
+            try:
+                fixes = self.remediator.apply_fixes()
+                actions.append({
+                    "action": "security_remediation",
+                    "status": "COMPLETED",
+                    "fixes_count": len(fixes),
+                    "details": fixes[:10]  # Limit details
+                })
+            except Exception as exc:
+                logger.error(f"Security remediation failed: {exc}")
+                actions.append({"action": "security_remediation", "status": "FAILED", "error": str(exc)})
 
         # Re-check health after recovery
         post_check = await self.health_check.run()

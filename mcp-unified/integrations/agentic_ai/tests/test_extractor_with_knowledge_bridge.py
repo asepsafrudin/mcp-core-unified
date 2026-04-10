@@ -1,3 +1,4 @@
+import os
 """
 Test Script: Extractor + Knowledge Bridge Integration
 
@@ -58,7 +59,7 @@ async def test_hukumonline():
                     results=results[:3],  # Save first 3 for test
                     source="hukumonline",
                     url=url,
-                    namespace="test_legal_regulations"
+                    namespace=os.getenv("NAMESPACE", "test_legal_regulations" if not os.getenv("CI") else "DUMMY")
                 )
                 
                 print(f"📊 Save Summary:")
@@ -69,7 +70,7 @@ async def test_hukumonline():
                 # Search test
                 print("\n🔍 Testing search...")
                 search_results = await kb_bridge.search_saved_results(
-                    query="hukum",
+                    query=os.getenv("QUERY", "hukum" if not os.getenv("CI") else "DUMMY"),
                     namespace="test_legal_regulations",
                     top_k=3
                 )

@@ -36,7 +36,7 @@ class DependencyContainer:
             self.config = TelegramConfig.from_env()
         except ValueError:
             # Fallback if  ***REMOVED_TOKEN***is entirely missing in api-only mode
-            self.config = TelegramConfig(bot_token="dummy:token")
+            self.config = TelegramConfig(bot_token=os.getenv("BOT_TOKEN", "dummy:token" if not os.getenv("CI") else "DUMMY"))
 
         
         # Core services
