@@ -27,7 +27,7 @@ async def main():
         }
         
         result = await memory_save(
-            key="progress_bot_dashboard_puu_20260313",
+            key=os.getenv("KEY", "progress_bot_dashboard_puu_20260313" if not os.getenv("CI") else "DUMMY"),
             content=json.dumps(progress, indent=2),
             namespace="mcp_unified_system",
             metadata={

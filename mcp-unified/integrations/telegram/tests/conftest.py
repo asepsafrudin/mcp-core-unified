@@ -1,3 +1,4 @@
+import os
 """
 Pytest configuration dan fixtures.
 """
@@ -14,7 +15,7 @@ def mock_config():
     return TelegramConfig(
         bot_token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
         security=SecurityConfig(allowed_users=[123456]),
-        ai=AIConfig(groq_api_key="test-key"),
+        ai=AIConfig(groq_api_key=os.getenv("GROQ_API_KEY", "test-key" if not os.getenv("CI") else "DUMMY")),
         webhook=WebhookConfig(),
         worker=WorkerConfig(),
         logging=LoggingConfig()

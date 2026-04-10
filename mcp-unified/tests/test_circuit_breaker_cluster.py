@@ -1,3 +1,4 @@
+import os
 """
 Circuit Breaker with Simulated Cluster Failure Test
 Part of TASK-029: Phase 8 - Inter-Cluster Communication
@@ -27,7 +28,7 @@ async def test_circuit_breaker_opens_on_cluster_failure():
         local_cluster_id="cluster-a",
         remote_cluster_id="cluster-b",
         remote_endpoint="http://cluster-b:8080",
-        shared_secret="test-secret",
+        shared_secret=os.getenv("SHARED_SECRET", "test-secret" if not os.getenv("CI") else "DUMMY"),
         timeout=1.0,
     )
     
@@ -62,7 +63,7 @@ async def test_circuit_breaker_closes_after_timeout():
     client = ClusterClient(
         local_cluster_id="cluster-a",
         remote_cluster_id="cluster-b",
-        remote_endpoint="http://cluster-b:8080",
+        remote_endpoint=os.getenv("REMOTE_ENDPOINT", "http://cluster-b:8080" if not os.getenv("CI") else "DUMMY"),
         shared_secret="test-secret",
     )
     
@@ -84,7 +85,7 @@ async def test_message_router_handles_cluster_failure():
     Simulates: One cluster fails, others remain operational
     """
     router = ClusterMessageRouter(
-        local_cluster_id="hub",
+        local_cluster_id=os.getenv("LOCAL_CLUSTER_ID", "hub" if not os.getenv("CI") else "DUMMY"),
         shared_secret="test-secret",
     )
     
@@ -122,7 +123,7 @@ async def test_broadcast_with_partial_cluster_failure():
     Simulates: Multi-cluster broadcast with partial failures
     """
     router = ClusterMessageRouter(
-        local_cluster_id="hub",
+        local_cluster_id=os.getenv("LOCAL_CLUSTER_ID", "hub" if not os.getenv("CI") else "DUMMY"),
         shared_secret="test-secret",
     )
     

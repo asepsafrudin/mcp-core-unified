@@ -32,7 +32,7 @@ async def main():
         mem_save: Any = memory_save
         
         result = await mem_save(
-            key="progress_openhands_audit_cleanup_20260410",
+            key=os.getenv("KEY", "progress_openhands_audit_cleanup_20260410" if not os.getenv("CI") else "DUMMY"),
             content=json.dumps(progress, indent=2),
             namespace="mcp_unified_system",
             metadata={

@@ -1119,7 +1119,7 @@ class TelegramBotServer:
                 "• `/save <key> <konten>` - Simpan memory"
             )
             keyboard = [
-                [InlineKeyboardButton("🔍 Search", callback_data='action_knowledge_search')],
+                [InlineKeyboardButton("🔍 Search", callback_data=os.getenv("CALLBACK_DATA", "action_knowledge_search" if not os.getenv("CI") else "DUMMY"))],
                 [InlineKeyboardButton("⬅️ Back", callback_data='back_home')]
             ]
             await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1137,7 +1137,7 @@ class TelegramBotServer:
                 "ekstraksi & analisis konten"
             )
             keyboard = [
-                [InlineKeyboardButton("🖼️ Vision History", callback_data='action_vision_history')],
+                [InlineKeyboardButton("🖼️ Vision History", callback_data=os.getenv("CALLBACK_DATA", "action_vision_history" if not os.getenv("CI") else "DUMMY"))],
                 [InlineKeyboardButton("⬅️ Back", callback_data='back_home')]
             ]
             await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))

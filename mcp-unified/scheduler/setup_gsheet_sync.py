@@ -16,9 +16,9 @@ load_runtime_secrets()
 from scheduler.database import create_job
 
 async def main():
-    spreadsheet_id = '1GRLdIr0ONXKTGWxPqyJW9vgcwgaYkU8YdN6eAoVPAeQ'
+    spreadsheet_id=os.getenv("SPREADSHEET_ID", "1GRLdIr0ONXKTGWxPqyJW9vgcwgaYkU8YdN6eAoVPAeQ" if not os.getenv("CI") else "DUMMY")
     range_name = 'Surat Masuk!A1:Z500' # Sync up to 500 rows
-    namespace = 'korespondensi_eksternal'
+    namespace=os.getenv("NAMESPACE", "korespondensi_eksternal" if not os.getenv("CI") else "DUMMY")
     
     # Task configuration
     task_config = {

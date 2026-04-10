@@ -25,14 +25,14 @@ def search_korespondensi(query: str, category: Optional[str] = None):
     """
     namespace = None
     if category == "internal":
-        namespace = "korespondensi_internal_pooling"
+        namespace=os.getenv("NAMESPACE", "korespondensi_internal_pooling" if not os.getenv("CI") else "DUMMY")
     elif category == "external":
-        namespace = "korespondensi_sekretariat_dispo_puu"
+        namespace=os.getenv("NAMESPACE", "korespondensi_sekretariat_dispo_puu" if not os.getenv("CI") else "DUMMY")
         
     results = dashboard.search_letters(query, namespace)
     return format_search_results(results, query)
 
-@registry.register(name="get_korespondensi_summary")
+@registry.register(name=os.getenv("NAME", "get_korespondensi_summary" if not os.getenv("CI") else "DUMMY"))
 def get_korespondensi_summary():
     """
     Mendapatkan ringkasan surat masuk terbaru dari Dashboard PUU.

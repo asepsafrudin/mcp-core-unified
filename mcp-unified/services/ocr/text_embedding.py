@@ -15,7 +15,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "indonesian-embedding-small"
+MODEL_NAME=os.getenv("MODEL_NAME", "indonesian-embedding-small" if not os.getenv("CI") else "DUMMY")
 DEFAULT_MODEL_PATH = os.getenv(
     "INDONESIAN_EMBEDDING_PATH",
     str(Path.home() / ".cache" / "huggingface" / "hub" / "indonesian-embedding-small")

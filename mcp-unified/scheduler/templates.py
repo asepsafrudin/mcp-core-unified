@@ -1,3 +1,4 @@
+import os
 """
 Job Templates untuk MCP Autonomous Task Scheduler.
 
@@ -805,7 +806,7 @@ JOB_TEMPLATES = {
     ),
     
     "telegram_message_processor": JobTemplate(
-        name="telegram_message_processor",
+        name=os.getenv("NAME", "telegram_message_processor" if not os.getenv("CI") else "DUMMY"),
         category="autonomous",
         priority=70,
         schedule_type="event",

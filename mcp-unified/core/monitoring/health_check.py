@@ -3,16 +3,20 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List
 
-import psutil
+import psutil  # type: ignore
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Avoid shadowing stdlib and fix path injection
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 from memory.working import working_memory
 from memory.longterm import initialize_db
 from execution.registry import registry
+from security.scanner import SecurityScanner, Severity
 
 logger = logging.getLogger(__name__)
 
@@ -76,18 +80,39 @@ class HealthCheckService:
             }
         return {"ok": len(missing) == 0, "missing": missing}
 
+    def _check_security(self) -> Dict[str, Any]:
+        try:
+            # Menggunakan direktori saat ini (mcp-unified)
+            base_dir = os.getcwd()
+            scanner = SecurityScanner(base_dir)
+            vulnerabilities = scanner.scan_directory()
+            
+            critical_high = [v for v in vulnerabilities if v.severity in [Severity.CRITICAL.value, Severity.HIGH.value]]
+            
+            return {
+                "ok": len(critical_high) == 0,
+                "total_vulnerabilities": len(vulnerabilities),
+                "critical_high_count": len(critical_high),
+                "status": "SECURE" if len(critical_high) == 0 else "VULNERABLE"
+            }
+        except Exception as exc:
+            logger.error(f"Security check failed: {exc}")
+            return {"ok": False, "error": str(exc)}
+
     async def run(self) -> HealthCheckResult:
         start = time.time()
         process_check = self._check_process()
         db_check = await self._check_db()
         redis_check = await self._check_redis()
         tools_check = self._check_tools()
+        security_check = self._check_security()
 
         checks = {
             "process": process_check,
             "database": db_check,
             "redis": redis_check,
             "tools": tools_check,
+            "security": security_check,
         }
         status = "OK" if all(item.get("ok") for item in checks.values()) else "FAIL"
         duration_ms = (time.time() - start) * 1000
@@ -95,6 +120,6 @@ class HealthCheckService:
         return HealthCheckResult(
             status=status,
             checks=checks,
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat() + "Z",
             duration_ms=duration_ms,
         )

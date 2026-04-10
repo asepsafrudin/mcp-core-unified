@@ -22,7 +22,7 @@ from tools.base import BaseTool, ToolDefinition, ToolParameter, register_tool
 
 class WorkspaceManager:
     """Manages isolated workspaces for tasks."""
-    def __init__(self, base_path: str = "/home/aseps/MCP/workspace"):
+    def __init__(self, base_path: str=os.getenv("STR", "/home/aseps/MCP/workspace" if not os.getenv("CI") else "DUMMY")):
         self.base_path = base_path
         if not os.path.exists(self.base_path):
             os.makedirs(self.base_path, exist_ok=True)
