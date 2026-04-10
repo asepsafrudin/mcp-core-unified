@@ -6,7 +6,7 @@ import sys
 PROJECT_ROOT = "/home/aseps/MCP/mcp-unified"
 sys.path.insert(0, PROJECT_ROOT)
 
-from memory.longterm import memory_save, pool
+from memory.longterm import pool
 
 async def main():
     try:
@@ -26,14 +26,18 @@ async def main():
             "timestamp": "2026-04-10T11:34:00+07:00"
         }
         
-        result = await memory_save(
-            key="security_audit_completion_20260410",
-            content=json.dumps(progress, indent=2),
-            namespace="mcp_unified_system",
-            metadata={
-                "type": "security_audit",
-                "tags": ["security", "hardening", "audit", "automation", "fix"],
-                "author": "Antigravity AI"
+        from execution.registry import registry
+        result = await registry.execute(
+            "memory_save",
+            {
+                "key": "security_audit_completion_20260410",
+                "content": json.dumps(progress, indent=2),
+                "namespace": "mcp_unified_system",
+                "metadata": {
+                    "type": "security_audit",
+                    "tags": ["security", "hardening", "audit", "automation", "fix"],
+                    "author": "Antigravity AI"
+                }
             }
         )
         print(f"Memory saved: {result}")
