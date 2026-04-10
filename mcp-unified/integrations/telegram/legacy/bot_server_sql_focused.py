@@ -24,6 +24,8 @@ CURRENT_DIR = Path(__file__).resolve().parent
 PARENT_DIR = CURRENT_DIR.parent
 sys.path.insert(0, str(PARENT_DIR))
 
+
+
 from core.config import TelegramConfig
 from core.ai_providers import (
     GroqAI, GeminiAI, OllamaAI, HybridSQLProvider,

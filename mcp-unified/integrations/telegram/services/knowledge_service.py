@@ -224,7 +224,7 @@ class KnowledgeService:
     
     async def sql_query(self, query: str) -> Optional[SQLResult]:
         """
-        Execute SQL query ke knowledge database.
+        Execute SQL query ke knowledge database menggunakan MCP SQL tools.
         
         Args:
             query: SQL query (SELECT only untuk keamanan)
@@ -232,52 +232,41 @@ class KnowledgeService:
         Returns:
             SQLResult atau None jika error
         """
-        if not self.db_pool:
-            logger.error("Database not connected")
-            return None
-        
-        # Security: Only allow SELECT queries
-        query_clean = query.strip().upper()
-        if not query_clean.startswith("SELECT"):
-            logger.warning(f"Blocked non-SELECT query: {query[:50]}")
-            return SQLResult(
-                columns=["error"],
-                rows=[["Hanya query SELECT yang diizinkan"]],
-                row_count=0,
-                query=query
-            )
-        
         try:
-            async with self.db_pool.acquire() as conn:
-                rows = await conn.fetch(query)
-                
-                if not rows:
-                    return SQLResult(
-                        columns=[],
-                        rows=[],
-                        row_count=0,
-                        query=query
-                    )
-                
-                # Extract columns dari first row
-                columns = list(rows[0].keys())
-                
-                # Convert rows to lists
-                data_rows = []
-                for row in rows[:50]:  # Limit to 50 rows
-                    data_rows.append([row[col] for col in columns])
-                
-                logger.info(f"📊 SQL query executed: {len(data_rows)} rows")
-                
+            from execution import registry
+            result = await registry.execute("query_db", {"query": query})
+            
+            if not result.get("success"):
                 return SQLResult(
-                    columns=columns,
-                    rows=data_rows,
-                    row_count=len(data_rows),
+                    columns=["error"],
+                    rows=[[result.get("error", "Unknown error")]],
+                    row_count=0,
                     query=query
                 )
-                
+            
+            rows = result.get("rows", [])
+            if not rows:
+                return SQLResult(
+                    columns=[],
+                    rows=[],
+                    row_count=0,
+                    query=query
+                )
+            
+            # Assume rows are dicts
+            columns = list(rows[0].keys()) if isinstance(rows[0], dict) else []
+            data_rows = [[row.get(c, '') for c in columns] for row in rows[:50]]
+            
+            logger.info(f"📊 MCP SQL query executed: {len(data_rows)} rows")
+            
+            return SQLResult(
+                columns=columns,
+                rows=data_rows,
+                row_count=len(rows),
+                query=query
+            )
         except Exception as e:
-            logger.error(f"SQL query failed: {e}")
+            logger.error(f"MCP SQL query failed: {e}")
             return SQLResult(
                 columns=["error"],
                 rows=[[str(e)]],

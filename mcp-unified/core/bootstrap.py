@@ -226,6 +226,15 @@ async def initialize_all_components():
     except Exception as e:
         logger.warning(f"Failed to register OCR tools: {e}")
 
+    # 5l. Register SQL MCP Tools (native)
+    try:
+        from services.sql.sql_tools import query_db, list_tables, describe_table, count_rows
+        logger.info("Registered SQL MCP tools (query_db, list_tables, describe_table, count_rows)")
+    except ImportError:
+        logger.warning("SQL tools dependencies missing. Skipping SQL registration.")
+    except Exception as e:
+        logger.warning(f"Failed to register SQL MCP tools: {e}")
+
     # 6. Discover remote tools
     try:
         await discover_remote_tools()
