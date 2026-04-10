@@ -33,6 +33,10 @@ class CommandHandlers(BaseHandler):
             CommandHandler(["cari", "Cari", "CARI", "perihal", "Perihal", "PERIHAL"], self.search_command),
             CommandHandler(["posisi", "Posisi", "POSISI"], self.posisi_command),
             CommandHandler(["surat_keluar", "SK", "sk"], self.surat_keluar_command),
+            CommandHandler("reminder", self.reminder_command),
+            CommandHandler("anomali", self.anomali_command),
+            CommandHandler("sync", self.sync_command),
+            CommandHandler("pics", self.pics_command),
         ]
         
         for handler in handlers:
@@ -361,3 +365,66 @@ class CommandHandlers(BaseHandler):
             formatted_text = f"📍 Ditemukan {len(results)} surat di posisi *{query}*."
 
         await update.message.reply_text(formatted_text, parse_mode="Markdown", disable_web_page_preview=True)
+
+    async def anomali_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /anomali command."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id): return
+        
+        report = self.bot.dashboard.get_anomalies_report()
+        await update.message.reply_text(report, parse_mode="Markdown")
+
+    async def reminder_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /reminder <nomor_surat> [pesan] command."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id): return
+        
+        args = context.args
+        if not args:
+            await update.message.reply_text("💡 *Gunakan:* `/reminder <nomor_surat> [pesan]`")
+            return
+            
+        no_surat = args[0]
+        pesan = " ".join(args[1:]) if len(args) > 1 else "Mohon segera ditindaklanjuti untuk masuk ke koordinasi PUU."
+        
+        res = self.bot.dashboard.send_reminder(no_surat, pesan)
+        if not res["success"]:
+            await update.message.reply_text(f"❌ {res['error']}")
+            return
+            
+        data = res["data"]
+        msg = (
+            f"🔔 *REMINDER KOORDINASI SURAT*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📂 *No:* `{data['nomor_nd']}`\n"
+            f"📝 *Hal:* {data['hal']}\n"
+            f"📍 *Posisi:* {data['posisi']}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💬 *Pesan:* {data['pesan']}\n\n"
+            f"✅ _Reminder telah disiapkan untuk dikirim._"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    async def sync_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /sync command - trigger ETL and internal sync."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id): return
+        
+        # Trigger ETL (via background process if possible)
+        # Note: In mcp-unified we might need a direct way to trigger the external script
+        await update.message.reply_text("🔄 *Memulai proses sinkronisasi database...*\n_Mohon tunggu sebentar._")
+        
+        # Trigger ETL via dashboard service
+        success = self.bot.dashboard.trigger_sync()
+        if success:
+            await update.message.reply_text("✅ *Proses Sinkronisasi dipicu.* Cek /status atau /dashboard dalam beberapa menit untuk melihat hasilnya.")
+        else:
+            await update.message.reply_text("❌ Gagal memicu sinkronisasi. Silakan cek log sistem.")
+
+    async def pics_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /pics command."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id): return
+        
+        report = self.bot.dashboard.get_personnel_report()
+        await update.message.reply_text(report, parse_mode="Markdown")

@@ -32,111 +32,51 @@ class TextToSQLService:
     
     # Schema database untuk context - Auto-detected dari database
     DATABASE_SCHEMA = """
-## Database Schema - MCP Knowledge Base
+## Database Schema - MCP Korespondensi (Port 5433)
+
+### 📬 Tabel: correspondence_letters
+Tabel utama yang menyimpan data surat masuk, keluar, dan disposisi.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| letter_number | TEXT | Nomor surat resmi |
+| letter_date | DATE | Tanggal surat |
+| received_date | DATE | Tanggal diterima |
+| sender | TEXT | Pengirim surat |
+| recipient | TEXT | Penerima surat |
+| subject | TEXT | Perihal surat |
+| position_raw | TEXT | Posisi terkini surat (e.g. 'PUU', 'MEJA KEPALA') |
+| status | TEXT | Status surat |
+| source_type | TEXT | 'internal', 'external', atau 'outgoing' |
+
+### 📝 Tabel: surat_masuk_puu
+Detail data surat masuk khusus unit PUU.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| nomor_nd | TEXT | Nomor Nota Dinas |
+| dari | TEXT | Pengirim |
+| hal | TEXT | Perihal |
+| tanggal_surat | DATE | Tanggal surat |
+| no_agenda_dispo | TEXT | Nomor agenda disposisi |
 
 ### 📄 Tabel: knowledge_documents
-Tabel untuk menyimpan dokumen knowledge base dengan embeddings.
+Dokumen knowledge base dengan embeddings.
 
 | Kolom | Tipe | Keterangan |
 |-------|------|------------|
-| id | TEXT PRIMARY KEY | ID unik dokumen |
-| content | TEXT | Isi konten dokumen |
-| embedding | VECTOR(768) | Embedding vector untuk semantic search |
-| metadata | JSONB | Metadata dokumen (source_file, doc_type, dll) |
-| namespace | TEXT | Namespace dokumen: 'default', 'legal', 'puu_2026', 'chat_history' |
-| created_at | TIMESTAMP | Waktu pembuatan |
-
-**Contoh Query:**
-- Cari dokumen: `SELECT * FROM knowledge_documents WHERE namespace = 'puu_2026'`
-- Hitung per namespace: `SELECT namespace, COUNT(*) FROM knowledge_documents GROUP BY namespace`
-- Cari dengan metadata: `SELECT * FROM knowledge_documents WHERE metadata->>'source_file' ILIKE '%PUU%'`
+| content | TEXT | Konten teks |
+| metadata | JSONB | Source, doc_type, dll |
+| namespace | TEXT | 'default', 'legal', 'puu_2026' |
 
 ### 🖼️ Tabel: vision_results  
-Tabel hasil OCR (Optical Character Recognition) untuk file PDF dan gambar.
+Hasil OCR file PDF dan gambar.
 
 | Kolom | Tipe | Keterangan |
 |-------|------|------------|
-| id | SERIAL PRIMARY KEY | ID hasil OCR |
-| file_path | TEXT | Path lengkap file yang diproses |
-| file_name | TEXT | Nama file (e.g., '0161-UND-PUU-2026.pdf') |
-| document_type | TEXT | Jenis: 'pdf', 'image', 'document', 'unknown' |
-| extracted_text | TEXT | Hasil ekstraksi teks dari OCR |
-| confidence_score | FLOAT | Skor confidence (0.0 - 1.0), semakin tinggi semakin baik |
-| processing_status | VARCHAR | Status: 'pending', 'processing', 'completed', 'error' |
-| created_at | TIMESTAMP | Waktu pemrosesan |
-
-**Contoh Query:**
-- Dokumen PUU 2026: `SELECT * FROM vision_results WHERE file_name ILIKE '%PUU%2026%'`
-- Confidence tinggi: `SELECT * FROM vision_results WHERE confidence_score > 0.9`
-- Status processing: `SELECT COUNT(*) FROM vision_results WHERE processing_status = 'pending'`
-- Total dokumen: `SELECT COUNT(*), document_type FROM vision_results GROUP BY document_type`
-
-### ✅ Tabel: tasks
-Tabel manajemen task/penugasan.
-
-| Kolom | Tipe | Keterangan |
-|-------|------|------------|
-| id | SERIAL PRIMARY KEY | ID auto increment |
-| task_id | VARCHAR | Task identifier unik (e.g., 'TASK-001') |
-| title | TEXT | Judul task |
-| description | TEXT | Deskripsi lengkap task |
-| status | VARCHAR | Status: 'pending', 'in_progress', 'completed', 'failed', 'cancelled' |
-| priority | VARCHAR | Prioritas: 'low', 'medium', 'high', 'critical' |
-| assigned_to | TEXT | User yang ditugaskan |
-| created_at | TIMESTAMP | Waktu dibuat |
-| updated_at | TIMESTAMP | Waktu update terakhir |
-| completed_at | TIMESTAMP | Waktu selesai |
-
-**Contoh Query:**
-- Task pending: `SELECT * FROM tasks WHERE status = 'pending'`
-- Task high priority: `SELECT * FROM tasks WHERE priority = 'high' ORDER BY created_at DESC`
-- Task selesai hari ini: `SELECT * FROM tasks WHERE status = 'completed' AND DATE(completed_at) = CURRENT_DATE`
-
-### 💬 Tabel: telegram_messages
-Log pesan dan respon Telegram bot.
-
-| Kolom | Tipe | Keterangan |
-|-------|------|------------|
-| id | SERIAL PRIMARY KEY | ID auto increment |
-| user_id | BIGINT | ID Telegram user |
-| username | TEXT | Username Telegram |
-| first_name | TEXT | Nama depan user |
-| message | TEXT | Isi pesan user |
-| response | TEXT | Respon bot |
-| chat_type | TEXT | Tipe chat: 'private', 'group', 'channel' |
-| created_at | TIMESTAMP | Waktu pesan |
-
-**Contoh Query:**
-- Pesan hari ini: `SELECT * FROM telegram_messages WHERE DATE(created_at) = CURRENT_DATE`
-- Total pesan per user: `SELECT username, COUNT(*) FROM telegram_messages GROUP BY username`
-
-### 📚 Tabel: agent_memories (LTM - Long Term Memory)
-Memori jangka panjang untuk agents.
-
-| Kolom | Tipe | Keterangan |
-|-------|------|------------|
-| id | SERIAL PRIMARY KEY | ID memori |
-| key | VARCHAR | Key unik memori |
-| content | TEXT | Isi memori |
-| metadata | JSONB | Metadata (agent_type, tags, dll) |
-| importance | FLOAT | Tingkat kepentingan (0.0 - 1.0) |
-| last_accessed | TIMESTAMP | Terakhir diakses |
-| created_at | TIMESTAMP | Waktu pembuatan |
-
-**Contoh Query:**
-- Memori penting: `SELECT * FROM agent_memories WHERE importance > 0.8 ORDER BY last_accessed DESC`
-- Cari memori: `SELECT * FROM agent_memories WHERE content ILIKE '%proyek%'`
-
-### 🔐 Tabel: users (jika ada)
-Data user sistem.
-
-| Kolom | Tipe | Keterangan |
-|-------|------|------------|
-| id | SERIAL PRIMARY KEY | ID user |
-| username | TEXT | Username unik |
-| email | TEXT | Email user |
-| role | TEXT | Role: 'admin', 'user', 'viewer' |
-| created_at | TIMESTAMP | Waktu registrasi |
+| file_name | TEXT | Nama file (e.g. '0161-UND-PUU-2026.pdf') |
+| extracted_text | TEXT | Teks hasil OCR |
+| status | VARCHAR | Status pemrosesan |
 """
     
     # Query patterns yang tidak diizinkan

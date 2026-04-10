@@ -207,6 +207,7 @@ TELEGRAM_CHAT_TOOL_NAMES = {
     "get_correspondence",
     "search_letters",
     "search_by_position",
+    "query_database",
     "get_datetime",
 }
 

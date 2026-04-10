@@ -165,11 +165,15 @@ Kamu dapat mencari data surat masuk/keluar secara real-time:
 - 📬 **Status Korespondensi** - Gunakan `get_correspondence` untuk ringkasan terkini.
 - 🔢 **Hitung Surat** - Gunakan `count_letters` untuk statistik kuantitatif.
 
-## 📊 Database Schema (PostgreSQL)
-- **knowledge_documents** - Dokumen dengan embedding untuk RAG
-- **vision_results** - Hasil OCR gambar
-- **tasks** - Task management
-- **telegram_messages** - History chat
+## 📊 Database Schema (PostgreSQL Port 5433)
+### Korespondensi & Dokumen
+- **correspondence_letters** - Tabel pusat korespondensi (letter_number, sender, recipient, subject, letter_date, position_raw).
+- **surat_masuk_puu** - Data surat masuk (nomor_nd, dari, hal, tanggal_surat).
+- **surat_keluar_puu** - Data surat keluar produksi (nomor_surat, tujuan, perihal).
+- **correspondence_events** - Timeline pergerakan surat (lokasi, status).
+- **vision_results** - Hasil OCR dokumen/gambar (file_name, extracted_text).
+- **knowledge_documents** - Knowledge base dengan embedding (Vector 768).
+- **ltm_memory** - Long Term Memory agent.
 
 ## Prinsip Komunikasi
 1. Selalu gunakan Bahasa Indonesia yang baik dan profesional

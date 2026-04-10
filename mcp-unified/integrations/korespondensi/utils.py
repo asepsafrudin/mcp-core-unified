@@ -254,6 +254,7 @@ def parse_posisi(posisi_str: str) -> Dict[str, Any]:
         "last_date": last_event['date'],
         "is_done": is_done,
         "timeline_count": len(timeline),
+        "timeline": timeline,
         "puu_received_date": puu_received_date,  # Tanggal diterima oleh PUU
         "is_surat_masuk_puu": puu_received_date is not None  # Flag surat masuk PUU
     }

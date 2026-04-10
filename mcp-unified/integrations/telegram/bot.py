@@ -23,6 +23,8 @@ from integrations.telegram.services.tool_executor import (
     ToolExecutor,
     TELEGRAM_CHAT_TOOL_DEFINITIONS,
 )
+from integrations.telegram.services.knowledge_service import KnowledgeService
+from integrations.telegram.services.text_to_sql_service import TextToSQLService
 from integrations.telegram.handlers import CommandHandlers, MessageHandlers, MediaHandlers, FeedbackHandler
 from integrations.telegram.middleware import AuthMiddleware, LoggingMiddleware, RateLimitMiddleware
 from integrations.telegram.workers import MessageWorker
@@ -73,6 +75,10 @@ class TelegramBot:
         )
         self.bridge_memory_service = AgentBridgeMemoryService(self.mcp)
         self.conversation_service = TelegramContextService()
+        
+        # Knowledge & Text-to-SQL for DB access
+        self.knowledge = KnowledgeService()
+        self.text_to_sql = TextToSQLService(ai_service=self.ai_manager)
         
         # Correspondence Dashboard
         from services.correspondence_dashboard import CorrespondenceDashboard
@@ -130,6 +136,10 @@ class TelegramBot:
             mcp_ok = await self.mcp.initialize()
             if not mcp_ok:
                 logger.warning("⚠️ MCP not available, running in standalone mode")
+
+            # Initialize Knowledge & SQL
+            await self.knowledge.initialize()
+            logger.info("✅ Knowledge/SQL access initialized")
 
             # Initialize workers
             await self.message_worker.start()
