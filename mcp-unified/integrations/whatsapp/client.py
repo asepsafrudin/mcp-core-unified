@@ -23,7 +23,7 @@ class WhatsAppClient:
             base_url: Base URL for WAHA API (e.g., http://localhost:3001)
             api_key: API Key for authentication
         """
-        self.base_url = base_url or os.getenv("WHATSAPP_API_URL", "http://localhost:3001")
+        self.base_url = base_url or os.getenv("WHATSAPP_API_URL", "http://localhost:3000")
         self.api_key = api_key or os.getenv("WHATSAPP_API_KEY")
         self.timeout = 30.0
     
