@@ -1,6 +1,7 @@
 import structlog
 import logging
 import sys
+from typing import List, Any
 import uuid
 from contextvars import ContextVar
 from core.config import settings
@@ -21,7 +22,7 @@ def add_correlation_id(_, __, event_dict):
     return event_dict
 
 def configure_logger():
-    processors = [
+    processors: List[Any] = [
         structlog.contextvars.merge_contextvars,
         add_correlation_id,
         structlog.processors.add_log_level,
@@ -37,9 +38,11 @@ def configure_logger():
 
     structlog.configure(
         processors=processors,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
         cache_logger_on_first_use=True,
     )
 
+# Initialize on import
+configure_logger()
 logger = structlog.get_logger()

@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Any, List, Union
+from typing import Callable, Dict, Any, List, Union, TypeVar, overload, Optional, cast
 from intelligence.self_healing import self_healing
 from execution.mcp_proxy import mcp_proxy
 from observability.logger import logger
@@ -6,12 +6,23 @@ import asyncio
 import functools
 import inspect
 
+T = TypeVar("T", bound=Callable[..., Any])
+
 class ToolRegistry:
     def __init__(self):
         self._tools: Dict[str, Callable] = {}
         self._descriptions: Dict[str, str] = {}
         
-    def register(self, func_or_name: Union[Callable, str] = None, name: str = None):
+    @overload
+    def register(self, func_or_name: T) -> T: ...
+    
+    @overload
+    def register(self, func_or_name: T, name: Optional[str] = None) -> T: ...
+    
+    @overload
+    def register(self, func_or_name: Optional[str] = None, name: Optional[str] = None) -> Callable[[T], T]: ...
+
+    def register(self, func_or_name: Union[Callable[..., Any], str, None] = None, name: Optional[str] = None):
         """
         Register a tool function. Can be used as a decorator or direct call.
         
@@ -39,7 +50,7 @@ class ToolRegistry:
             
         return decorator
         
-    def get_tool(self, name: str) -> Callable:
+    def get_tool(self, name: str) -> Optional[Callable[..., Any]]:
         return self._tools.get(name)
         
     def list_tools(self) -> List[Dict[str, str]]:
@@ -87,10 +98,12 @@ class ToolRegistry:
         
         async def _run_tool():
             # Check if this is a bridged remote tool
-            if hasattr(tool, "_is_remote"):
+            # [REVIEWER] Use cast(Any, tool) to satisfy type checker for dynamic attributes
+            any_tool = cast(Any, tool)
+            if getattr(any_tool, "_is_remote", False):
                 return await mcp_proxy.call_tool(
-                    tool._server_name, 
-                    tool._remote_name, 
+                    getattr(any_tool, "_server_name"), 
+                    getattr(any_tool, "_remote_name"), 
                     arguments
                 )
 
@@ -131,9 +144,10 @@ async def discover_remote_tools():
         
         wrapper.__name__ = f"{s_name}_{t_name}"
         wrapper.__doc__ = description
-        wrapper._is_remote = True
-        wrapper._server_name = s_name
-        wrapper._remote_name = t_name
+        # [REVIEWER] Use setattr to avoid lint errors on function attributes
+        setattr(wrapper, "_is_remote", True)
+        setattr(wrapper, "_server_name", s_name)
+        setattr(wrapper, "_remote_name", t_name)
         return wrapper
     
     for server_name in mcp_proxy.external_servers:

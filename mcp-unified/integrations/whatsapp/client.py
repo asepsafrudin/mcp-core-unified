@@ -27,7 +27,7 @@ class WhatsAppClient:
         self.api_key = api_key or os.getenv("WHATSAPP_API_KEY")
         self.timeout = 30.0
     
-    async def _request(self, method: str, path: str, **kwargs) -> Dict[str, Any]:
+    async def _request(self, method: str, path: str, **kwargs) -> Any:
         """Base request method."""
         url = f"{self.base_url}{path}"
         

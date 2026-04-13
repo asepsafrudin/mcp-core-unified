@@ -4,16 +4,23 @@ MCP Server Entry Point for mcp-unified
 Uses MCP SDK Python to expose tools from the registry via stdio protocol
 """
 import sys
-import builtins
 import os
-import asyncio
-import json
 from pathlib import Path
+
+# Redirect all stdout to stderr to prevent log leakage into MCP protocol
+_real_stdout = sys.stdout
+sys.stdout = sys.stderr
 
 # Add the project root to Python path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 os.environ.setdefault("PYTHONPATH", str(project_root))
+
+import builtins
+import asyncio
+import json
+from typing import Optional, Dict, Union, Iterable
+from pydantic import AnyUrl
 
 # [REVIEWER] Load environment variables before anything else
 from core.secrets import load_runtime_secrets
@@ -43,11 +50,8 @@ from mcp.types import (
     PromptMessage,
     GetPromptResult,
 )
-import logging
-
-# Configure logging (stderr to avoid corrupting MCP stdio protocol)
-logging.basicConfig(level=logging.INFO, stream=sys.stderr)
-logger = logging.getLogger("mcp-unified-server")
+from observability.logger import configure_logger, logger
+configure_logger()
 
 # MCP Server instance
 mcp_server = Server("mcp-unified")
@@ -179,8 +183,8 @@ async def handle_list_resources() -> list[Resource]:
 
 
 @mcp_server.read_resource()
-async def handle_read_resource(uri: str):
-    return await resource_registry.read_resource(uri)
+async def handle_read_resource(uri: AnyUrl) -> str | bytes:
+    return await resource_registry.read_resource(str(uri))
 
 
 @mcp_server.list_prompts()
@@ -207,8 +211,8 @@ async def handle_list_prompts() -> list[Prompt]:
 
 
 @mcp_server.get_prompt()
-async def handle_get_prompt(name: str, arguments: dict = None) -> GetPromptResult:
-    prompt_text = prompt_registry.get_prompt(name, arguments)
+async def handle_get_prompt(name: str, arguments: Optional[Dict[str, str]] = None) -> GetPromptResult:
+    prompt_text = prompt_registry.get_prompt(name, arguments or {})
     return GetPromptResult(
         description=f"Prompt template: {name}",
         messages=[
@@ -226,6 +230,8 @@ async def main():
     # [REVIEWER] Initialize all components before accepting requests
     await initialize_components()
     
+    # Revert stdout for MCP protocol
+    sys.stdout = _real_stdout
     async with stdio_server() as (read_stream, write_stream):
         await mcp_server.run(
             read_stream,

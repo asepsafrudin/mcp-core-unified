@@ -67,5 +67,21 @@ Ekstraksi teks dan parsing dokumen dari gambar.
 
 | Tool | Deskripsi | Kapan Digunakan |
 |------|-----------|-----------------|
-| `extract_text` | Ekstraksi teks + bounding box | Butuh koordinat teks mentah. |
 | `parse_document` | Parsing dokumen ke Markdown | Dokumen kompleks (tabel, surat resmi). |
+| `extract_text` | Ekstraksi teks mentah | Untuk analisis koordinat/detail gambar. |
+
+---
+
+## 🌉 Namespace: gemini-bridge/ (External Reasoning)
+Gunakan `gemini-pro` CLI untuk tugas yang membutuhkan penalaran tinggi atau akses tool otonom.
+
+| Strategi | Perintah | Tujuan |
+|----------|----------|--------|
+| **Deep Research** | `gemini-pro "Query..."` | Analisis kompleks lintas file/database. |
+| **Multimodal Context** | `gemini-pro "Query..." --file image.png` | Bertanya tentang gambar/dokumen scan. |
+| **Interactive Debug** | `gemini-pro --interactive` | Chat langsung dalam terminal untuk debugging. |
+
+### 💡 Tips Optimasi Agen IDE:
+1. **Delegasi**: Jika Anda (Agen IDE) mentok dengan limitasi konteks, jalankan `gemini-pro` untuk mendapatkan jawaban ringkas.
+2. **Clean Output**: Gunakan `gemini-pro` tanpa parameter tambahan untuk mendapatkan output teks bersih yang bisa Anda parse kembali.
+3. **Tool Chaining**: `gemini-pro` secara otomatis menangani tool calls (WhatsApp, SQL, LTM) secara rekursif. Anda cukup memberikan instruksi high-level.
