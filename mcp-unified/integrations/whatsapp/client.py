@@ -99,6 +99,20 @@ class WhatsAppClient:
                 except:
                     return {"data": response.text}
 
+    async def request_pairing_code(self, phone_number: str, session_name: str = "default") -> Dict[str, Any]:
+        """
+        Request a 8-character pairing code for authentication.
+        
+        Args:
+            phone_number: Phone number in international format (e.g. '628123456789')
+            session_name: Session to use
+        """
+        # Clean phone number (remove +, spaces, etc)
+        clean_number = "".join(filter(str.isdigit, phone_number))
+        return await self._request("POST", f"/api/{session_name}/auth/request-code", json={
+            "phoneNumber": clean_number
+        })
+
     async def send_message(self, chat_id: str, text: str, session_name: str = "default") -> Dict[str, Any]:
         """
         Send a text message.
