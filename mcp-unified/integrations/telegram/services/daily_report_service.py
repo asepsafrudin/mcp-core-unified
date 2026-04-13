@@ -19,7 +19,7 @@ import re
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any, cast
 import asyncio
 
 # Load .env from parent directory
@@ -56,7 +56,7 @@ class DailyReportService:
     
     # Log directories
     LOG_DIRS = {
-        "workspace": "/home/aseps/workspace/.rag/logs",
+        "workspace": "/home/aseps/logs",
         "onedrive": "/home/aseps/MCP/logs/onedrive",
         "extractor": "/home/aseps/logs/extractor",
     }
@@ -208,71 +208,74 @@ class DailyReportService:
     async def get_ltm_tasks(self) -> str:
         """Fetch active tasks from LTM database."""
         try:
-            import psycopg2
-            from psycopg2.extras import RealDictCursor
+            import psycopg
+            from psycopg.rows import dict_row
             
             # Use credentials from environment or default to local
-            conn = psycopg2.connect(
-                host=os.getenv("POSTGRES_SERVER", "localhost"),
-                port=os.getenv("POSTGRES_PORT", "5432"),
-                dbname=os.getenv("POSTGRES_DB", "mcp"),
-                user=os.getenv("POSTGRES_USER", "aseps"),
-                password=os.getenv("POSTGRES_PASSWORD", "")
+            conn_str = "host={} port={} dbname={} user={} password={}".format(
+                os.getenv("POSTGRES_SERVER", os.getenv("PG_HOST", "localhost")),
+                os.getenv("POSTGRES_PORT", os.getenv("PG_PORT", "5433")),
+                os.getenv("POSTGRES_DB", os.getenv("PG_DATABASE", "mcp_knowledge")),
+                os.getenv("POSTGRES_USER", os.getenv("PG_USER", "mcp_user")),
+                os.getenv("POSTGRES_PASSWORD", os.getenv("PG_PASSWORD", ""))
             )
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-
-            cur.execute("""
-                SELECT content
-                FROM project_memories
-                WHERE project_name = 'MCP Unified Tasks'
-            """)
-            project_row = cur.fetchone()
-
-            rows = []
-            if project_row and project_row.get("content"):
-                content = project_row["content"]
-                if isinstance(content, str):
-                    content = json.loads(content)
-
-                metrics = content.get("metrics", {})
-                current_tasks = content.get("current_tasks", [])
-                summary_lines = [
-                    (
-                        "   • Ringkasan: "
-                        f"{metrics.get('active_tasks', 0)} aktif, "
-                        f"{metrics.get('completed_tasks', 0)} selesai"
-                    )
-                ]
-                summary_lines.extend(f"   • {task}" for task in current_tasks[:3])
-
-                cur.close()
-                conn.close()
-                return "\n".join(summary_lines)
-
-            # Fallback ke tabel memories jika project_memories belum terisi
-            cur.execute("""
-                SELECT key, content, metadata
-                FROM memories
-                WHERE namespace = 'mcp_tasks'
-                ORDER BY created_at DESC
-                LIMIT 3
-            """)
-            rows = cur.fetchall()
             
-            cur.close()
-            conn.close()
-            
-            if not rows:
-                return "   (Tidak ada task aktif terdaftar)"
-            
-            task_lines = []
-            for row in rows:
-                meta = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'] or '{}')
-                progress = meta.get('progress', 0)
-                status = meta.get('status', 'TODO')
-                task_lines.append(f"   • {row['key']}: {progress}% - {status}")
-            
-            return "\n".join(task_lines)
+            with psycopg.connect(conn_str, row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    # 1. Try project_memories first
+                    try:
+                        cur.execute("""
+                            SELECT content
+                            FROM project_memories
+                            WHERE project_name = 'MCP Unified Tasks'
+                        """)
+                        project_row = cast(Any, cur.fetchone())
+
+                        if project_row and project_row.get("content"):
+                            content = project_row["content"]
+                            if isinstance(content, str):
+                                try:
+                                    content = json.loads(content)
+                                except:
+                                    pass
+
+                            if isinstance(content, dict):
+                                metrics = content.get("metrics", {})
+                                current_tasks = content.get("current_tasks", [])
+                                summary_lines = [
+                                    (
+                                        "   • Ringkasan: "
+                                        f"{metrics.get('active_tasks', 0)} aktif, "
+                                        f"{metrics.get('completed_tasks', 0)} selesai"
+                                    )
+                                ]
+                                summary_lines.extend(f"   • {task}" for task in current_tasks[:3])
+                                return "\n".join(summary_lines)
+                    except Exception as table_err:
+                        # Tabel mungkin belum ada, lanjut ke fallback
+                        pass
+
+                    # 2. Fallback to memories table
+                    cur.execute("""
+                        SELECT key, content, metadata
+                        FROM memories
+                        WHERE namespace = 'mcp_tasks'
+                        ORDER BY created_at DESC
+                        LIMIT 3
+                    """)
+                    rows = cur.fetchall()
+                    
+                    if not rows:
+                        return "   • Tidak ada tugas aktif."
+                    
+                    task_lines = []
+                    for row in cast(List[Any], rows):
+                        meta = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'] or '{}')
+                        progress = meta.get('progress', 0)
+                        status = meta.get('status', 'TODO')
+                        task_lines.append(f"   • {row['key']}: {progress}% - {status}")
+                    
+                    return "\n".join(task_lines)
         except Exception as e:
             return f"   (Gagal mengambil data LTM: {e})"
 

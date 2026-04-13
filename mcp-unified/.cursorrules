@@ -10,3 +10,4 @@ Always refer to the following local rulebook for the standard tool usage, planni
 2. **Local Planning**: Before delegating complex tasks to other agents or OpenHands, use `create_plan` first to establish a local reasoning chain.
 3. **OpenHands Observability**: For long-running coding tasks, use `mcp://openhands/task/{task_id}/logs` to observe real-time progress.
 4. **App Development**: Use `AppDeveloperAgent` for end-to-end coding tasks via `run_coding_task`.
+5. **Gemini Bridge**: For high-level reasoning or autonomous tool chaining (DB/WhatsApp), execute `gemini-pro "command"`.

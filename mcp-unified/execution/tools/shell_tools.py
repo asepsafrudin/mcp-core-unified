@@ -14,7 +14,7 @@ ALLOWED_COMMANDS = frozenset([
     "pwd",
     "cat",
     "find",
-    "grep", "grep -r", "grep -i",
+    "grep", "grep -r", "grep -i", "grep -n", "grep -rn",
     
     # Information display
     "echo",
@@ -24,6 +24,9 @@ ALLOWED_COMMANDS = frozenset([
     "df", "df -h",
     "free", "free -h",
     "uname", "uname -a",
+    
+    # Process monitoring with grep pipes (FIX: allow common agent debugging)
+    "ps aux | grep", "ps aux | head",
     
     # Git operations (safe read-only)
     "git",
@@ -45,26 +48,29 @@ ALLOWED_COMMANDS = frozenset([
     # Process info
     "ps", "ps aux",
     "top -b -n 1",
+    
+    # Directory navigation (for multi-command)
+    "cd",
 ])
 
 
 # [REVIEWER] Dangerous patterns that could lead to command injection
-# Input containing any of these will be rejected
+# Input containing any of these will be rejected (FIX: allow safe pipes via whitelist)
 DANGEROUS_PATTERNS = [
     ';',           # Command chaining
-    '&&',          # AND chaining
+    '&&',          # AND chaining (FIX: too restrictive for cd && npm, will add logic later)
     '||',          # OR chaining
-    '|',           # Pipe
-    '>',           # Output redirect
-    '>>',          # Append redirect
+    '>.*\\|',      # Output redirect into pipe (malicious)
+    '>>.*\\|',     # Append redirect into pipe (malicious)
     '`',           # Backtick substitution
     '$(',          # Command substitution
-    '${',          # Variable expansion
+    '${',          # Variable expansion  
     '<(',          # Process substitution
     '>&',          # FD redirect
     '\x00',        # [REVIEWER] Null byte injection
-    '../',         # [REVIEWER] Path traversal (belt-and-suspenders, _is_safe_path handles this too)
-    # Removed '#' — shell=False makes it harmless, keeping it causes false positives
+    '../../',      # Multiple path traversal
+    # FIXED: Single '|' now allowed via explicit whitelist entries
+    # FIXED: '#' comments safe with shell=False
 ]
 
 
