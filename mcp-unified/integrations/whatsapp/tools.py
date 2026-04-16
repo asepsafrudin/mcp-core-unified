@@ -134,3 +134,54 @@ async def whatsapp_get_messages(
         }, indent=2, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+async def whatsapp_send_formal_report(
+    ctx: Context,
+    recipient_name: str,
+    recipient_phone: str,
+    title: str,
+    summary: str,
+    details: Optional[Dict[str, Any]] = None,
+    impact: str = "",
+    recommendation: str = "",
+    report_type: str = "anomaly"
+) -> str:
+    """
+    Send a formal/professional report via WhatsApp.
+    Useful for reporting data anomalies, audit findings, or critical alerts.
+    
+    Args:
+        recipient_name: Name of the person receiving the report (e.g. 'Pak Asep')
+        recipient_phone: Phone number (e.g. '62812345678')
+        title: Short title of the finding/issue
+        summary: Clear summary of the discovery
+        details: Optional key-value pairs with technical details
+        impact: Describe the impact of this finding
+        recommendation: Provide a call to action or fix
+        report_type: Category of the report (default: 'anomaly')
+    """
+    try:
+        from core.reporting.service import UniversalReport, get_reporting_service
+        
+        report = UniversalReport(
+            recipient_name=recipient_name,
+            recipient_phone=recipient_phone,
+            title=title,
+            summary=summary,
+            details=details or {},
+            impact=impact,
+            recommendation=recommendation,
+            report_type=report_type
+        )
+        
+        service = get_reporting_service()
+        result = await service.send_report(report, channel="whatsapp")
+        
+        return json.dumps({
+            "success": True,
+            "message": "Formal report sent successfully",
+            "report_id": report.report_id,
+            "wa_result": result.get("wa_result")
+        }, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
