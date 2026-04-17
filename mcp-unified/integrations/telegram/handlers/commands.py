@@ -38,9 +38,11 @@ class CommandHandlers(BaseHandler):
             CommandHandler(["posisi", "Posisi", "POSISI"], self.posisi_command),
             CommandHandler(["surat_keluar", "SK", "sk"], self.surat_keluar_command),
             CommandHandler("reminder", self.reminder_command),
-            CommandHandler("anomali", self.anomali_command),
+            CommandHandler("anomali", self.check_anomalies_command),
             CommandHandler("sync", self.sync_command),
             CommandHandler("pics", self.pics_command),
+            CommandHandler("laporan", self.laporan_command),
+            CommandHandler("check_anomalies", self.check_anomalies_command),
         ]
         
         for handler in handlers:
@@ -75,7 +77,8 @@ class CommandHandlers(BaseHandler):
             "— `/clear` — Reset konteks percakapan\n"
             "— `/reset` — Reset sesi chat\n"
             "— `/cline` — Kirim ke Cline\n"
-            "— `/cline_status` — Cek status Cline\n\n"
+            "— `/cline_status` — Cek status Cline\n"
+            "— `/laporan` — Laporan harian/on-demand\n\n"
             "Siap membantu. Ada yang bisa saya bantu?"
         )
         
@@ -429,13 +432,38 @@ class CommandHandlers(BaseHandler):
 
         await update.message.reply_text(formatted_text, parse_mode="Markdown", disable_web_page_preview=True)
 
-    async def anomali_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /anomali command."""
+    async def check_anomalies_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /check_anomalies or /anomali command (Modul 4)."""
         user = update.effective_user
         if not self.is_user_allowed(user.id): return
+
+        # Legacy report (missing agenda)
+        legacy_report = self.bot.dashboard.get_anomalies_report()
         
-        report = self.bot.dashboard.get_anomalies_report()
-        await update.message.reply_text(report, parse_mode="Markdown")
+        status_msg = await update.message.reply_text("🔍 Memeriksa anomali korespondensi (Pending > 30 hari)...")
+        
+        try:
+            res_json = await self.bot.tool_executor.execute("check_anomalies", {})
+            import json
+            res = json.loads(res_json)
+            
+            msg = f"{legacy_report}\n\n"
+            
+            if res.get("status") == "clean":
+                msg += "✅ *Tidak ada anomali kritis.* Semua surat pending masih dalam rentang waktu wajar (< 30 hari)."
+            elif res.get("status") == "anomaly_detected":
+                total = res.get("total_kritis", 0)
+                msg += f"🚨 *LAPORAN PENDING LAMA*\n\nDitemukan {total} surat pending > 30 hari pada substansi PUU.\n\n"
+                
+                for i, item in enumerate(res.get("data", [])[:5]):
+                    msg += f"{i+1}. *{item['agenda']}*\n   👤 {item['surat_dari']}\n   ⏳ Pending: *{item['hari_pending']} hari*\n\n"
+                
+                if total > 5:
+                    msg += f"_Dan {total-5} surat lainnya..._"
+            
+            await status_msg.edit_text(msg, parse_mode="Markdown")
+        except Exception as e:
+            await status_msg.edit_text(f"{legacy_report}\n\n❌ Error check pending: {str(e)}", parse_mode="Markdown")
 
     async def reminder_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /reminder <nomor_surat> [pesan] command."""
@@ -491,3 +519,79 @@ class CommandHandlers(BaseHandler):
         
         report = self.bot.dashboard.get_personnel_report()
         await update.message.reply_text(report, parse_mode="Markdown")
+
+    async def laporan_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /laporan command."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id): return
+        
+        args = context.args
+        sub = args[0].lower() if args else "umum"
+        
+        msg = await update.message.reply_text("⏳ Menyusun laporan, harap tunggu...")
+        
+        try:
+            report = ""
+            if sub == "puu":
+                # Laporan khusus PUU
+                report = self.bot.dashboard.get_recent_summary(days=1)
+                # Tambah info produksi
+                prod = self.bot.dashboard.get_puu_production(limit=5)
+                report += f"\n\n{prod}"
+            elif sub == "pending":
+                # Laporan surat pending (Modul 2)
+                from execution.tool_executor import _db_query
+                sql = """
+                    SELECT agenda, surat_dari, nomor_surat,
+                           tanggal_diterima, 
+                           CURRENT_DATE - tanggal_diterima AS hari
+                    FROM surat_untuk_substansi_puu
+                    WHERE status = 'pending'
+                    ORDER BY tanggal_diterima ASC LIMIT 20
+                """
+                rows = _db_query(sql)
+                report = "⏳ *LAPORAN SURAT PENDING PUU*\n"
+                report += "─────────────────────\n"
+                if not rows:
+                    report = "✅ Tidak ada surat pending di substansi PUU."
+                else:
+                    for r in rows:
+                        icon = "🚨" if r['hari'] > 30 else "⚠️" if r['hari'] > 7 else "⏳"
+                        report += f"{icon} `{r['agenda']}` | *{r['hari']} hari*\n"
+                        report += f"   👤 {r['surat_dari']}\n"
+                        report += f"   📄 _{r['nomor_surat']}_\n\n"
+                    report += f"\nTotal: *{len(rows)} surat* (ditampilkan 20 tertua)"
+            elif sub == "dispo":
+                # Laporan disposisi (Modul 2)
+                from execution.tool_executor import _db_query
+                sql = """
+                    SELECT dari, kepada, nomor_disposisi, tanggal_disposisi,
+                           LEFT(isi_disposisi, 80) as isi
+                    FROM disposisi_distributions
+                    WHERE tanggal_disposisi >= CURRENT_DATE - INTERVAL '7 days'
+                    ORDER BY tanggal_disposisi DESC LIMIT 15
+                """
+                rows = _db_query(sql)
+                report = "📤 *DISTRIBUSI DISPOSISI (7 Hari Terakhir)*\n"
+                report += "─────────────────────\n"
+                if not rows:
+                    report = "📭 Tidak ada distribusi disposisi dalam 7 hari terakhir."
+                else:
+                    for r in rows:
+                        tgl = r['tanggal_disposisi'].strftime('%d/%m') if r['tanggal_disposisi'] else '?'
+                        report += f"• `{r['nomor_disposisi']}` | {tgl}\n"
+                        report += f"   {r['dari']} ➡️ *{r['kepada']}*\n"
+                        report += f"   💬 _{r['isi']}..._\n\n"
+            else:
+                # Laporan umum (default)
+                report = self.bot.dashboard.get_recent_summary(days=1)
+                # Tambah statistik anomali
+                anomali = self.bot.dashboard.get_anomalies_report(limit=3)
+                report += f"\n\n{anomali}"
+                
+                report += "\n\n💡 _Gunakan `/laporan puu`, `/laporan pending`, atau `/laporan dispo` untuk detail spesifik._"
+
+            await msg.edit_text(report, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Error in laporan_command: {e}")
+            await msg.edit_text(f"❌ Gagal menyusun laporan: `{str(e)}`", parse_mode="Markdown")

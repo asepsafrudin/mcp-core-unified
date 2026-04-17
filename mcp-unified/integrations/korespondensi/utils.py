@@ -259,6 +259,35 @@ def parse_posisi(posisi_str: str) -> Dict[str, Any]:
         "is_surat_masuk_puu": puu_received_date is not None  # Flag surat masuk PUU
     }
 
+def determine_refined_status(posisi_str: str) -> str:
+    """
+    Menentukan status manusiawi (refined status) berdasarkan kolom POSISI.
+    Menggunakan token teknis untuk memetakan ke bahasa yang lebih halus.
+    """
+    if not posisi_str or str(posisi_str).upper() == "NULL":
+        return "Belum Diproses"
+    
+    pos_upper = posisi_str.upper()
+    
+    # 1. Definisi Token Prioritas (Sesuai permintaan USER)
+    # TTD = Final / Selesai / Siap Dikirim
+    if "TTD" in pos_upper:
+        return "Selesai / Siap Dikirim"
+    
+    # DONE / SELESAI / DJ = Arsip Final
+    if any(token in pos_upper for token in ["DONE", "SELESAI", "DJ"]):
+        return "Arsip Final"
+    
+    # KOREKSI / PARAF = Proses Koreksi / Paraf
+    if any(token in pos_upper for token in ["PARAFA", "PARAF", "KOREKSI", "REVISI"]):
+        return "Proses Koreksi / Paraf"
+    
+    # PUU = Proses di Substansi PUU
+    if "PUU" in pos_upper:
+        return "Proses di Substansi PUU"
+    
+    return "Dalam Proses"
+
 async def send_telegram_notification(text: str):
     """
     Send a notification to the Telegram Admin.

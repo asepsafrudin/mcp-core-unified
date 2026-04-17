@@ -6,6 +6,7 @@ Main bot class yang mengintegrasikan semua komponen.
 
 import asyncio
 import logging
+import json
 from typing import Dict, Any, Optional
 
 from telegram.ext import Application
@@ -177,7 +178,11 @@ class TelegramBot:
         
         self._running = True
         
+        # Start periodic tasks
+        asyncio.create_task(self._run_periodic_tasks())
+        
         if self.config.mode.value == "polling":
+
             await self._start_polling()
         else:
             await self._start_webhook()
@@ -248,6 +253,58 @@ class TelegramBot:
             await self.application.shutdown()
         
         logger.info("✅ Bot stopped")
+
+    async def _run_periodic_tasks(self) -> None:
+        """Background loop untuk tugas periodik (Modul 4)."""
+        logger.info("🕒 Periodic tasks background loop started")
+        
+        # Jeda awal agar bot benar-benar online
+        await asyncio.sleep(30)
+        
+        while self._running:
+            try:
+                logger.info("🔍 Modul 4: Checking for correspondence anomalies...")
+                res_json = await self.tool_executor.execute("check_anomalies", {})
+                res = json.loads(res_json)
+                
+                if res.get("status") == "anomaly_detected":
+                    total = res.get("total_kritis", 0)
+                    msg = f"🚨 *PROACTIVE ANOMALY ALERT*\n\nDitemukan {total} surat pending > 30 hari pada substansi PUU.\n\n"
+                    
+                    for i, item in enumerate(res.get("data", [])[:5]):
+                        msg += f"{i+1}. *{item['agenda']}* - {item['surat_dari']}\n   _{item['hari_pending']} hari pending_\n"
+                    
+                    if total > 5:
+                        msg += f"\n...dan {total-5} lainnya."
+                        
+                    msg += "\n\n💡 Gunakan `/laporan pending` untuk detail."
+                    
+                    # Kirim ke admin users
+                    admin_ids = self.config.security.admin_users
+                    if admin_ids:
+                        for admin_id in admin_ids:
+                            try:
+                                await self.application.bot.send_message(
+                                    chat_id=admin_id,
+                                    text=msg,
+                                    parse_mode="Markdown"
+                                )
+                                logger.info(f"✅ Anomaly alert sent to admin {admin_id}")
+                            except Exception as e:
+                                logger.error(f"❌ Failed to send alert to {admin_id}: {e}")
+                    else:
+                        logger.warning("⚠️ Anomaly detected but no TELEGRAM_ADMIN_USERS configured")
+                
+                else:
+                    logger.info("✅ Modul 4: No critical anomalies found.")
+                
+            except Exception as e:
+                logger.error(f"❌ Error in periodic task loop: {e}", exc_info=True)
+            
+            # Tunggu 1 jam (3600 detik) untuk pengecekan berikutnya
+            # Untuk demo/testing kita bisa perkecil, tapi default 1 jam aman.
+            await asyncio.sleep(3600)
+
     
     def get_stats(self) -> Dict[str, Any]:
         """Get bot statistics."""
