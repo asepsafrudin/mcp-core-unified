@@ -136,20 +136,76 @@ class MediaHandlers(BaseHandler):
                 await file.download_to_drive(tmp.name)
                 temp_path = tmp.name
             
-            try:
-                # TODO: Process document melalui MCP
+            # Process document
+            is_pdf = ext.lower() == ".pdf"
+            is_image = ext.lower() in [".jpg", ".jpeg", ".png", ".bmp", ".tiff"]
+            
+            if not is_pdf and not is_image:
                 await update.message.reply_text(
                     f"📄 *Dokumen Diterima*\n\n"
                     f"Nama: `{document.file_name}`\n"
                     f"Ukuran: {self._format_size(document.file_size)}\n\n"
-                    f"_Pemrosesan dokumen akan ditambahkan soon._",
+                    f"_Format file ini belum didukung untuk ekstraksi teks._",
                     parse_mode="Markdown"
                 )
+                return
+
+            processing_msg = await update.message.reply_text(
+                f"🔍 *Mengekstrak teks dari {document.file_name}...*",
+                parse_mode="Markdown"
+            )
+
+            try:
+                from services.ocr.service import OCREngine
+                engine = OCREngine.get_instance()
+                
+                all_text = ""
+                
+                if is_pdf:
+                    from pdf2image import convert_from_path
+                    # Convert only first 5 pages to avoid memory issues/spam
+                    images = convert_from_path(temp_path, last_page=5)
+                    
+                    for i, image in enumerate(images):
+                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as img_tmp:
+                            image.save(img_tmp.name, "JPEG")
+                            res = engine.run_ocr(img_tmp.name)
+                            if res and "full_text" in res:
+                                all_text += f"\n--- Halaman {i+1} ---\n{res['full_text']}\n"
+                            os.unlink(img_tmp.name)
+                else:
+                    res = engine.run_ocr(temp_path)
+                    if res and "full_text" in res:
+                        all_text = res["full_text"]
+
+                if all_text.strip():
+                    # Truncate if too long for Telegram
+                    display_text = all_text
+                    if len(display_text) > 3000:
+                        display_text = display_text[:3000] + "\n\n...(teks dipotong karena terlalu panjang)..."
+                    
+                    await processing_msg.edit_text(
+                        f"📄 *Hasil Ekstraksi Teks:*\n\n"
+                        f"```\n{display_text}\n```",
+                        parse_mode="Markdown"
+                    )
+                    
+                    # Simpan ke memory agar AI bisa referensi
+                    await self.conversation_service.save_conversation(
+                        user_id=user.id,
+                        message=f"[OCR Document: {document.file_name}]",
+                        response=all_text
+                    )
+                else:
+                    await processing_msg.edit_text("⚠️ Gagal mengekstrak teks dari dokumen ini (mungkin dokumen kosong atau terenkripsi).")
+
+            except Exception as ocr_err:
+                logger.error(f"OCR Error: {ocr_err}")
+                await processing_msg.edit_text(f"❌ Terjadi kesalahan saat memproses OCR: `{str(ocr_err)}`", parse_mode="Markdown")
             
             finally:
                 if os.path.exists(temp_path):
                     os.unlink(temp_path)
-        
         except Exception as e:
             logger.error(f"Error processing document: {e}")
             await update.message.reply_text(
@@ -385,22 +441,30 @@ class MediaHandlers(BaseHandler):
                         except Exception:
                             pass
 
-            # Final update
-            if full_response != last_update:
-                display = prefix + full_response[:4000]
-                try:
-                    if edit_msg:
-                        await edit_msg.edit_text(display, parse_mode="Markdown")
-                    else:
-                        await update.message.reply_text(display, parse_mode="Markdown")
-                except Exception:
-                    await update.message.reply_text(full_response[:4096])
+            # Final update & cleaning
+            if hasattr(ai_provider, 'strip_thinking_tags'):
+                clean_response = ai_provider.strip_thinking_tags(full_response)
+            else:
+                import re
+                clean_response = re.sub(r'<think>.*?</think>', '', full_response, flags=re.DOTALL | re.IGNORECASE).strip()
+            
+            if not clean_response:
+                clean_response = full_response
+
+            display = prefix + clean_response[:4000]
+            try:
+                if edit_msg:
+                    await edit_msg.edit_text(display, parse_mode="Markdown")
+                else:
+                    await update.message.reply_text(display, parse_mode="Markdown")
+            except Exception:
+                await update.message.reply_text(clean_response[:4096])
 
             # Simpan ke memory
             await self.conversation_service.save_conversation(
                 user_id=user.id,
                 message=message_text,
-                response=full_response
+                response=clean_response
             )
 
         except Exception as e:

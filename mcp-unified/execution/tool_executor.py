@@ -246,18 +246,28 @@ class ToolExecutor:
         """Eksekusi tool dan kembalikan hasilnya sebagai string untuk LLM."""
         executor = self._executors.get(tool_name)
         if not executor:
+            logger.warning(f"⚠️ [AUDIT] Attempted to call unknown tool: {tool_name}")
             return json.dumps({
                 "error": f"Tool '{tool_name}' tidak dikenal",
                 "available_tools": list(self._executors.keys())
             }, ensure_ascii=False)
 
         try:
-            logger.info(f"🔧 Tool call: {tool_name}({tool_args})")
+            # Audit log start
+            start_time = datetime.now()
+            logger.info(f"🔧 [AUDIT] Tool START: {tool_name} | Args: {json.dumps(tool_args, ensure_ascii=False)}")
+            
             result = await executor(tool_args)
-            logger.info(f"✅ Tool {tool_name} → {str(result)[:80]}...")
+            
+            # Audit log success
+            duration = (datetime.now() - start_time).total_seconds()
+            res_summary = str(result)[:100].replace('\n', ' ')
+            logger.info(f"✅ [AUDIT] Tool SUCCESS: {tool_name} | Duration: {duration:.2f}s | Result: {res_summary}...")
+            
             return result
         except Exception as e:
-            logger.error(f"❌ Tool {tool_name} error: {e}")
+            # Audit log failure
+            logger.error(f"❌ [AUDIT] Tool FAILED: {tool_name} | Error: {str(e)}")
             return json.dumps({
                 "error": f"Tool '{tool_name}' gagal: {str(e)}",
                 "status": "error"
@@ -392,6 +402,16 @@ class ToolExecutor:
                             item_dict[col_name] = row_data[i]
                     
                     items.append(item_dict)
+                elif isinstance(r, dict) and "nomor_nd" in r:
+                    # Format baru (PostgreSQL/Dictionary)
+                    items.append({
+                        "tipe": r.get("tipe", "N/A"),
+                        "nomor": r.get("nomor_nd", "-"),
+                        "pengirim": r.get("dari", "-"),
+                        "perihal": r.get("hal", "-"),
+                        "posisi": r.get("posisi", "-"),
+                        "disposisi": r.get("disposisi", "-")
+                    })
                 else:
                     items.append({"data": str(r)})
 

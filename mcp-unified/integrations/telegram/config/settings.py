@@ -263,8 +263,15 @@ class TelegramConfig:
     
     def is_user_allowed(self, user_id: int) -> bool:
         """Check if user is in allowed list."""
-        if not self.security.allowed_users:
+        # Admins are always allowed
+        if self.is_admin(user_id):
             return True
+            
+        if not self.security.allowed_users:
+            # Security default: If no whitelist, deny access
+            logger.warning(f"⚠️ Access denied for {user_id}: No TELEGRAM_ALLOWED_USERS configured.")
+            return False
+            
         return user_id in self.security.allowed_users
     
     def is_admin(self, user_id: int) -> bool:

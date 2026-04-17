@@ -27,6 +27,7 @@ class UIHandlers(BaseHandler):
             CallbackQueryHandler(self.menu_callback, pattern='^menu_'),
             CallbackQueryHandler(self.action_callback, pattern='^action_'),
             CallbackQueryHandler(self.back_callback, pattern='^back_'),
+            CallbackQueryHandler(self.dash_callback, pattern='^dash_'),
         ]
         
         for handler in handlers:
@@ -533,6 +534,36 @@ class UIHandlers(BaseHandler):
             await self._show_home_menu(update, context)
         else:
             await self._show_home_menu(update, context)
+
+    async def dash_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle dashboard button callbacks."""
+        query = update.callback_query
+        await query.answer()
+        
+        action = query.data.replace('dash_', '')
+        
+        if action == "masuk":
+            # Tampilkan surat masuk terbaru
+            results = self.bot.dashboard.search_letters(" ") # Spasi untuk trigger list terbaru
+            from services.correspondence_dashboard import format_search_results
+            text = format_search_results(results, "Terbaru (Masuk/Semua)")
+            await query.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+            
+        elif action == "keluar":
+            # Tampilkan laporan produksi surat keluar
+            text = self.bot.dashboard.get_puu_production()
+            await query.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+            
+        elif action == "anomali":
+            # Tampilkan laporan anomali
+            text = self.bot.dashboard.get_anomalies_report()
+            await query.message.reply_text(text, parse_mode="Markdown")
+            
+        elif action == "sync":
+            # Pemicu sinkronisasi
+            success = self.bot.dashboard.trigger_sync()
+            msg = "🔄 *Sinkronisasi dipicu!*\n\nData akan diperbarui di background. Silakan cek /dashboard atau /status kembali dalam 5 menit." if success else "⚠️ *Sinkronisasi sedang berjalan* atau baru saja dipicu.\n\nHarap tunggu beberapa menit sebelum mencoba lagi."
+            await query.message.reply_text(msg, parse_mode="Markdown")
 
 
 # ═══════════════════════════════════════════════════════════════════

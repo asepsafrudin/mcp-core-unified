@@ -81,3 +81,10 @@ Files updated:
 - security/auto_remediation.py (Fix Engine)
 - run_health_agent.py (Testing Utility)
 - TODO.md (Progress tracked)
+
+## Implementation Update (2026-04-17) - Telegram Bot Hardening
+- ✅ **Default-Deny Auth**: Bot kini aman secara default (whitelist-only).
+- ✅ **OCR Integrated**: Ekstraksi teks otomatis dari dokumen di Telegram.
+- ✅ **Audit Logging**: Pemantauan tool calls dengan prefix `[AUDIT]`.
+- ✅ **UX Polish**: Dashboard interaktif dengan tombol inline & pembersihan tag `<think>`.
+- ✅ **Bug Fixes**: Pagination & data mapping PostgreSQL diperbaiki.

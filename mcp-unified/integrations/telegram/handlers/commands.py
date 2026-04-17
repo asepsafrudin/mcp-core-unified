@@ -6,6 +6,9 @@ Handler untuk Telegram commands (/start, /help, /status, dll).
 
 import platform
 import logging
+import subprocess
+import re
+import os
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
@@ -23,6 +26,7 @@ class CommandHandlers(BaseHandler):
             CommandHandler("start", self.start_command),
             CommandHandler("help", self.help_command),
             CommandHandler("status", self.status_command),
+            CommandHandler("info", self.info_command),
             CommandHandler("clear", self.clear_command),
             CommandHandler("reset", self.reset_command),
             CommandHandler("switch", self.switch_command),
@@ -114,6 +118,50 @@ class CommandHandlers(BaseHandler):
         """Handle /status command."""
         user = update.effective_user
         
+        if not self.is_user_allowed(user.id):
+            return
+
+        await update.message.reply_text("🔍 *Memeriksa Status Sistem Terpadu...*", parse_mode="Markdown")
+
+        try:
+            # Tentukan path ke script
+            # Asumsi bot berjalan di mcp-unified/ atau root
+            script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../run_mcp_with_services.sh"))
+            
+            if not os.path.exists(script_path):
+                # Fallback ke CWD jika relative path gagal
+                script_path = "./run_mcp_with_services.sh"
+
+            # Jalankan script status
+            result = subprocess.check_output(
+                [script_path, "status"],
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                env=os.environ.copy()
+            )
+
+            # Bersihkan ANSI color codes
+            clean_result = re.sub(r'\x1B[@-_][0-?]*[ -/]*[@-~]', '', result)
+            
+            # Format output untuk Telegram
+            status_message = (
+                "📊 *Laporan Kesehatan Sistem Terpadu*\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"```\n{clean_result}\n```\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "✅ *Pengecekan selesai.*"
+            )
+            
+            await update.message.reply_text(status_message, parse_mode="Markdown")
+            
+        except Exception as e:
+            logger.error(f"Error running status script: {e}")
+            await update.message.reply_text(f"❌ *Gagal mengambil status sistem:*\n`{str(e)}`", parse_mode="Markdown")
+
+    async def info_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Original status info (sebagai /info)"""
+        user = update.effective_user
+        
         # Get AI status
         ai_provider = self.ai_manager.current_provider
         ai_status = "🟢" if ai_provider else "🔴"
@@ -122,21 +170,13 @@ class CommandHandlers(BaseHandler):
         # Get MCP status
         mcp_status = "🟢" if self.mcp and self.mcp.is_available else "🔴"
         
-        # Get session info
-        session_count = 0
-        if user.id in self.bot.user_sessions:
-            session_count = self.bot.user_sessions[user.id].get('message_count', 0)
-        
         status_message = (
-            "*Status Sistem Aria*\n\n"
-            f"— Bot: 🟢 Online\n"
-            f"— AI: {ai_status} {ai_name}\n"
-            f"— Bridge Agent: {mcp_status} {'Connected' if self.mcp and self.mcp.is_available else 'Optional/Offline'}\n"
-            f"— OS: {platform.system()} {platform.release()}\n"
-            f"— Python: {platform.python_version()}\n"
-            f"— Konteks Telegram: {self.conversation_service.get_message_count(user.id)} item\n"
-            f"— Mode: {self.config.mode.value.title()}\n\n"
-            "✅ *Sistem berjalan normal*"
+            "*Status Internal Bot*\n\n"
+            f"— Bot Core: 🟢 Online\n"
+            f"— AI Engine: {ai_status} {ai_name}\n"
+            f"— Bridge Agent: {mcp_status}\n"
+            f"— OS: {platform.system()}\n"
+            f"— Konteks: {self.conversation_service.get_message_count(user.id)} item\n"
         )
         
         await update.message.reply_text(status_message, parse_mode="Markdown")
@@ -271,13 +311,36 @@ class CommandHandlers(BaseHandler):
         )
 
     async def dashboard_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /dashboard command - show correspondence summary."""
+        """Handle /dashboard command - show correspondence summary with interactive buttons."""
         user = update.effective_user
         if not self.is_user_allowed(user.id):
             return
             
         summary = self.bot.dashboard.get_recent_summary()
-        await update.message.reply_text(summary, parse_mode="Markdown", disable_web_page_preview=True)
+        
+        # Add inline keyboard for quick actions
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        keyboard = [
+            [
+                InlineKeyboardButton("📥 Masuk", callback_data="dash_masuk"),
+                InlineKeyboardButton("📤 Keluar", callback_data="dash_keluar"),
+            ],
+            [
+                InlineKeyboardButton("⚠️ Anomali", callback_data="dash_anomali"),
+                InlineKeyboardButton("🔄 Sync", callback_data="dash_sync"),
+            ],
+            [
+                InlineKeyboardButton("📊 Status Sistem", callback_data="menu_system")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            summary, 
+            parse_mode="Markdown", 
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
+        )
 
     async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /cari command - search through letters."""
@@ -340,7 +403,7 @@ class CommandHandlers(BaseHandler):
     async def posisi_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /posisi command - search letters by position."""
         user = update.effective_user
-        if not self.is_allowed(user.id): return
+        if not self.is_user_allowed(user.id): return
 
         args = context.args
         if not args:

@@ -33,13 +33,18 @@ else
 fi
 
 if [ "${ENABLE_TELEGRAM}" = "true" ]; then
-    # Kill existing Telegram bot
-    pkill -f "integrations.telegram.run" || true
-    pkill -f "python3 run.py" || true
+    # Check if managed by systemd
+    if systemctl is-active --quiet mcp-telegram-bot.service 2>/dev/null; then
+        echo "🤖 Telegram Bot is managed by systemd. Ensuring it's healthy..."
+    else
+        # Kill existing manual Telegram bot
+        pkill -f "integrations.telegram.run" || true
+        pkill -f "python3 run.py" || true
 
-    # Start Telegram Bot as module from root
-    nohup python3 -m integrations.telegram.run --config integrations/telegram/.env > /tmp/telegram_bot.log 2>&1 &
-    echo "Telegram Bot started"
+        # Start Telegram Bot as module from root
+        nohup python3 -m integrations.telegram.run --config integrations/telegram/.env > /tmp/telegram_bot.log 2>&1 &
+        echo "Telegram Bot started manually"
+    fi
 else
     echo "Telegram Bot auto-start disabled (ENABLE_TELEGRAM=${ENABLE_TELEGRAM})"
 fi
