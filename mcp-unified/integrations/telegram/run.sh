@@ -33,6 +33,13 @@ export PYTHONPATH="${SCRIPT_DIR}/../../..:${PYTHONPATH}"
 echo "🤖 Starting Telegram Bot..."
 echo "================================"
 
+# Guard against duplicate start if managed by systemd
+if systemctl is-active --quiet mcp-telegram-bot.service 2>/dev/null; then
+    echo "⚠️  Telegram Bot is already running as a systemd service."
+    echo "Manual start aborted to prevent conflict."
+    exit 0
+fi
+
 if [ "$1" == "--daemon" ] || [ "$1" == "-d" ]; then
     # Run in background
     nohup python3 run.py > telegram_bot.log 2>&1 &

@@ -213,6 +213,21 @@ Service yang tersedia di UI:
 - `scheduler` (MCP Scheduler)
 - `legal_agent_timers` (Legal Agent timers)
 
+### 🤖 Telegram Bot (Aria)
+
+Bot Telegram **Aria** telah ditingkatkan menjadi asisten cerdas yang mendukung operasional korespondensi:
+
+- **Integrasi OCR (Optical Character Recognition)**:
+    - Ekstraksi teks otomatis dari PDF (max 5 hal) dan gambar (JPG/PNG).
+    - Teks disimpan ke memori percakapan untuk referensi AI.
+- **Interactive Dashboard**:
+    - Perintah `/dashboard` kini interaktif dengan tombol inline untuk akses cepat ke data Masuk, Keluar, dan Anomali.
+    - Tombol `🔄 Sync` dengan mekanisme anti-spam (lock-file).
+- **Hardening & Audit**:
+    - **Default-Deny Authentication**: Hanya pengguna dalam whitelist `.env` yang dapat mengakses.
+    - **Audit Logging**: Setiap pemanggilan tool LLM dicatat dengan durasi dan ringkasan hasil (`[AUDIT]`).
+    - **Think Tag Removal**: Respon AI bersih dari tag teknis `<think>`.
+
 ## Menjalankan Worker Node (Mode Terdistribusi)
 
 Untuk mode terdistribusi dengan RabbitMQ:

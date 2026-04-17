@@ -229,6 +229,77 @@ show_status() {
         print_status_line "llm_api_8088" "not listening"
     fi
 
+    if port_is_listening "127.0.0.1" "6379"; then
+        print_status_line "redis_6379" "accepting connections"
+    else
+        print_status_line "redis_6379" "unreachable"
+    fi
+
+    if http_health_ok "http://127.0.0.1:8082/"; then
+        print_status_line "puu_hub_8082" "healthy"
+    else
+        print_status_line "puu_hub_8082" "not listening"
+    fi
+
+    if port_is_listening "127.0.0.1" "11434"; then
+        print_status_line "ollama_11434" "listening"
+    else
+        print_status_line "ollama_11434" "not listening"
+    fi
+
+    if pgrep -f "searxng" >/dev/null 2>&1; then
+        print_status_line "searxng" "running"
+    fi
+
+    # External Projects (Sibling Directories)
+    if [ -d "${PROJECT_ROOT}/serena" ]; then
+        if pgrep -f "serena" >/dev/null 2>&1; then
+            print_status_line "serena_agent" "running"
+        else
+            print_status_line "serena_agent" "available (stopped)"
+        fi
+    else
+        print_status_line "serena_agent" "not found"
+    fi
+
+    if [ -d "${PROJECT_ROOT}/sql-server" ]; then
+        if pgrep -f "sql-server" >/dev/null 2>&1; then
+            print_status_line "sql_server" "running"
+        else
+            print_status_line "sql_server" "available (stopped)"
+        fi
+    else
+        print_status_line "sql_server" "not found"
+    fi
+
+    if docker ps | grep -q vane; then
+        print_status_line "vane_engine" "running (docker/8090)"
+    else
+        print_status_line "vane_engine" "stopped/missing"
+    fi
+
+    if [ -d "${SCRIPT_DIR}/plugins/oh_integration" ]; then
+        print_status_line "openhands_int" "integrated"
+    else
+        print_status_line "openhands_int" "missing"
+    fi
+
+    if [ -n "${SUPABASE_URL}" ]; then
+        if [ "$(http_status_code "${SUPABASE_URL}")" != "000" ]; then
+            print_status_line "supabase" "reachable (cloud)"
+        else
+            print_status_line "supabase" "unreachable"
+        fi
+    fi
+
+    if [ -n "${GOOGLE_WORKSPACE_CREDENTIALS_PATH}" ]; then
+        if [ -d "${GOOGLE_WORKSPACE_CREDENTIALS_PATH}" ] && [ -f "${GOOGLE_WORKSPACE_CREDENTIALS_PATH}/${GOOGLE_WORKSPACE_SERVICE_ACCOUNT_FILE}" ]; then
+            print_status_line "google_ws" "ready (creds ok)"
+        else
+            print_status_line "google_ws" "missing creds"
+        fi
+    fi
+
     if [ -f "/tmp/mcp-scheduler.pid" ]; then
         local scheduler_pid
         scheduler_pid="$(cat /tmp/mcp-scheduler.pid 2>/dev/null || true)"
@@ -241,6 +312,28 @@ show_status() {
         print_status_line "scheduler" "process running"
     else
         print_status_line "scheduler" "not running"
+    fi
+
+    if command -v gemini-pro >/dev/null 2>&1; then
+        if [ -n "${GOOGLE_API_KEY}" ] || [ -n "${GEMINI_API_KEY}" ]; then
+            print_status_line "gemini_cli" "available (key set)"
+        else
+            print_status_line "gemini_cli" "available (key missing)"
+        fi
+    else
+        print_status_line "gemini_cli" "not installed"
+    fi
+
+    if pgrep -f "integrations.whatsapp.bot_server" >/dev/null 2>&1; then
+        print_status_line "whatsapp_bot" "running"
+    else
+        print_status_line "whatsapp_bot" "not running"
+    fi
+
+    if pgrep -f "integrations.telegram.run" >/dev/null 2>&1; then
+        print_status_line "telegram_bot" "running"
+    else
+        print_status_line "telegram_bot" "not running"
     fi
 }
 
@@ -311,4 +404,11 @@ else
 fi
 
 start_scheduler
+
+echo "------------------------------------------------"
+echo "📊 SYSTEM READINESS REPORT (Full Power Check)"
+echo "------------------------------------------------"
+show_status
+echo "------------------------------------------------"
+
 run_stdio

@@ -77,10 +77,32 @@ class GDriveClient:
         self._credentials = None
     
     def _get_credentials_path(self) -> str:
-        """Get credentials path from environment."""
-        creds_dir = os.getenv("GDRIVE_CREDENTIALS_PATH", "/home/aseps/MCP/OneDrive_PUU/PUU_2026/MCP/credential/gdrive")
-        creds_file = os.getenv("GDRIVE_SERVICE_ACCOUNT_FILE", "oval-fort-461712-c0-78646012bddb.json")
-        return os.path.join(creds_dir, creds_file)
+        """Get credentials path from environment or standard locations."""
+        # 1. Try environment variables
+        creds_dir = os.getenv("GDRIVE_CREDENTIALS_PATH")
+        creds_file = os.getenv("GDRIVE_SERVICE_ACCOUNT_FILE")
+        
+        if creds_dir and creds_file:
+            path = os.path.join(creds_dir, creds_file)
+            if os.path.exists(path):
+                return path
+
+        # 2. Candidate locations (Search order)
+        candidates = [
+            # Standard Config Directory (from current audit)
+            ("/home/aseps/MCP/config/credentials/google", "mcp-gmail-482015-682b788ee191.json"),
+            ("/home/aseps/MCP/config/credentials/google", "oval-fort-461712-c0-78646012bddb.json"),
+            # Legacy OneDrive path
+            ("/home/aseps/MCP/OneDrive_PUU/PUU_2026/MCP/credential/gdrive", "oval-fort-461712-c0-78646012bddb.json"),
+        ]
+
+        for c_dir, c_file in candidates:
+            path = os.path.join(c_dir, c_file)
+            if os.path.exists(path):
+                return path
+
+        # Default fallback
+        return os.path.join("/home/aseps/MCP/config/credentials/google", "mcp-gmail-482015-682b788ee191.json")
     
     def connect(self) -> bool:
         """

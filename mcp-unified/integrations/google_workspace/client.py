@@ -58,16 +58,29 @@ class GoogleWorkspaceClient:
         self._flow = None # To store flow state for PKCE
     
     def _get_credentials_path(self) -> str:
-        """Get credentials path from environment."""
-        root_dir = "/home/aseps/MCP"
-        # Default path - use service account credentials
-        default_dir = os.path.join(root_dir, "config/credentials/google")
-        default_file = "mcp-gmail-482015-682b788ee191.json"  # Service account file
+        """Get credentials path from environment or standard locations."""
+        # 1. Try environment variables
+        creds_dir = os.getenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH")
+        creds_file = os.getenv("GOOGLE_WORKSPACE_SERVICE_ACCOUNT_FILE")
         
-        creds_dir = os.getenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH", default_dir)
-        creds_file = os.getenv("GOOGLE_WORKSPACE_SERVICE_ACCOUNT_FILE", default_file)
-        
-        return os.path.join(creds_dir, creds_file)
+        if creds_dir and creds_file:
+            path = os.path.join(creds_dir, creds_file)
+            if os.path.exists(path):
+                return path
+
+        # 2. Candidate locations (Search order)
+        candidates = [
+            ("/home/aseps/MCP/config/credentials/google", "mcp-gmail-482015-682b788ee191.json"),
+            ("/home/aseps/MCP/config/credentials/google", "oval-fort-461712-c0-78646012bddb.json"),
+        ]
+
+        for c_dir, c_file in candidates:
+            path = os.path.join(c_dir, c_file)
+            if os.path.exists(path):
+                return path
+
+        # Default fallback
+        return os.path.join("/home/aseps/MCP/config/credentials/google", "mcp-gmail-482015-682b788ee191.json")
     
     def connect(self) -> bool:
         """
