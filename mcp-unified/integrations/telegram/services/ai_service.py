@@ -31,7 +31,7 @@ class AIResponse:
     provider: str
     tokens_used: Optional[int] = None
     finish_reason: Optional[str] = None
-    metadata: Dict[str, Any] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class AIService(ABC):
@@ -161,18 +161,41 @@ JANGAN katakan kamu tidak tahu tanggal/waktu — kamu sudah mengetahuinya dari i
 
 ## 🎯 Kemampuan Korespondensi
 Kamu dapat mencari data surat masuk/keluar secara real-time:
-- 🔍 **Cari Perihal** - Gunakan tool `search_letters` (parameter: `query`) untuk mencari berdasarkan perihal, nomor surat, atau pengirim.
-- 📬 **Status Korespondensi** - Gunakan `get_correspondence` untuk ringkasan terkini.
-- 🔢 **Hitung Surat** - Gunakan `count_letters` untuk statistik kuantitatif.
+
+**Tools Standar:**
+- 🔍 `search_letters` — Cari surat berdasarkan perihal, nomor, atau pengirim (sumber: dashboard)
+- 📬 `get_correspondence` — Ringkasan surat masuk/keluar terkini
+- 🔢 `count_letters` — Hitung jumlah surat per periode
+- 📍 `search_by_position` — Cari surat berdasarkan posisi/unit
+
+**Tools Korespondensi Lanjutan (Modul 1 — lebih lengkap):**
+- 🌐 `search_raw_pool` — Cari dari **2.201 surat** lintas semua substansi (SEKRETARIAT, SUPD I-IV, PEIPD). Lebih luas dari search_letters. Parameter: `query`, `substansi` (opsional), `limit`
+- ⏳ `get_agenda_pending` — Daftar **54 surat pending** di substansi PUU, lengkap dengan hari pending & urgensi. Parameter: `min_hari` (opsional)
+- 🔗 `get_disposisi_chain` — Lacak rantai disposisi: dari siapa → ke siapa, beserta instruksi. Parameter: `nomor_disposisi` (contoh: '0102/L')
+- 📤 `get_surat_keluar` — Surat keluar yang diproduksi tim PUU (**45 surat**). Parameter: `bulan`, `query`, `limit`
+- 🏛️ `get_surat_luar_bangda` — Cari surat dari instansi **eksternal** Bangda (**578 surat**: Kemenko, Sekjen, dll). Parameter: `query`, `limit`
+
+**Tools Arsip & Dokumen (Modul 3):**
+- 📄 `search_documents` — Cari di dalam **isi** dokumen PDF yang sudah di-OCR (**30 dokumen** terpilih). Gunakan jika user tanya tentang detail konten dokumen (misal: "apa isi undangan rapat X?"). Parameter: `query`, `limit`
+- 🗄️ `get_file_index` — Cari file di arsip OneDrive (**4.417 file**). Gunakan untuk mencari keberadaan file berdasarkan nama (misal: "cari file undangan harmonisasi"). Parameter: `query`, `category`, `limit`
+
+**Tools Personnel & Anomali (Modul 4 & 5):**
+- 🚨 `check_anomalies` — Audit anomali korespondensi (misal: pending > 30 hari). Gunakan jika user minta cek kesehatan data atau anomali.
+- 👤 `get_staff_workload` — Laporan beban kerja seluruh PIC. Gunakan untuk tanya "siapa yang paling sibuk?" atau rekap penugasan.
+- 🆔 `get_staff_details` — Detail profil staf (NIP, Jabatan, dll). Parameter: `query` (nama/NIP).
+- 🔄 `sync_personnel_data` — Sinkronisasi database pegawai dari JSON master. **WAJIB** gunakan tool ini jika ada permintaan untuk memperbarui, menambah, atau memperbaiki data pegawai. JANGAN mencoba melakukan update manual via SQL ke tabel `staff_details`.
 
 ## 📊 Database Schema (PostgreSQL Port 5433)
 ### Korespondensi & Dokumen
 - **correspondence_letters** - Tabel pusat korespondensi (letter_number, sender, recipient, subject, letter_date, position_raw).
-- **surat_masuk_puu** - Data surat masuk (nomor_nd, dari, hal, tanggal_surat).
-- **surat_keluar_puu** - Data surat keluar produksi (nomor_surat, tujuan, perihal).
+- **surat_masuk_puu** - Surat masuk unit PUU (VIEW dari internal, **50 baris aktif** — kolom: nomor_nd, dari, dari_full, hal, tanggal_surat, tanggal_diterima_puu, posisi, agenda_puu, status_pengiriman, pic_name).
+- **surat_masuk_puu_internal** - Tabel fisik surat masuk PUU (sama persis dengan view di atas).
+- **korespondensi_raw_pool** - Pool mentah SEMUA korespondensi dari semua substansi (**2201 baris** — kolom: nomor_nd, dari, hal, tanggal, posisi, disposisi, source_sheet_name).
+- **surat_keluar_puu** - Data surat keluar produksi (nomor_nd, perihal, tanggal, tujuan).
 - **correspondence_events** - Timeline pergerakan surat (lokasi, status).
 - **vision_results** - Hasil OCR dokumen/gambar (file_name, extracted_text).
 - **knowledge_documents** - Knowledge base dengan embedding (Vector 768).
+- **staff_details** - Data pegawai Bangda (nama, jabatan, unit, nip).
 - **ltm_memory** - Long Term Memory agent.
 
 ## Prinsip Komunikasi
@@ -1133,12 +1156,83 @@ class OllamaChatService(AIService):
                 self.add_to_history(user_id, "user", message)
                 self.add_to_history(user_id, "assistant", full_content)
 
-    async def generate_with_tools(self, *args, **kwargs) -> str:
-        # LLama3.2 3B support tools theoretically, but simple version for now:
-        # Fallback to normal response
-        resp = await self.generate_response(kwargs.get('user_id', 0), kwargs.get('message', ''))
-        return resp.text
-    
+    async def generate_with_tools(
+        self,
+        user_id: int,
+        message: str,
+        tools: List[Dict] = None,
+        tool_executor=None,
+        system_prompt: Optional[str] = None,
+        context: Optional[str] = None,
+        max_iterations: int = 3
+    ) -> str:
+        """
+        Agentic loop untuk Ollama (Simulated Tool Calling).
+        
+        Karena Ollama llama3.2:3b tidak mendukung native function calling,
+        kita gunakan pendekatan ReAct-style: LLM dipandu untuk memanggil
+        tool dalam format JSON via system prompt khusus.
+        """
+        import json
+        import re
+
+        # Buat tool list description untuk system prompt
+        tool_descriptions = ""
+        if tools:
+            tool_descriptions = "\n\n## Tools Tersedia (gunakan jika butuh data):\n"
+            for t in tools:
+                fn = t.get("function", {})
+                params = fn.get("parameters", {}).get("properties", {})
+                param_str = ", ".join([f'"{k}"' for k in params.keys()])
+                tool_descriptions += f'- `{fn["name"]}({param_str})`: {fn.get("description", "")[:100]}\n'
+            tool_descriptions += (
+                "\n\nJika perlu data, balas HANYA dengan JSON (tanpa teks lain):\n"
+                '{"tool": "nama_tool", "args": {"param": "nilai"}}\n'
+                "Setelah mendapat hasil tool, barulah jawab user dalam bahasa Indonesia."
+            )
+
+        enhanced_system = (system_prompt or "") + tool_descriptions
+
+        # Coba agentic loop (max 2 iterasi tool call)
+        current_message = message
+        tool_context = ""
+        
+        for iteration in range(max(1, min(max_iterations, 3))):
+            resp = await self.generate_response(
+                user_id=user_id,
+                message=current_message + (f"\n\nData tool sebelumnya:\n{tool_context}" if tool_context else ""),
+                system_prompt=enhanced_system,
+                context=context
+            )
+            raw_text = resp.text.strip()
+
+            # Cek apakah LLM merespons dengan tool call JSON
+            json_match = re.search(r'\{"tool":\s*"([^"]+)",\s*"args":\s*(\{[^}]*\})\}', raw_text)
+            if json_match and tool_executor:
+                tool_name = json_match.group(1)
+                try:
+                    tool_args = json.loads(json_match.group(2))
+                except Exception:
+                    tool_args = {}
+                
+                tool_result = await tool_executor.execute(tool_name, tool_args)
+                logger.info(f"🏠 Ollama agentic: {tool_name} → {tool_result[:100]}")
+                tool_context += f"\n[{tool_name} result]: {tool_result[:500]}"
+                # Lanjut iterasi dengan context baru
+                continue
+            
+            # Respons normal — selesai
+            return raw_text
+
+        # Jika semua iterasi selesai tanpa respons final
+        final = await self.generate_response(
+            user_id=user_id,
+            message=f"Berdasarkan data berikut, jawab pertanyaan user '{message}':\n{tool_context}",
+            system_prompt=system_prompt,
+            context=context
+        )
+        return final.text
+
     async def generate_with_image(self, *args, **kwargs) -> AIResponse:
         """Ollama simple implementation doesn't support images yet here."""
         raise NotImplementedError("Ollama service currently doesn't support images in this implementation.")

@@ -35,7 +35,7 @@ class TextToSQLService:
 ## Database Schema - MCP Korespondensi (Port 5433)
 
 ### 📬 Tabel: correspondence_letters
-Tabel utama yang menyimpan data surat masuk, keluar, dan disposisi.
+Tabel utama surat masuk, keluar, dan disposisi.
 
 | Kolom | Tipe | Keterangan |
 |-------|------|------------|
@@ -50,15 +50,53 @@ Tabel utama yang menyimpan data surat masuk, keluar, dan disposisi.
 | source_type | TEXT | 'internal', 'external', atau 'outgoing' |
 
 ### 📝 Tabel: surat_masuk_puu
-Detail data surat masuk khusus unit PUU.
+Surat masuk yang sudah diproses dan diarahkan ke unit PUU.
+**VIEW** dari tabel surat_masuk_puu_internal (50+ baris aktif).
 
 | Kolom | Tipe | Keterangan |
 |-------|------|------------|
+| id | BIGINT | Primary key |
+| unique_id | TEXT | ID unik surat |
+| nomor_nd | TEXT | Nomor Nota Dinas (contoh: '500.7/010/SD.IV/2026') |
+| dari | TEXT | Kode pengirim (contoh: 'SD IV - PEIPD') |
+| dari_full | TEXT | Nama lengkap pengirim |
+| hal | TEXT | Perihal/subjek surat |
+| tanggal_surat | DATE | Tanggal surat |
+| tanggal_diterima_puu | DATE | Tanggal surat diterima PUU |
+| no_agenda_dispo | TEXT | Nomor agenda disposisi |
+| agenda_puu | VARCHAR | Nomor agenda internal PUU (contoh: '001-I') |
+| posisi | TEXT | Posisi surat saat ini (contoh: 'SES 7/1 PUU 7/1') |
+| status_pengiriman | TEXT | Status pengiriman surat |
+| pic_name | TEXT | Nama PIC yang menangani |
+| is_puu | BOOLEAN | Apakah surat untuk PUU |
+| raw_pool_id | BIGINT | Referensi ke korespondensi_raw_pool |
+| created_at | TIMESTAMPTZ | Waktu dibuat |
+
+### 🗃️ Tabel: korespondensi_raw_pool
+Pool data mentah semua korespondensi dari berbagai sumber (2201+ baris).
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| id | BIGINT | Primary key |
+| no_agenda | TEXT | Nomor agenda asli |
+| tanggal | DATE | Tanggal surat |
 | nomor_nd | TEXT | Nomor Nota Dinas |
 | dari | TEXT | Pengirim |
 | hal | TEXT | Perihal |
-| tanggal_surat | DATE | Tanggal surat |
-| no_agenda_dispo | TEXT | Nomor agenda disposisi |
+| posisi | TEXT | Posisi surat (multi-step, e.g. 'SES 7/1 PUU 7/1') |
+| disposisi | TEXT | Teks disposisi |
+| source_sheet_name | TEXT | Nama sheet sumber data |
+
+### 📤 Tabel: surat_keluar_puu
+Surat keluar yang diproduksi oleh tim PUU.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| id | BIGINT | Primary key |
+| nomor_nd | TEXT | Nomor ND surat keluar (contoh: '500.4/10/PUU/2026') |
+| perihal | TEXT | Perihal surat |
+| tanggal | DATE | Tanggal surat |
+| tujuan | TEXT | Tujuan surat |
 
 ### 📄 Tabel: knowledge_documents
 Dokumen knowledge base dengan embeddings.
@@ -77,6 +115,16 @@ Hasil OCR file PDF dan gambar.
 | file_name | TEXT | Nama file (e.g. '0161-UND-PUU-2026.pdf') |
 | extracted_text | TEXT | Teks hasil OCR |
 | status | VARCHAR | Status pemrosesan |
+
+### 👥 Tabel: staff_details
+Data pegawai/staf Ditjen Bina Bangda.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| nama | TEXT | Nama lengkap |
+| jabatan | TEXT | Jabatan |
+| unit | TEXT | Unit kerja |
+| nip | TEXT | NIP pegawai |
 """
     
     # Query patterns yang tidak diizinkan
@@ -236,6 +284,7 @@ Output: {{
         
         try:
             # Check if using HybridSQLProvider (new)
+            provider = "legacy"  # default, diupdate jika hybrid
             if hasattr(self.ai_service, 'generate_sql'):
                 # Hybrid provider with Ollama + Fallback
                 response = await self.ai_service.generate_sql(

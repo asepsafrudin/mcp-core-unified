@@ -17,6 +17,7 @@ class AIProvider(str, Enum):
     GROQ = "groq"
     GEMINI = "gemini"
     OPENAI = "openai"
+    OLLAMA = "ollama"  # Local provider — always available as nuclear fallback
 
 
 class MessageType(str, Enum):
