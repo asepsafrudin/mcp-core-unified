@@ -64,7 +64,7 @@ async def test_circuit_breaker_closes_after_timeout():
         local_cluster_id="cluster-a",
         remote_cluster_id="cluster-b",
         remote_endpoint=os.getenv("REMOTE_ENDPOINT", "http://cluster-b:8080" if not os.getenv("CI") else "DUMMY"),
-        shared_secret="test-secret",
+        shared_secret=os.getenv("TEST_SHARED_SECRET", "test-secret"),
     )
     
     # Force circuit open
@@ -86,7 +86,7 @@ async def test_message_router_handles_cluster_failure():
     """
     router = ClusterMessageRouter(
         local_cluster_id=os.getenv("LOCAL_CLUSTER_ID", "hub" if not os.getenv("CI") else "DUMMY"),
-        shared_secret="test-secret",
+        shared_secret=os.getenv("TEST_SHARED_SECRET", "test-secret"),
     )
     
     # Add two clusters
@@ -124,7 +124,7 @@ async def test_broadcast_with_partial_cluster_failure():
     """
     router = ClusterMessageRouter(
         local_cluster_id=os.getenv("LOCAL_CLUSTER_ID", "hub" if not os.getenv("CI") else "DUMMY"),
-        shared_secret="test-secret",
+        shared_secret=os.getenv("TEST_SHARED_SECRET", "test-secret"),
     )
     
     # Add three clusters
