@@ -13,7 +13,7 @@ def mock_config():
     from ..config import TelegramConfig, SecurityConfig, AIConfig, WebhookConfig, WorkerConfig, LoggingConfig
     
     return TelegramConfig(
-        bot_token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+        bot_token=os.getenv("TEST_TELEGRAM_BOT_TOKEN", "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"),
         security=SecurityConfig(allowed_users=[123456]),
         ai=AIConfig(groq_api_key=os.getenv("GROQ_API_KEY", "test-key" if not os.getenv("CI") else "DUMMY")),
         webhook=WebhookConfig(),
