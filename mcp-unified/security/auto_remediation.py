@@ -25,6 +25,11 @@ class SecurityRemediator:
         vulnerabilities = self.scanner.scan_directory()
         results = []
 
+        # Proactively untrack state files
+        state_results = self._untrack_state_files()
+        if state_results:
+            results.extend(state_results)
+
         for vuln in vulnerabilities:
             # Skip self to avoid destructive self-modification
             if "auto_remediation.py" in vuln.file_path:
@@ -115,6 +120,48 @@ class SecurityRemediator:
             logger.error(f"Failed to fix config in {file_path}: {e}")
             
         return None
+
+    def _untrack_state_files(self) -> List[Dict[str, Any]]:
+        results = []
+        try:
+            import subprocess
+            patterns = ["**/.serena/**", "**/*_messages.json"]
+            for pattern in patterns:
+                cmd = ["git", "ls-files", pattern]
+                res = subprocess.run(cmd, cwd=str(self.base_path), capture_output=True, text=True)
+                if res.returncode == 0 and res.stdout.strip():
+                    files = res.stdout.strip().split("\n")
+                    for f in files:
+                        subprocess.run(["git", "rm", "--cached", f], cwd=str(self.base_path), capture_output=True)
+                        results.append({
+                            "file": f,
+                            "vulnerability": "Tracked state/log file",
+                            "action": "Untracked from git"
+                        })
+                        self.fixes_applied += 1
+                        
+            gitignore_path = self.base_path / ".gitignore"
+            if not gitignore_path.exists():
+                # Check root directory if mcp-unified doesn't have it
+                gitignore_path = self.base_path.parent / ".gitignore"
+                
+            if gitignore_path.exists():
+                content = gitignore_path.read_text()
+                appends = []
+                if ".serena/" not in content:
+                    appends.append(".serena/")
+                if "*_messages.json" not in content:
+                    appends.append("*_messages.json")
+                if appends:
+                    with open(gitignore_path, "a") as f:
+                        f.write("\n\n# Auto-remediated state files\n")
+                        for a in appends:
+                            f.write(f"{a}\n")
+                            
+        except Exception as e:
+            logger.error(f"Failed to untrack state files: {e}")
+            
+        return results
 
 if __name__ == "__main__":
     import sys
