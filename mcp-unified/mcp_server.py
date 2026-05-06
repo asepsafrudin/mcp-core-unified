@@ -7,8 +7,9 @@ import sys
 import os
 from pathlib import Path
 
-# Redirect all stdout to stderr to prevent log leakage into MCP protocol
-_real_stdout = sys.stdout
+# Redirect all stdout to stderr during initialization to prevent log leakage into MCP protocol
+_original_stdout = sys.stdout
+_original_stdin = sys.stdin
 sys.stdout = sys.stderr
 
 # Add the project root to Python path
@@ -26,9 +27,9 @@ from pydantic import AnyUrl
 from core.secrets import load_runtime_secrets
 
 loaded_secret_files = load_runtime_secrets()
-for env_path in loaded_secret_files:
-    # Log to stderr if successful (stdout is reserved for MCP protocol)
-    print(f"DEBUG: Loaded .env from {env_path}", file=sys.stderr)
+if os.getenv("MCP_DEBUG") == "true":
+    for env_path in loaded_secret_files:
+        print(f"DEBUG: Loaded .env from {env_path}", file=sys.stderr)
 
 # Route any accidental print() calls to stderr to keep MCP stdout clean
 _original_print = builtins.print
@@ -230,8 +231,10 @@ async def main():
     # [REVIEWER] Initialize all components before accepting requests
     await initialize_components()
     
-    # Revert stdout for MCP protocol
-    sys.stdout = _real_stdout
+    # Revert streams for MCP protocol
+    sys.stdout = _original_stdout
+    sys.stdin = _original_stdin
+    
     async with stdio_server() as (read_stream, write_stream):
         await mcp_server.run(
             read_stream,

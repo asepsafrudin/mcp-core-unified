@@ -15,7 +15,10 @@ from .docx_tools import (
     add_hyperlink_docx,
     add_list_docx,
     set_page_setup_docx,
-    add_toc_docx
+    add_toc_docx,
+    merge_table_cells_docx,
+    modify_table_structure_docx,
+    style_table_cell_docx
 )
 
 # XLSX Tools
@@ -73,6 +76,9 @@ __all__ = [
     'add_list_docx',
     'set_page_setup_docx',
     'add_toc_docx',
+    'merge_table_cells_docx',
+    'modify_table_structure_docx',
+    'style_table_cell_docx',
     # XLSX Tools - Basic
     'read_xlsx',
     'write_xlsx',

@@ -7,15 +7,17 @@ Main bot class yang mengintegrasikan semua komponen.
 import asyncio
 import logging
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
+from telegram import Update, BotCommand
 from telegram.ext import Application
 
 from integrations.telegram.config import TelegramConfig
 from integrations.telegram.core import MCPClientWrapper
 from integrations.telegram.services import (
     AIServiceManager,
-    AgentBridgeMemoryService,
+    GeminiCLIService,
     MessagingService,
     TelegramContextService,
 )
@@ -30,6 +32,7 @@ from integrations.telegram.handlers import CommandHandlers, MessageHandlers, Med
 from integrations.telegram.middleware import AuthMiddleware, LoggingMiddleware, RateLimitMiddleware
 from integrations.telegram.workers import MessageWorker
 from integrations.telegram.utils import setup_logging
+from services.correspondence_dashboard import get_db_conn
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +77,7 @@ class TelegramBot:
         self.messaging_service = MessagingService(
             chunk_size=self.config.worker.chunk_size
         )
-        self.bridge_memory_service = AgentBridgeMemoryService(self.mcp)
+        self.gemini_cli = GeminiCLIService()
         self.conversation_service = TelegramContextService()
         
         # Knowledge & Text-to-SQL for DB access
@@ -164,6 +167,9 @@ class TelegramBot:
             self.media_handlers.register()
             self.feedback_handler.register()
             
+            # Setup commands menu
+            await self.setup_commands()
+            
             logger.info("✅ Bot initialized successfully")
             return True
             
@@ -180,9 +186,10 @@ class TelegramBot:
         
         # Start periodic tasks
         asyncio.create_task(self._run_periodic_tasks())
+        asyncio.create_task(self._run_ingestor_notifications())
+        asyncio.create_task(self._run_scheduler_notifications())
         
         if self.config.mode.value == "polling":
-
             await self._start_polling()
         else:
             await self._start_webhook()
@@ -234,6 +241,54 @@ class TelegramBot:
             pass
         finally:
             await self.stop()
+
+    async def setup_commands(self) -> None:
+        """Register official commands with Telegram (Bot Menu)."""
+        commands = [
+            BotCommand("start", "Mulai percakapan"),
+            BotCommand("dashboard", "Ringkasan korespondensi interaktif"),
+            BotCommand("cari", "Cari surat (nomor/perihal)"),
+            BotCommand("posisi", "Cek posisi surat (unit/meja)"),
+            BotCommand("anomali", "Audit anomali sistem proaktif"),
+            BotCommand("laporan", "Laporan harian & statistik"),
+            BotCommand("notif", "Kontrol layanan notifikasi berkala"),
+            BotCommand("pro", "Mode Gemini CLI (Advanced)"),
+            BotCommand("status", "Cek status kesehatan sistem"),
+            BotCommand("help", "Panduan penggunaan bot")
+        ]
+        try:
+            await self.application.bot.set_my_commands(commands)
+            logger.info("✅ Telegram menu commands registered")
+        except Exception as e:
+            logger.error(f"❌ Failed to register commands: {e}")
+
+    async def _get_service_setting(self, name: str) -> Dict[str, Any]:
+        """Ambil setting layanan dari database."""
+        try:
+            with get_db_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT is_active, interval_seconds FROM bot_service_settings WHERE service_name = %s",
+                        (name,)
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        return {"active": row[0], "interval": row[1]}
+        except Exception as e:
+            logger.error(f"Error fetching service setting {name}: {e}")
+        return {"active": True, "interval": 300} # Default
+
+    async def _update_service_last_run(self, name: str) -> None:
+        """Update timestamp jalan terakhir layanan."""
+        try:
+            with get_db_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE bot_service_settings SET last_run_at = NOW() WHERE service_name = %s",
+                        (name,)
+                    )
+                    conn.commit()
+        except Exception: pass
     
     async def stop(self) -> None:
         """Stop bot."""
@@ -255,57 +310,223 @@ class TelegramBot:
         logger.info("✅ Bot stopped")
 
     async def _run_periodic_tasks(self) -> None:
-        """Background loop untuk tugas periodik (Modul 4)."""
-        logger.info("🕒 Periodic tasks background loop started")
+        """Background loop untuk tugas periodik (Modul 4: Proactive Anomaly Alert)."""
+        logger.info("🕒 Proactive Anomaly Alert loop started")
         
         # Jeda awal agar bot benar-benar online
-        await asyncio.sleep(30)
+        await asyncio.sleep(45)
         
         while self._running:
             try:
-                logger.info("🔍 Modul 4: Checking for correspondence anomalies...")
+                # Check control center
+                setting = await self._get_service_setting("anomaly")
+                if not setting["active"]:
+                    await asyncio.sleep(600)
+                    continue
+
+                logger.info("🔍 Modul 4: Running comprehensive anomaly check...")
                 res_json = await self.tool_executor.execute("check_anomalies", {})
                 res = json.loads(res_json)
                 
                 if res.get("status") == "anomaly_detected":
-                    total = res.get("total_kritis", 0)
-                    msg = f"🚨 *PROACTIVE ANOMALY ALERT*\n\nDitemukan {total} surat pending > 30 hari pada substansi PUU.\n\n"
+                    anomalies = res.get("anomalies", {})
                     
-                    for i, item in enumerate(res.get("data", [])[:5]):
-                        msg += f"{i+1}. *{item['agenda']}* - {item['surat_dari']}\n   _{item['hari_pending']} hari pending_\n"
+                    # 1. Stuck Pending (Critical)
+                    pending = anomalies.get("pending_anomalies", [])
+                    # 2. Missing Metadata (Quality)
+                    metadata = anomalies.get("metadata_anomalies", [])
+                    # 3. Low Confidence OCR (Intelligence)
+                    ocr = anomalies.get("ocr_anomalies", [])
+                    # 4. Incomplete Unified (Integrity)
+                    unified = anomalies.get("unified_anomalies", [])
+                    # 5. Bangda / ULA Anomalies
+                    bangda = anomalies.get("bangda_anomalies", [])
+                    # 6. Raw Pool Flow Gap
+                    flow = anomalies.get("raw_pool_anomalies", [])
+
+                    total_alerts = len(pending) + len(metadata) + len(ocr) + len(unified) + len(bangda) + len(flow)
                     
-                    if total > 5:
-                        msg += f"\n...dan {total-5} lainnya."
+                    if total_alerts > 0:
+                        msg = f"🚨 *PROACTIVE ANOMALY ALERT*\n"
+                        msg += f"━━━━━━━━━━━━━━━━━━━━\n"
+                        msg += f"Ditemukan *{total_alerts}* temuan yang memerlukan perhatian.\n\n"
                         
-                    msg += "\n\n💡 Gunakan `/laporan pending` untuk detail."
-                    
-                    # Kirim ke admin users
-                    admin_ids = self.config.security.admin_users
-                    if admin_ids:
-                        for admin_id in admin_ids:
-                            try:
-                                await self.application.bot.send_message(
-                                    chat_id=admin_id,
-                                    text=msg,
-                                    parse_mode="Markdown"
-                                )
-                                logger.info(f"✅ Anomaly alert sent to admin {admin_id}")
-                            except Exception as e:
-                                logger.error(f"❌ Failed to send alert to {admin_id}: {e}")
-                    else:
-                        logger.warning("⚠️ Anomaly detected but no TELEGRAM_ADMIN_USERS configured")
+                        if pending:
+                            msg += f"🔴 *STUCK PENDING* ({len(pending)})\n"
+                            for item in pending[:3]:
+                                msg += f"• `{item['agenda']}` | {item['days']} hari | _{item['dari']}_\n"
+                            if len(pending) > 3: msg += f"  _(+{len(pending)-3} lainnya)_\n"
+                            msg += "\n"
+                        
+                        if metadata:
+                            msg += f"🟠 *MISSING METADATA* ({len(metadata)})\n"
+                            for item in metadata[:3]:
+                                msg += f"• `{item['nomor_nd'] or 'N/A'}` | _{str(item['hal'])[:50]}..._\n"
+                            msg += "\n"
+                        
+                        if bangda:
+                            msg += f"🔵 *BANGDA/ULA ANOMALIES* ({len(bangda)})\n"
+                            for item in bangda[:3]:
+                                msg += f"• Agenda: `{item['agenda']}` | No: `{item['nomor']}`\n"
+                            msg += "\n"
+
+                        if flow:
+                            msg += f"🟣 *SYNC FLOW GAP* ({len(flow)})\n"
+                            for item in flow[:3]:
+                                msg += f"• `{item['nomor']}` | Unit: {item['unit']}\n"
+                            msg += "\n"
+                            
+                        if ocr:
+                            msg += f"🟡 *LOW CONFIDENCE OCR* ({len(ocr)})\n"
+                            for item in ocr[:2]:
+                                score_pct = int(item['score'] * 100)
+                                msg += f"• `{item['file_name'][:30]}...` | *{score_pct}%*\n"
+                            msg += "\n"
+
+                        if unified:
+                            msg += f"⚪ *INCOMPLETE RECORDS* ({len(unified)})\n"
+                            for item in unified[:2]:
+                                msg += f"• `{item['doc_id']}` | Missing Nomor/Tanggal\n"
+                            msg += "\n"
+
+                        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+                        msg += "💡 _Gunakan `/anomali` untuk detail lengkap atau `/pro` untuk instruksi perbaikan._"
+                        
+                        # Kirim ke admin users
+                        admin_ids = self.config.security.admin_users
+                        if admin_ids:
+                            for admin_id in admin_ids:
+                                try:
+                                    await self.application.bot.send_message(
+                                        chat_id=admin_id,
+                                        text=msg,
+                                        parse_mode="Markdown"
+                                    )
+                                    logger.info(f"✅ Proactive alert sent to admin {admin_id}")
+                                except Exception as e:
+                                    logger.error(f"❌ Failed to send alert to {admin_id}: {e}")
+                        else:
+                            logger.warning("⚠️ Anomaly detected but no TELEGRAM_ADMIN_USERS configured")
                 
                 else:
-                    logger.info("✅ Modul 4: No critical anomalies found.")
+                    logger.info("✅ Modul 4: System health is optimal. No anomalies found.")
+                
+                # Update last run
+                await self._update_service_last_run("anomaly")
+
+            except Exception as e:
+                logger.error(f"❌ Error in anomaly alert loop: {e}", exc_info=True)
+            
+            # Use dynamic interval
+            setting = await self._get_service_setting("anomaly")
+            await asyncio.sleep(setting.get("interval", 43200))
+
+    async def _run_ingestor_notifications(self) -> None:
+        """Loop untuk mengirim notifikasi dokumen baru yang berhasil diarsip."""
+        logger.info("📡 Ingestor notification loop started")
+        
+        # Jeda awal
+        await asyncio.sleep(10)
+        
+        while self._running:
+            try:
+                # Check control center
+                setting = await self._get_service_setting("ingestor")
+                if not setting["active"]:
+                    await asyncio.sleep(60)
+                    continue
+
+                # Query dokumen FINAL baru (notified_at IS NULL)
+                sql = """
+                    SELECT doc_id, jenis_naskah, hal, signer_name, source_url, processed_at, id
+                    FROM mcp_korespondensi_unified
+                    WHERE status = 'FINAL' AND notified_at IS NULL
+                    ORDER BY processed_at ASC
+                    LIMIT 20
+                """
+                
+                results = []
+                try:
+                    with get_db_conn() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(sql)
+                            rows = cur.fetchall()
+                            results = rows
+                except Exception as db_e:
+                    logger.error(f"❌ DB Error in ingestor loop: {db_e}")
+
+                if results:
+                    admin_ids = self.config.security.admin_users
+                    for row in results:
+                        doc_id, jenis, hal, signer, url, p_at, db_id = row
+                        
+                        msg = (
+                            f"📥 *ARSIP OTOMATIS BERHASIL*\n\n"
+                            f"📄 *Jenis*: {jenis or 'N/A'}\n"
+                            f"🔢 *ID*: `{doc_id}`\n"
+                            f"📝 *Hal*: {hal or '-'}\n"
+                            f"👤 *Penandatangan*: {signer or '-'}\n"
+                        )
+                        if url:
+                            msg += f"🌐 [Buka di Google Drive]({url})\n"
+                        
+                        if p_at:
+                            msg += f"\n⏰ _Processed at: {p_at.strftime('%H:%M:%S WIB')}_"
+
+                        if admin_ids:
+                            for admin_id in admin_ids:
+                                try:
+                                    await self.application.bot.send_message(
+                                        chat_id=admin_id,
+                                        text=msg,
+                                        parse_mode="Markdown"
+                                    )
+                                except Exception: pass
+                        
+                        # Mark as notified in database
+                        try:
+                            with get_db_conn() as conn:
+                                with conn.cursor() as cur:
+                                    cur.execute(
+                                        "UPDATE mcp_korespondensi_unified SET notified_at = NOW() WHERE id = %s",
+                                        (db_id,)
+                                    )
+                                    conn.commit()
+                        except Exception as db_e:
+                            logger.error(f"❌ Failed to mark record {doc_id} as notified: {db_e}")
+
+                # Update last run
+                await self._update_service_last_run("ingestor")
+
+                # Use dynamic interval
+                setting = await self._get_service_setting("ingestor")
+                await asyncio.sleep(setting.get("interval", 300))
                 
             except Exception as e:
-                logger.error(f"❌ Error in periodic task loop: {e}", exc_info=True)
-            
-            # Tunggu 1 jam (3600 detik) untuk pengecekan berikutnya
-            # Untuk demo/testing kita bisa perkecil, tapi default 1 jam aman.
-            await asyncio.sleep(3600)
+                logger.error(f"❌ Error in ingestor notification loop: {e}")
+                await asyncio.sleep(60)
+                
+    async def _run_scheduler_notifications(self) -> None:
+        """Loop untuk pengingat jadwal (Modul 2)."""
+        logger.info("⏰ Scheduler notification loop started")
+        await asyncio.sleep(30)
+        
+        while self._running:
+            try:
+                setting = await self._get_service_setting("scheduler")
+                if not setting["active"]:
+                    await asyncio.sleep(300)
+                    continue
+                
+                # Logic scheduler bisa ditambahkan di sini
+                # Untuk saat ini hanya update heartbeat
+                await self._update_service_last_run("scheduler")
+                
+                await asyncio.sleep(setting.get("interval", 3600))
+            except Exception as e:
+                logger.error(f"Error in scheduler loop: {e}")
+                await asyncio.sleep(300)
 
-    
     def get_stats(self) -> Dict[str, Any]:
         """Get bot statistics."""
         return {
@@ -313,8 +534,8 @@ class TelegramBot:
             "mode": self.config.mode.value,
             "sessions": len(self.user_sessions),
             "mcp_available": self.mcp.is_available,
-            "ai_provider": self.ai_manager._current_provider,
-            "ai_available": list(self.ai_manager._providers.keys()),
+            "ai_provider": self.ai_manager.current_provider_name,
+            "ai_available": self.ai_manager.available_providers,
             "middleware": {
                 "requests": self.logging_middleware.stats,
             }

@@ -139,6 +139,9 @@ async def save_vision_result(
                                         processing_metadata = %s,
                                         processing_time_ms = %s,
                                         status = %s,
+                                        gdrive_url = %s,
+                                        summary_ai = %s,
+                                        signer_name = %s,
                                         updated_at = CURRENT_TIMESTAMP
                                     WHERE id = %s
                                     RETURNING id
@@ -150,6 +153,9 @@ async def save_vision_result(
                                     json.dumps(result.processing_metadata),
                                     result.processing_time_ms,
                                     result.status,
+                                    result.gdrive_url,
+                                    result.summary_ai,
+                                    result.signer_name,
                                     existing_id
                                 ))
                                 
@@ -181,8 +187,8 @@ async def save_vision_result(
                         processing_method, model_used,
                         document_type, status,
                         extracted_entities, processing_metadata,
-                        ltm_key, tenant_id
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ltm_key, tenant_id, gdrive_url, summary_ai, signer_name
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     result.file_name,
@@ -202,7 +208,10 @@ async def save_vision_result(
                     json.dumps(result.extracted_entities),
                     json.dumps(result.processing_metadata),
                     result.ltm_key,
-                    result.tenant_id
+                    result.tenant_id,
+                    result.gdrive_url,
+                    result.summary_ai,
+                    result.signer_name
                 ))
                 
                 row = await cur.fetchone()

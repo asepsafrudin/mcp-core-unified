@@ -35,6 +35,16 @@ import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
+# Import skills
+try:
+    from skills.monitoring.anomaly_analyzer import AnomalyAnalyzer
+except ImportError:
+    # Fallback if path not in sys.path
+    import sys
+    sys.path.insert(0, "/home/aseps/MCP/mcp-unified")
+    from skills.monitoring.anomaly_analyzer import AnomalyAnalyzer
+
+
 # Koneksi DB langsung untuk tools Modul 1
 _DB_PARAMS = {
     "host": os.getenv("PG_HOST", "localhost"),
@@ -1128,30 +1138,23 @@ class ToolExecutor:
             return json.dumps({"status": "error", "error": str(e)}, ensure_ascii=False)
 
     async def _exec_check_anomalies(self, args: Optional[Dict[str, Any]] = None) -> str:
-        """Deteksi anomali (surat pending > 30 hari)."""
+        """Deteksi anomali komprehensif menggunakan AnomalyAnalyzer skill."""
         try:
-            sql = """
-                SELECT agenda, surat_dari, nomor_surat,
-                       tanggal_diterima, 
-                       CURRENT_DATE - tanggal_diterima AS hari_pending
-                FROM surat_untuk_substansi_puu
-                WHERE status = 'pending' AND (CURRENT_DATE - tanggal_diterima) > 30
-                ORDER BY tanggal_diterima ASC
-            """
-            rows = _db_query(sql)
+            analyzer = AnomalyAnalyzer()
+            all_anomalies = await analyzer.check_all()
             
-            if not rows:
-                return json.dumps({
-                    "status": "clean",
-                    "message": "Tidak ada anomali kritis (pending > 30 hari) saat ini."
-                })
+            # Count total critical findings
+            total_kritis = len(all_anomalies.get("pending_anomalies", []))
             
             return json.dumps({
-                "status": "anomaly_detected",
-                "total_kritis": len(rows),
-                "data": rows
+                "status": "anomaly_detected" if total_kritis > 0 or any(all_anomalies.values()) else "clean",
+                "total_kritis": total_kritis,
+                "anomalies": all_anomalies,
+                # Compatibility field for existing bot.py logic
+                "data": all_anomalies.get("pending_anomalies", [])[:5]
             }, default=str)
         except Exception as e:
+            logger.error(f"Error in _exec_check_anomalies: {e}")
             return json.dumps({"status": "error", "error": str(e)})
 
     async def _exec_get_staff_workload(self, args: Optional[Dict[str, Any]] = None) -> str:

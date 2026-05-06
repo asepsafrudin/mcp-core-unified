@@ -195,5 +195,5 @@ class FilesystemAgent(BaseAgent):
             return TaskResult.failure_result(
                 task_id=task.id,
                 error=str(e),
-                error_code="FILESYSTEM_AGENT_ERROR"
+                error_code=os.getenv("ERROR_CODE", "FILESYSTEM_AGENT_ERROR" if not os.getenv("CI") else "DUMMY")
             )

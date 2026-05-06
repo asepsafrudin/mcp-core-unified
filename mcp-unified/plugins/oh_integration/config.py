@@ -40,7 +40,7 @@ class OpenHandsConfig:
     # Gunakan sandbox Docker untuk isolation
     use_sandbox: bool = os.getenv("OPENHANDS_USE_SANDBOX", "true").lower() in ("true", "1", "yes")
     # Docker image untuk sandbox (default: Python slim)
-    sandbox_image: str = os.getenv("OPENHANDS_SANDBOX_IMAGE", "python:3.12-slim")
+    sandbox_image: str = os.getenv("OPENHANDS_SANDBOX_IMAGE", "python:3.11-slim")
 
     # === Logging ===
     # Enable detailed logging untuk debugging

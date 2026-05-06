@@ -24,6 +24,7 @@ SSE_LOG = "/tmp/mcp_sse.log"
 KNOWLEDGE_ADMIN_LOG = "/tmp/knowledge_admin.log"
 SELF_HEALING_LOG = "/tmp/self_healing.log"
 WATCHER_LOG = "/tmp/telegram_watcher.log"
+OPENHANDS_ADMIN_LOG = "/tmp/openhands_admin.log"
 SQL_BOT_LOG = str(PROJECT_ROOT / "integrations/telegram/sql_bot.log")
 SQL_BOT_PID = PROJECT_ROOT / "integrations/telegram/sql_bot.pid"
 
@@ -36,6 +37,7 @@ LOG_PATHS = {
     "telegram_watcher": WATCHER_LOG,
     "self_healing": SELF_HEALING_LOG,
     "scheduler": SCHEDULER_LOG,
+    "openhands": OPENHANDS_ADMIN_LOG,
 }
 
 
@@ -192,6 +194,11 @@ def _telegram_status() -> Dict[str, Any]:
     return {"running": bool(pids), "pids": pids, "log": TELEGRAM_LOG, "label": "Telegram Bot"}
 
 
+def _openhands_status() -> Dict[str, Any]:
+    pids = _pgrep("plugins.openhands.admin_server")
+    return {"running": bool(pids), "pids": pids, "log": OPENHANDS_ADMIN_LOG, "label": "OpenHands Admin"}
+
+
 def get_all_service_status() -> Dict[str, Any]:
     return {
         "mcp_sse": _sse_status(),
@@ -204,6 +211,7 @@ def get_all_service_status() -> Dict[str, Any]:
         "self_healing": _self_healing_status(),
         "scheduler": _scheduler_status(),
         "legal_agent_timers": _legal_agent_timer_status(),
+        "openhands": _openhands_status(),
     }
 
 
@@ -236,6 +244,16 @@ def stop_telegram() -> Dict[str, Any]:
     result = _kill_processes("integrations.telegram.run")
     _kill_processes("python3 run.py")
     return {"success": True, "stopped": result}
+
+
+def start_openhands_admin() -> Dict[str, Any]:
+    _kill_processes("plugins.openhands.admin_server")
+    result = _start_process(["python3", "-m", "plugins.openhands.admin_server"], OPENHANDS_ADMIN_LOG)
+    return {"success": True, "started": result, "status": _openhands_status()}
+
+
+def stop_openhands_admin() -> Dict[str, Any]:
+    return {"success": True, "stopped": _kill_processes("plugins.openhands.admin_server")}
 
 
 def start_scheduler() -> Dict[str, Any]:
@@ -293,6 +311,9 @@ def restart_service(service: str) -> Dict[str, Any]:
     if service == "legal_agent_timers":
         stop_legal_agent_timers()
         return start_legal_agent_timers()
+    if service == "openhands":
+        stop_openhands_admin()
+        return start_openhands_admin()
     return {"success": False, "error": f"Unknown service: {service}"}
 
 
@@ -317,6 +338,8 @@ def start_service(service: str) -> Dict[str, Any]:
         return start_scheduler()
     if service == "legal_agent_timers":
         return start_legal_agent_timers()
+    if service == "openhands":
+        return start_openhands_admin()
     return {"success": False, "error": f"Unknown service: {service}"}
 
 
@@ -341,6 +364,8 @@ def stop_service(service: str) -> Dict[str, Any]:
         return stop_scheduler()
     if service == "legal_agent_timers":
         return stop_legal_agent_timers()
+    if service == "openhands":
+        return stop_openhands_admin()
     return {"success": False, "error": f"Unknown service: {service}"}
 
 

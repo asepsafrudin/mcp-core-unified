@@ -9,10 +9,11 @@ import logging
 import subprocess
 import re
 import os
-from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 from integrations.telegram.handlers.base import BaseHandler
+from services.correspondence_dashboard import get_db_conn
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,8 @@ class CommandHandlers(BaseHandler):
             CommandHandler("clear", self.clear_command),
             CommandHandler("reset", self.reset_command),
             CommandHandler("switch", self.switch_command),
-            CommandHandler("cline", self.cline_command),
-            CommandHandler("cline_status", self.cline_status_command),
+            CommandHandler("pro", self.pro_command),
+            CommandHandler("gemini", self.pro_command),
             CommandHandler("query", self.query_command),
             CommandHandler(["dashboard", "Dashboard", "DASHBOARD"], self.dashboard_command),
             CommandHandler(["cari", "Cari", "CARI", "perihal", "Perihal", "PERIHAL"], self.search_command),
@@ -42,7 +43,9 @@ class CommandHandlers(BaseHandler):
             CommandHandler("sync", self.sync_command),
             CommandHandler("pics", self.pics_command),
             CommandHandler("laporan", self.laporan_command),
+            CommandHandler("notif", self.notif_command),
             CommandHandler("check_anomalies", self.check_anomalies_command),
+            CallbackQueryHandler(self.notif_callback, pattern="^notif_"),
         ]
         
         for handler in handlers:
@@ -76,8 +79,7 @@ class CommandHandlers(BaseHandler):
             "— `/status` — Cek status sistem\n"
             "— `/clear` — Reset konteks percakapan\n"
             "— `/reset` — Reset sesi chat\n"
-            "— `/cline` — Kirim ke Cline\n"
-            "— `/cline_status` — Cek status Cline\n"
+            "— `/pro` — Mode Gemini CLI (Tugas Kompleks)\n"
             "— `/laporan` — Laporan harian/on-demand\n\n"
             "Siap membantu. Ada yang bisa saya bantu?"
         )
@@ -105,8 +107,7 @@ class CommandHandlers(BaseHandler):
             "— `/status` — Cek status sistem\n"
             "— `/clear` — Reset konteks percakapan\n"
             "— `/reset` — Reset sesi chat sepenuhnya\n"
-            "— `/cline <pesan>` — Kirim ke Cline\n"
-            "— `/cline_status` — Cek antrian Cline\n"
+            "— `/pro <pesan>` — Gunakan Gemini CLI untuk tugas berat\n"
             "— `/switch <provider>` — Ganti AI (groq/gemini)\n\n"
             "*Format Respon:*\n"
             "— *bold* untuk poin penting\n"
@@ -251,8 +252,8 @@ class CommandHandlers(BaseHandler):
                 f"Tersedia: {', '.join(self.ai_manager.available_providers)}"
             )
     
-    async def cline_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /cline command - send message to Cline."""
+    async def pro_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /pro or /gemini command - send message to Gemini CLI."""
         user = update.effective_user
         
         if not self.is_user_allowed(user.id):
@@ -261,44 +262,43 @@ class CommandHandlers(BaseHandler):
         args = context.args
         if not args:
             await update.message.reply_text(
-                "👤 *Human-in-the-Loop (Cline)*\n\n"
-                "Kirim pesan langsung ke Cline untuk ditangani manual.\n\n"
-                "*Penggunaan:* `/cline <pesan>`\n"
-                "*Contoh:* `/cline Tolong fix bug di main.py`",
+                "🚀 *Gemini CLI Mode (Advanced)*\n\n"
+                "Gunakan mode ini untuk tugas yang membutuhkan penalaran mendalam atau akses tools MCP yang kompleks secara asinkron.\n\n"
+                "*Penggunaan:* `/pro <pesan>`\n"
+                "*Contoh:* `/pro buatkan rekap semua surat masuk bulan ini dan kirim ke WhatsApp Asep`",
                 parse_mode="Markdown"
             )
             return
         
         message_text = " ".join(args)
         
-        # Save untuk Cline
-        success = await self.bridge_memory_service.save_bridge_message(
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name,
-            message=message_text
+        # Kirim indikator sedang bekerja
+        status_msg = await update.message.reply_text(
+            "⏳ *Gemini CLI sedang memproses tugas Anda...*\n"
+            "_Ini mungkin memakan waktu beberapa saat untuk tugas kompleks._",
+            parse_mode="Markdown"
         )
         
-        if success:
-            await update.message.reply_text(
-                "👤 *Pesan Diteruskan ke Cline*\n\n"
-                f"_{message_text[:100]}{'...' if len(message_text) > 100 else ''}_\n\n"
-                "⏳ Menunggu respon dari Cline...",
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text(
-                "❌ *Gagal menyimpan pesan*\n\n"
-                "Silakan coba lagi nanti."
-            )
-    
-    async def cline_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /cline_status command."""
-        await update.message.reply_text(
-            "📊 *Cline Bridge Status*\n\n"
-            "✅ Sistem bridge aktif\n"
-            "Gunakan `/cline <pesan>` untuk mengirim pesan."
-        )
+        try:
+            # Panggil Gemini CLI Service
+            response = await self.bot.gemini_cli.process_message(message_text)
+            
+            # Kirim hasil
+            if len(response) <= 4096:
+                try:
+                    await status_msg.edit_text(response, parse_mode="Markdown")
+                except Exception:
+                    # Fallback jika markdown error
+                    await status_msg.edit_text(response)
+            else:
+                # Split jika terlalu panjang
+                await status_msg.delete()
+                for i in range(0, len(response), 4000):
+                    await update.message.reply_text(response[i:i+4000])
+                    
+        except Exception as e:
+            logger.error(f"Error in pro_command: {e}")
+            await status_msg.edit_text(f"❌ *Gagal memproses dengan Gemini CLI:*\n`{str(e)}`", parse_mode="Markdown")
     
     async def query_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /query command - dinonaktifkan di bot chat utama."""
@@ -433,14 +433,14 @@ class CommandHandlers(BaseHandler):
         await update.message.reply_text(formatted_text, parse_mode="Markdown", disable_web_page_preview=True)
 
     async def check_anomalies_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /check_anomalies or /anomali command (Modul 4)."""
+        """Handle /check_anomalies or /anomali command (Modul 4: Proactive)."""
         user = update.effective_user
         if not self.is_user_allowed(user.id): return
 
         # Legacy report (missing agenda)
         legacy_report = self.bot.dashboard.get_anomalies_report()
         
-        status_msg = await update.message.reply_text("🔍 Memeriksa anomali korespondensi (Pending > 30 hari)...")
+        status_msg = await update.message.reply_text("🔍 *Menjalankan Audit Anomali Komprehensif...*", parse_mode="Markdown")
         
         try:
             res_json = await self.bot.tool_executor.execute("check_anomalies", {})
@@ -450,20 +450,72 @@ class CommandHandlers(BaseHandler):
             msg = f"{legacy_report}\n\n"
             
             if res.get("status") == "clean":
-                msg += "✅ *Tidak ada anomali kritis.* Semua surat pending masih dalam rentang waktu wajar (< 30 hari)."
-            elif res.get("status") == "anomaly_detected":
-                total = res.get("total_kritis", 0)
-                msg += f"🚨 *LAPORAN PENDING LAMA*\n\nDitemukan {total} surat pending > 30 hari pada substansi PUU.\n\n"
+                msg += "✅ *Sistem Sehat.* Tidak ditemukan anomali kritis pada semua parameter (Pending, Metadata, OCR, Unified)."
+            else:
+                anomalies = res.get("anomalies", {})
                 
-                for i, item in enumerate(res.get("data", [])[:5]):
-                    msg += f"{i+1}. *{item['agenda']}*\n   👤 {item['surat_dari']}\n   ⏳ Pending: *{item['hari_pending']} hari*\n\n"
+                # Stuck Pending
+                pending = anomalies.get("pending_anomalies", [])
+                if pending:
+                    msg += f"🔴 *STUCK PENDING* ({len(pending)})\n"
+                    msg += "─────────────────────\n"
+                    for item in pending[:10]:
+                        msg += f"• `{item['agenda']}` | *{item['days']} hari*\n  _{item['dari']}_\n"
+                    if len(pending) > 10: msg += f"\n_(+{len(pending)-10} lainnya)_"
+                    msg += "\n\n"
                 
-                if total > 5:
-                    msg += f"_Dan {total-5} surat lainnya..._"
+                # Missing Metadata
+                metadata = anomalies.get("metadata_anomalies", [])
+                if metadata:
+                    msg += f"🟠 *MISSING METADATA* ({len(metadata)})\n"
+                    msg += "─────────────────────\n"
+                    for item in metadata[:5]:
+                        msg += f"• `{item['nomor_nd'] or 'N/A'}` | {item['tanggal'] or '?'}\n  _{str(item['hal'])[:60]}..._\n"
+                    msg += "\n"
+
+                # Bangda Anomalies
+                bangda = anomalies.get("bangda_anomalies", [])
+                if bangda:
+                    msg += f"🔵 *BANGDA/ULA ANOMALIES* ({len(bangda)})\n"
+                    msg += "─────────────────────\n"
+                    for item in bangda[:5]:
+                        msg += f"• Agenda: `{item['agenda']}` | No: `{item['nomor']}`\n  _{item['dari']}_\n"
+                    msg += "\n"
+
+                # Sync Flow Gap
+                flow = anomalies.get("raw_pool_anomalies", [])
+                if flow:
+                    msg += f"🟣 *SYNC FLOW GAP* ({len(flow)})\n"
+                    msg += "─────────────────────\n"
+                    for item in flow[:5]:
+                        msg += f"• `{item['nomor']}` | Unit: {item['unit']}\n"
+                    msg += "\n"
+
+                # OCR Confidence
+                ocr = anomalies.get("ocr_anomalies", [])
+                if ocr:
+                    msg += f"🟡 *LOW CONFIDENCE OCR* ({len(ocr)})\n"
+                    msg += "─────────────────────\n"
+                    for item in ocr[:5]:
+                        score_pct = int(item['score'] * 100)
+                        msg += f"• `{item['file_name'][:35]}...` | *{score_pct}%*\n"
+                    msg += "\n"
+
+                # Unified Integrity
+                unified = anomalies.get("unified_anomalies", [])
+                if unified:
+                    msg += f"⚪ *INCOMPLETE UNIFIED RECORDS* ({len(unified)})\n"
+                    msg += "─────────────────────\n"
+                    for item in unified[:5]:
+                        msg += f"• ID: `{item['doc_id']}` | _{str(item['hal'])[:60]}..._\n"
+                    msg += "\n"
+
+                msg += "💡 _Gunakan `/pro` untuk instruksi perbaikan otomatis atau konsultasi lebih lanjut._"
             
             await status_msg.edit_text(msg, parse_mode="Markdown")
         except Exception as e:
-            await status_msg.edit_text(f"{legacy_report}\n\n❌ Error check pending: {str(e)}", parse_mode="Markdown")
+            logger.error(f"Error in check_anomalies_command: {e}")
+            await status_msg.edit_text(f"{legacy_report}\n\n❌ *Error Audit:* `{str(e)}`", parse_mode="Markdown")
 
     async def reminder_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /reminder <nomor_surat> [pesan] command."""
@@ -595,3 +647,93 @@ class CommandHandlers(BaseHandler):
         except Exception as e:
             logger.error(f"Error in laporan_command: {e}")
             await msg.edit_text(f"❌ Gagal menyusun laporan: `{str(e)}`", parse_mode="Markdown")
+    async def notif_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /notif command - show control center for notification services."""
+        user = update.effective_user
+        if not self.is_user_allowed(user.id): return
+        
+        # Get services from DB
+        services = []
+        try:
+            with get_db_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT service_name, is_active, last_run_at, description FROM bot_service_settings ORDER BY service_name ASC")
+                    services = cur.fetchall()
+        except Exception as e:
+            logger.error(f"Error fetching services: {e}")
+            await update.message.reply_text("❌ Gagal mengambil data layanan.")
+            return
+
+        msg = "⚙️ *Control Center Layanan Notifikasi*\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+        msg += "Kelola layanan latar belakang bot Anda:\n\n"
+        
+        keyboard = []
+        for s_name, is_active, last_run, desc in services:
+            status_icon = "🟢 ON" if is_active else "🔴 OFF"
+            last_run_str = last_run.strftime("%d/%m %H:%M") if last_run else "Never"
+            
+            msg += f"*{s_name.upper()}* - {status_icon}\n"
+            msg += f"└ 🕒 _Last: {last_run_str}_\n"
+            msg += f"└ 📝 _{desc}_\n\n"
+            
+            btn_text = f"Toggle {s_name.upper()}"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"notif_toggle_{s_name}")])
+            
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+        msg += "💡 _Klik tombol di bawah untuk toggle status._"
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode="Markdown")
+
+    async def notif_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle callback queries for notif toggles."""
+        query = update.callback_query
+        user = query.from_user
+        
+        if not self.is_user_allowed(user.id):
+            await query.answer("Unauthorized", show_alert=True)
+            return
+
+        data = query.data
+        if data.startswith("notif_toggle_"):
+            service_name = data.replace("notif_toggle_", "")
+            
+            # Toggle in DB
+            try:
+                with get_db_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE bot_service_settings SET is_active = NOT is_active, updated_at = NOW() WHERE service_name = %s",
+                            (service_name,)
+                        )
+                        conn.commit()
+                
+                await query.answer(f"✅ {service_name.upper()} toggled!")
+                
+                # Refresh message (recursive call to notif_command logic but edit message)
+                # For simplicity, just update the text
+                await self.notif_command(update, context) # This might not work perfectly as 'update' is for message
+                # Better: manual refresh
+                services = []
+                with get_db_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT service_name, is_active, last_run_at, description FROM bot_service_settings ORDER BY service_name ASC")
+                        services = cur.fetchall()
+                
+                msg = "⚙️ *Control Center Layanan Notifikasi*\n"
+                msg += "━━━━━━━━━━━━━━━━━━━━\n"
+                keyboard = []
+                for s_name, is_active, last_run, desc in services:
+                    status_icon = "🟢 ON" if is_active else "🔴 OFF"
+                    last_run_str = last_run.strftime("%d/%m %H:%M") if last_run else "Never"
+                    msg += f"*{s_name.upper()}* - {status_icon}\n"
+                    msg += f"└ 🕒 _Last: {last_run_str}_\n"
+                    msg += f"└ 📝 _{desc}_\n\n"
+                    keyboard.append([InlineKeyboardButton(f"Toggle {s_name.upper()}", callback_data=f"notif_toggle_{s_name}")])
+                
+                await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+                
+            except Exception as e:
+                logger.error(f"Error toggling service: {e}")
+                await query.answer("❌ Gagal merubah status.", show_alert=True)

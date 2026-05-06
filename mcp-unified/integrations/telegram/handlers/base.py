@@ -30,7 +30,7 @@ class BaseHandler(ABC):
         self.config = bot.config
         self.mcp = bot.mcp
         self.ai_manager = bot.ai_manager
-        self.bridge_memory_service = bot.bridge_memory_service
+        self.gemini_cli = bot.gemini_cli
         self.conversation_service = bot.conversation_service
         self.messaging_service = bot.messaging_service
     

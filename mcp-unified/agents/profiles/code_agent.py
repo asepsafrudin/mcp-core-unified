@@ -96,72 +96,42 @@ class CodeAgent(BaseAgent):
         """
         Execute code-related tasks.
         
-        Delegates ke appropriate tools dan skills.
+        Delegates ke appropriate skills (Layer 3).
         """
-        from tools.code import analyze_code, self_review
-        from tools.file import read_file
+        from skills.coding import analyze_code_structure
         
         task_type = task.type.lower()
         payload = task.payload
         
         try:
-            # Route ke appropriate tool
+            # Route ke appropriate skill action
             if "analyze" in task_type or "analysis" in task_type:
-                if "file" in task_type:
-                    # Analyze file
-                    file_path = payload.get("file_path") or payload.get("path")
-                    if file_path:
-                        result = await analyze_file(file_path)
-                        return TaskResult.success_result(
-                            task_id=task.id,
-                            data=result,
-                            context={"agent": self.name, "action": "file_analysis"}
-                        )
-                
-                elif "project" in task_type:
-                    # Analyze project
-                    project_path = payload.get("project_path") or payload.get("path")
-                    if project_path:
-                        result = await analyze_project(project_path)
-                        return TaskResult.success_result(
-                            task_id=task.id,
-                            data=result,
-                            context={"agent": self.name, "action": "project_analysis"}
-                        )
-                
-                else:
-                    # Analyze code snippet
-                    code = payload.get("code") or payload.get("content")
-                    if code:
-                        result = await analyze_code(code)
-                        return TaskResult.success_result(
-                            task_id=task.id,
-                            data=result,
-                            context={"agent": self.name, "action": "code_analysis"}
-                        )
+                result = await analyze_code_structure(
+                    file_path=payload.get("file_path") or payload.get("path"),
+                    code=payload.get("code") or payload.get("content"),
+                    action="analyze"
+                )
+                if result.get("success"):
+                    return TaskResult.success_result(task.id, data=result.get("data"), context={"agent": self.name})
             
             elif "review" in task_type or "self_review" in task_type:
-                # Self review code
-                file_path = payload.get("file_path") or payload.get("path")
-                check_type = payload.get("check_type", "general")
-                
-                if file_path:
-                    result = await self_review(file_path, check_type=check_type)
-                    return TaskResult.success_result(
-                        task_id=task.id,
-                        data=result,
-                        context={"agent": self.name, "action": "code_review"}
-                    )
+                result = await analyze_code_structure(
+                    file_path=payload.get("file_path") or payload.get("path"),
+                    action="review"
+                )
+                if result.get("success"):
+                    return TaskResult.success_result(task.id, data=result.get("data"), context={"agent": self.name})
             
             # Default: try to read dan analyze
             file_path = payload.get("file_path") or payload.get("path")
             if file_path:
-                result = await analyze_file(file_path)
-                return TaskResult.success_result(
-                    task_id=task.id,
-                    data=result,
-                    context={"agent": self.name, "action": "default_analysis"}
-                )
+                result = await analyze_code_structure(file_path=file_path)
+                if result.get("success"):
+                    return TaskResult.success_result(
+                        task_id=task.id,
+                        data=result.get("data"),
+                        context={"agent": self.name, "action": "default_analysis"}
+                    )
             
             # Fallback: return error
             return TaskResult.failure_result(

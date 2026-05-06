@@ -3,7 +3,10 @@ Document Manager Skill for Office Document Operations
 """
 from typing import Dict, List, Optional, Any
 from skills.base import BaseSkill, register_skill
-from tools.office.docx_tools import read_docx, write_docx, extract_text_docx, edit_docx
+from tools.office.docx_tools import (
+    read_docx, write_docx, extract_text_docx, edit_docx,
+    merge_table_cells_docx, modify_table_structure_docx, style_table_cell_docx
+)
 from tools.office.xlsx_tools import read_xlsx, write_xlsx, extract_data_xlsx, edit_xlsx, format_xlsx
 
 
@@ -28,7 +31,7 @@ class DocumentManagerSkill(BaseSkill):
         content: List[Dict],
         title: Optional[str] = None,
         author: Optional[str] = None
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Create a new Office document
         
@@ -57,7 +60,7 @@ class DocumentManagerSkill(BaseSkill):
                 'error': f'Unsupported format. Use: {self.supported_formats}'
             }
     
-    async def read_document(self, file_path: str, **options) -> Dict:
+    async def read_document(self, file_path: str, **options: Any) -> Dict[str, Any]:
         """
         Read and parse an Office document
         
@@ -79,7 +82,7 @@ class DocumentManagerSkill(BaseSkill):
                 'error': f'Unsupported format. Use: {self.supported_formats}'
             }
     
-    async def extract_text(self, file_path: str, **options) -> Dict:
+    async def extract_text(self, file_path: str, **options: Any) -> Dict[str, Any]:
         """
         Extract text content from document
         
@@ -105,7 +108,7 @@ class DocumentManagerSkill(BaseSkill):
                 'error': f'Unsupported format. Use: {self.supported_formats}'
             }
     
-    async def edit_document(self, file_path: str, edits: List[Dict]) -> Dict:
+    async def edit_document(self, file_path: str, edits: List[Dict]) -> Dict[str, Any]:
         """
         Edit an existing document
         
@@ -126,7 +129,7 @@ class DocumentManagerSkill(BaseSkill):
                 'error': f'Unsupported format. Use: {self.supported_formats}'
             }
     
-    async def analyze_document(self, file_path: str) -> Dict:
+    async def analyze_document(self, file_path: str) -> Dict[str, Any]:
         """
         Analyze document structure and content
         
@@ -141,7 +144,7 @@ class DocumentManagerSkill(BaseSkill):
         if not result.get('success'):
             return result
         
-        analysis = {
+        analysis: Dict[str, Any] = {
             'file_path': file_path,
             'file_type': 'docx' if file_path.endswith('.docx') else 'xlsx',
             'success': True
@@ -197,7 +200,7 @@ class DocumentManagerSkill(BaseSkill):
         
         return analysis
     
-    async def compare_documents(self, file_path1: str, file_path2: str) -> Dict:
+    async def compare_documents(self, file_path1: str, file_path2: str) -> Dict[str, Any]:
         """
         Compare two documents and identify differences
         
@@ -252,12 +255,57 @@ class DocumentManagerSkill(BaseSkill):
             }
         }
     
+    async def modify_table(
+        self,
+        file_path: str,
+        table_idx: int,
+        operation: str,
+        **kwargs: Any
+    ) -> Dict[str, Any]:
+        """
+        Perform advanced table operations on a DOCX document
+        
+        Args:
+            file_path: Path to DOCX file
+            table_idx: Index of table
+            operation: 'merge', 'structure', 'style'
+            **kwargs: Operation-specific arguments
+        """
+        if not file_path.endswith('.docx'):
+            return {'success': False, 'error': 'Table operations only supported for DOCX'}
+            
+        if operation == 'merge':
+            return merge_table_cells_docx(
+                file_path, table_idx,
+                kwargs.get('start_row', 0), kwargs.get('start_col', 0),
+                kwargs.get('end_row', 0), kwargs.get('end_col', 0)
+            )
+        elif operation == 'structure':
+            return modify_table_structure_docx(
+                file_path, table_idx,
+                kwargs.get('action', ''),
+                kwargs.get('index', 0),
+                kwargs.get('count', 1)
+            )
+        elif operation == 'style':
+            return style_table_cell_docx(
+                file_path, table_idx,
+                kwargs.get('row_idx', 0),
+                kwargs.get('col_idx', 0),
+                bg_color=kwargs.get('bg_color'),
+                bold=kwargs.get('bold'),
+                font_size=kwargs.get('font_size'),
+                alignment=kwargs.get('alignment')
+            )
+        else:
+            return {'success': False, 'error': f'Unknown table operation: {operation}'}
+    
     async def batch_process(
         self,
         file_paths: List[str],
         operation: str,
-        **kwargs
-    ) -> Dict:
+        **kwargs: Any
+    ) -> Dict[str, Any]:
         """
         Process multiple documents with same operation
         

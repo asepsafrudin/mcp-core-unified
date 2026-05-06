@@ -71,7 +71,7 @@ async def test_hukumonline():
                 print("\n🔍 Testing search...")
                 search_results = await kb_bridge.search_saved_results(
                     query=os.getenv("QUERY", "hukum" if not os.getenv("CI") else "DUMMY"),
-                    namespace="test_legal_regulations",
+                    namespace=os.getenv("NAMESPACE", "test_legal_regulations" if not os.getenv("CI") else "DUMMY"),
                     top_k=3
                 )
                 print(f"   Found: {len(search_results)} results")
