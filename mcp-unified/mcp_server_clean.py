@@ -20,9 +20,12 @@ def pipe_stream(stream, out_stream, filter_rpc=False):
         decoded_line = line.decode('utf-8', errors='replace')
         
         if filter_rpc:
-            if '"jsonrpc":"2.0"' in decoded_line or '"jsonrpc": "2.0"' in decoded_line:
+            if b'"jsonrpc":"2.0"' in line or b'"jsonrpc": "2.0"' in line:
                 out_stream.write(line)
                 out_stream.flush()
+            elif b'"event":' in line:
+                # Totally suppress internal JSON logs
+                pass
             else:
                 sys.stderr.buffer.write(line)
                 sys.stderr.buffer.flush()
@@ -32,8 +35,8 @@ def pipe_stream(stream, out_stream, filter_rpc=False):
 
 # Thread for stdout (filtered)
 t1 = threading.Thread(target=pipe_stream, args=(proc.stdout, sys.stdout.buffer, True))
-# Thread for stderr (direct)
-t2 = threading.Thread(target=pipe_stream, args=(proc.stderr, sys.stderr.buffer, False))
+# Thread for stderr (also filtered for JSON logs)
+t2 = threading.Thread(target=pipe_stream, args=(proc.stderr, sys.stderr.buffer, True))
 
 t1.start()
 t2.start()

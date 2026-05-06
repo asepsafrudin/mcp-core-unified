@@ -971,7 +971,7 @@ JOB_TEMPLATES = {
     ),
     
     "ltm_task_sync_on_change": JobTemplate(
-        name="ltm_task_sync_on_change",
+        name=os.getenv("NAME", "ltm_task_sync_on_change" if not os.getenv("CI") else "DUMMY"),
         category="autonomous",
         priority=70,
         schedule_type="event",

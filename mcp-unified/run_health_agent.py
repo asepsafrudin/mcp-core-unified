@@ -19,6 +19,8 @@ async def main():
     print("\n📊 Health Check Result:")
     print(f"Status: {result.get('status')}")
     print(f"Security: {result.get('checks', {}).get('security', {}).get('status')}")
+    print(f"Efficiency: {result.get('checks', {}).get('efficiency', {}).get('status')}")
+    print(f"Skill Adoption: {result.get('checks', {}).get('skill_adoption', {}).get('status')} ({result.get('checks', {}).get('skill_adoption', {}).get('adoption_rate', 0):.1f}%)")
     
     if result.get("recovery"):
         print("\n🛠️ Recovery Actions Taken:")

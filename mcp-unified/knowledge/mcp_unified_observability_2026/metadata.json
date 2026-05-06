@@ -1,0 +1,13 @@
+{
+  "title": "MCP Unified Observability & Bot Conflict Resolution",
+  "summary": "Implementasi sistem pemantauan terpadu (Observability) untuk seluruh ekosistem MCP, integrasi status ke Telegram Bot, dan penyelesaian masalah konflik proses ganda pada bot.",
+  "created_at": "2026-04-17T09:18:00+07:00",
+  "updated_at": "2026-04-17T09:18:00+07:00",
+  "tags": ["observability", "telegram", "startup", "conflict-resolution", "mcp-unified"],
+  "references": [
+    "run_mcp_with_services.sh",
+    "restart_bots.sh",
+    "integrations/telegram/handlers/commands.py",
+    "integrations/telegram/run.sh"
+  ]
+}

@@ -1,12 +1,14 @@
-"""
-DOCX Tools for reading and writing Microsoft Word documents
-"""
 import docx
+import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any, Union
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+import docx.oxml.shared
+import docx.opc.constants
 
 from tools.base import BaseTool, register_tool
 
@@ -285,11 +287,11 @@ def search_replace_docx(
         Success status and details of replacements made
     """
     try:
-        import re
         doc = Document(file_path)
         
         replacements_made = 0
         paragraphs_modified = []
+        pattern = None
         
         # Compile regex pattern if needed
         if use_regex:
@@ -300,6 +302,7 @@ def search_replace_docx(
             original_text = para.text
             
             if use_regex:
+                assert pattern is not None
                 new_text = pattern.sub(replace_text, original_text)
             else:
                 if case_sensitive:
@@ -323,6 +326,7 @@ def search_replace_docx(
                     original_text = cell.text
                     
                     if use_regex:
+                        assert pattern is not None
                         new_text = pattern.sub(replace_text, original_text)
                     else:
                         if case_sensitive:
@@ -405,7 +409,7 @@ def apply_paragraph_style_docx(
             }
         
         para = doc.paragraphs[paragraph_idx]
-        styles_applied = {}
+        styles_applied: Dict[str, Any] = {}
         
         # Apply font styling to all runs in paragraph
         if any([font_name, font_size, bold, italic, underline, color]):
@@ -518,7 +522,7 @@ def add_header_footer_docx(
         }
         align = alignment_map.get(alignment.upper(), WD_ALIGN_PARAGRAPH.CENTER)
         
-        result = {'header_added': False, 'footer_added': False}
+        result: Dict[str, Any] = {'header_added': False, 'footer_added': False}
         
         # Add header
         if header_text:
@@ -885,3 +889,205 @@ def add_toc_docx(
             'error': str(e),
             'file_path': file_path
         }
+
+
+@register_tool
+def merge_table_cells_docx(
+    file_path: str,
+    table_idx: int,
+    start_row: int,
+    start_col: int,
+    end_row: int,
+    end_col: int
+) -> Dict:
+    """
+    Merge a range of cells in a DOCX table
+    
+    Args:
+        file_path: Path to DOCX file
+        table_idx: Index of table in document
+        start_row, start_col: Top-left cell coordinates
+        end_row, end_col: Bottom-right cell coordinates
+        
+    Returns:
+        Success status and details
+    """
+    try:
+        doc = Document(file_path)
+        if table_idx >= len(doc.tables):
+            return {'success': False, 'error': f'Table index {table_idx} out of range'}
+        
+        table = doc.tables[table_idx]
+        
+        # Validate coordinates
+        if start_row >= len(table.rows) or end_row >= len(table.rows) or \
+           start_col >= len(table.columns) or end_col >= len(table.columns):
+            return {'success': False, 'error': 'Cell coordinates out of range'}
+        
+        # Perform merge
+        a = table.cell(start_row, start_col)
+        b = table.cell(end_row, end_col)
+        a.merge(b)
+        
+        doc.save(file_path)
+        return {
+            'success': True,
+            'file_path': file_path,
+            'table_idx': table_idx,
+            'merged_range': f'({start_row},{start_col}) to ({end_row},{end_col})'
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@register_tool
+def modify_table_structure_docx(
+    file_path: str,
+    table_idx: int,
+    action: str,
+    index: int,
+    count: int = 1
+) -> Dict:
+    """
+    Modify structure of an existing DOCX table (add/delete rows/columns)
+    
+    Args:
+        file_path: Path to DOCX file
+        table_idx: Index of table
+        action: 'add_row', 'delete_row', 'add_column', 'delete_column'
+        index: Position to perform action
+        count: Number of items to add/delete
+        
+    Returns:
+        Success status and details
+    """
+    try:
+        doc = Document(file_path)
+        if table_idx >= len(doc.tables):
+            return {'success': False, 'error': f'Table index {table_idx} out of range'}
+        
+        table = doc.tables[table_idx]
+        
+        if action == 'add_row':
+            for _ in range(count):
+                # python-docx doesn't support insert_row at index easily, 
+                # so we append and then move the XML elements if needed
+                # For simplicity, we append for now or add to the end
+                table.add_row()
+            message = f'Added {count} rows to table {table_idx}'
+            
+        elif action == 'delete_row':
+            if index < len(table.rows):
+                for _ in range(min(count, len(table.rows) - index)):
+                    row = table.rows[index]
+                    row._element.getparent().remove(row._element)
+                message = f'Deleted {count} rows from table {table_idx} starting at {index}'
+            else:
+                return {'success': False, 'error': 'Row index out of range'}
+                
+        elif action == 'add_column':
+            # Note: adding columns is complex in python-docx
+            # We add to the end
+            for _ in range(count):
+                table.add_column(Inches(1.0))
+            message = f'Added {count} columns to table {table_idx}'
+            
+        elif action == 'delete_column':
+            # Deleting columns requires deleting every cell in that column from every row
+            for _ in range(min(count, len(table.columns) - index)):
+                for row in table.rows:
+                    cell = row.cells[index]
+                    cell._element.getparent().remove(cell._element)
+            message = f'Deleted {count} columns from table {table_idx} starting at {index}'
+        else:
+            return {'success': False, 'error': f'Unknown action: {action}'}
+            
+        doc.save(file_path)
+        return {
+            'success': True,
+            'file_path': file_path,
+            'table_idx': table_idx,
+            'action': action,
+            'message': message
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@register_tool
+def style_table_cell_docx(
+    file_path: str,
+    table_idx: int,
+    row_idx: int,
+    col_idx: int,
+    bg_color: Optional[str] = None,
+    bold: Optional[bool] = None,
+    font_size: Optional[int] = None,
+    alignment: Optional[str] = None
+) -> Dict:
+    """
+    Apply styling to a specific cell in a DOCX table
+    
+    Args:
+        file_path: Path to DOCX file
+        table_idx: Index of table
+        row_idx, col_idx: Cell coordinates
+        bg_color: Hex color (e.g. 'FF0000' for red)
+        bold: Bold text in cell
+        font_size: Font size in points
+        alignment: 'LEFT', 'CENTER', 'RIGHT'
+        
+    Returns:
+        Success status
+    """
+    try:
+        doc = Document(file_path)
+        table = doc.tables[table_idx]
+        cell = table.cell(row_idx, col_idx)
+        
+        # Apply background color (shading)
+        if bg_color:
+            bg_color = bg_color.lstrip('#')
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:fill'), bg_color)
+            tcPr.append(shd)
+            
+        # Apply text styling to paragraphs in cell
+        for para in cell.paragraphs:
+            if alignment:
+                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                align_map = {
+                    'LEFT': WD_ALIGN_PARAGRAPH.LEFT,
+                    'CENTER': WD_ALIGN_PARAGRAPH.CENTER,
+                    'RIGHT': WD_ALIGN_PARAGRAPH.RIGHT
+                }
+                alignment_val = align_map.get(alignment.upper())
+                if alignment_val is not None:
+                    para.alignment = alignment_val
+            
+            if bold is not None or font_size:
+                if not para.runs:
+                    para.add_run()
+                for run in para.runs:
+                    if bold is not None:
+                        run.font.bold = bold
+                    if font_size:
+                        run.font.size = Pt(font_size)
+                        
+        doc.save(file_path)
+        return {
+            'success': True,
+            'file_path': file_path,
+            'table_idx': table_idx,
+            'cell': f'({row_idx},{col_idx})',
+            'styles_applied': {
+                'bg_color': bg_color,
+                'bold': bold,
+                'font_size': font_size,
+                'alignment': alignment
+            }
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}

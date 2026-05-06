@@ -31,12 +31,12 @@ logger = logging.getLogger(__name__)
 # ─── OpenHands SDK Import dengan Fallback ─────────────────────────────
 SDK_AVAILABLE = False
 try:
-    from openhands.sdk import LLM, Agent, Conversation, Tool
-    from openhands.core.config import SandboxConfig, LLMConfig
+    from openhands.sdk import LLM, Agent, Conversation, Tool  # type: ignore
+    from openhands.core.config import SandboxConfig, LLMConfig  # type: ignore
     
     # Import tools
-    from openhands.tools.file_editor import FileEditorTool
-    from openhands.tools.terminal import TerminalTool
+    from openhands.tools.file_editor import FileEditorTool  # type: ignore
+    from openhands.tools.terminal import TerminalTool  # type: ignore
     _sdk_tools_available = True
     
     SDK_AVAILABLE = True
@@ -44,7 +44,7 @@ try:
 except ImportError as e:
     SDK_AVAILABLE = False
     _sdk_tools_available = False
-    logger.warning(
+    logger.debug(
         f"[OpenHands] SDK tidak tersedia, fallback ke FASE 1 mock mode. "
         f"Error: {e}"
     )
@@ -257,7 +257,7 @@ class OpenHandsOrchestrator:
                 cancel_flag = await self.redis.get(
                     f"{config.redis_prefix}{task_id}:cancel"
                 )
-                if cancel_flag:
+                if result and cancel_flag:
                     result.status = TaskStatus.CANCELLED
                     await self._save_task(task_id, result)
                     return
@@ -278,43 +278,84 @@ class OpenHandsOrchestrator:
                         workspace_path=workspace_path,
                     )
 
-                # ── Parse RESULT.json ───────────────────────────────────
-                result = await self.get_status(task_id)
-                result_file = workspace_path / "RESULT.json"
-                if result_file.exists():
-                    agent_result = json.loads(result_file.read_text())
-                    result.status = TaskStatus(agent_result.get("status", "success"))
-                    result.summary = agent_result.get("summary", "")
-                    result.files_created = agent_result.get("files_created", [])
-                    result.files_modified = agent_result.get("files_modified", [])
-                    result.errors = agent_result.get("errors", [])
-                    result.next_steps = agent_result.get("next_steps", [])
-                else:
-                    result.status = TaskStatus.SUCCESS
-                    result.summary = f"Task {task_id} selesai (RESULT.json tidak ditemukan)"
+                if result:
+                    result_file = workspace_path / "RESULT.json"
+                    if result_file.exists():
+                        agent_result = json.loads(result_file.read_text())
+                        result.status = TaskStatus(agent_result.get("status", "success"))
+                        result.summary = agent_result.get("summary", "")
+                        result.files_created = agent_result.get("files_created", [])
+                        result.files_modified = agent_result.get("files_modified", [])
+                        result.errors = agent_result.get("errors", [])
+                        result.next_steps = agent_result.get("next_steps", [])
+                    else:
+                        result.status = TaskStatus.SUCCESS
+                        result.summary = f"Task {task_id} selesai (RESULT.json tidak ditemukan)"
 
             except asyncio.CancelledError:
-                result.status = TaskStatus.CANCELLED
-                result.errors = ["Task dibatalkan oleh user/orchestrator"]
+                if result:
+                    result.status = TaskStatus.CANCELLED
+                    result.errors = ["Task dibatalkan oleh user/orchestrator"]
                 logger.info(f"[OpenHands] Task {task_id} CANCELLED")
 
             except asyncio.TimeoutError:
-                result.status = TaskStatus.TIMEOUT
-                result.errors = [f"Task melebihi batas waktu {request.timeout_minutes} menit"]
+                if result:
+                    result.status = TaskStatus.TIMEOUT
+                    result.errors = [f"Task melebihi batas waktu {request.timeout_minutes} menit"]
                 logger.warning(f"[OpenHands] Task {task_id} TIMEOUT")
 
             except Exception as e:
-                result.status = TaskStatus.FAILED
-                result.errors = [str(e)]
+                if result:
+                    result.status = TaskStatus.FAILED
+                    result.errors = [str(e)]
                 logger.exception(f"[OpenHands] Task {task_id} FAILED: {e}")
 
             finally:
                 if result:
                     result.completed_at = datetime.now(timezone.utc).isoformat()
                     await self._save_task(task_id, result)
+                    
+                    # Sync to LTM
+                    metadata_raw = await self.redis.get(f"{config.redis_prefix}{task_id}:metadata")
+                    metadata = json.loads(metadata_raw) if metadata_raw else {}
+                    await self._sync_to_ltm(result, metadata)
+                    
                     logger.info(
                         f"[OpenHands] Task {task_id} completed with status: {result.status}"
                     )
+
+    async def _sync_to_ltm(self, result: TaskResult, metadata: Dict[str, Any]):
+        """Sinkronisasi hasil kerja agent ke Long-Term Memory (LTM)."""
+        try:
+            # Import registry secara lokal untuk menghindari circular dependency
+            from execution.registry import registry
+            
+            # Buat konten pengalaman
+            experience = {
+                "task_id": result.task_id,
+                "description": metadata.get("task_description", ""),
+                "summary": result.summary,
+                "status": result.status.value,
+                "files_modified": result.files_modified,
+                "files_created": result.files_created,
+                "errors": result.errors,
+                "completed_at": result.completed_at
+            }
+            
+            # Simpan ke LTM menggunakan namespace 'openhands_experience'
+            await registry.execute("memory_save", {
+                "key": f"task:{result.task_id}",
+                "content": json.dumps(experience, ensure_ascii=False),
+                "namespace": "openhands_experience",
+                "metadata": {
+                    "type": "agent_execution",
+                    "agent": "openhands",
+                    "requested_by": metadata.get("requested_by", "mcp_orchestrator")
+                }
+            })
+            logger.info(f"[OpenHands] Task {result.task_id} synced to LTM.")
+        except Exception as e:
+            logger.warning(f"[OpenHands] Failed to sync task {result.task_id} to LTM: {e}")
 
     # ─── FASE 2: SDK Execution ──────────────────────────────────────────
 

@@ -1,0 +1,63 @@
+# 🤖 BLACKBOX AGENT ENHANCED RULES - MCP-UNIFIED 57 SERVICES
+Version: 2.0 | Date: 2026-04-18
+
+## 🎯 CORE PRINCIPLES
+1. **Service-First Execution**: Prioritaskan MCP-Unified tools sebelum external commands
+2. **Namespace Discipline**: SELALU gunakan `namespace` untuk memory/knowledge tools
+3. **Parallel Tooling**: Gunakan multiple tools bersamaan untuk efficiency
+4. **AI Fallback**: Gemini CLI jika MCP down - `/home/aseps/.local/bin/gemini-pro --interactive`
+
+## 🛠️ MCP SERVICES HIERARCHY (57 MCP + Gemini)
+
+### 1. **SCHEDULER (21 Templates, 5 Categories)**
+```
+HIGH PRIORITY: incident_response, health_check, telegram_watcher
+Pattern: scheduler_create_job(template='health_check', schedule='*/5 * * * *')
+```
+
+### 2. **KNOWLEDGE RAG (15 Namespaces, 3.6K Docs)**
+```
+Korespondensi: korespondensi_internal_puu, korespondensi_eksternal
+Legal: legal_regulations, legal_uu_desa
+Pattern: knowledge_search(query='surat puu 2026', namespace='korespondensi_internal_puu')
+```
+
+### 3. **CORE TOOLS (22 Categories)**
+```
+Memory: memory_search, memory_save (namespace required)
+GDrive: gdrive_search_files, gdrive_upload_file
+WhatsApp: whatsapp_send_message(to='6281...', text='...')
+OCR: ocr/extract_text(image_path=..., mode='structured')
+OpenHands: run_coding_task(task_description=...)
+Gemini CLI: gemini-pro --file code.py "review & optimize"
+
+### 4. **INTEGRATION WORKFLOWS (Gemini Enhanced)**
+```
+Gov Admin Flow:
+1. knowledge_search('surat masuk') → search_korespondensi()
+2. ocr/extract_text(surat_scan.jpg, mode='structured') 
+3. whatsapp_send_message() + gmail_send_message()
+4. scheduler_create_job('disposisi_auto')
+
+Kode Development:
+run_coding_task() → get_task_status() → memory_save(result)
+```
+
+## 🚀 EXECUTION PATTERNS
+```
+Planning: create_plan(request) → intelligence/planner_v2.py
+Monitoring: scheduler_get_status() + monitoring/dashboard.py
+OCR Surat: ocr/parse_document() → knowledge_ingest_text()
+WhatsApp Notify: tool_sync_communications() → whatsapp_get_messages()
+```
+
+## 📋 WORKFLOWS GOV ADMIN
+```
+Surat Masuk: sync_semua_surat() → parse_surat_status() → scheduler_run_job_now('disposisi_auto')
+Dashboard: get_korespondensi_summary()
+Backup: scheduler_create_job('backup_full')
+```
+
+**OLD RULES PRESERVED**: Referensi AGENT_RULES.md untuk namespace isolation & OpenHands.
+
+**Apply:** cp .cursorrules.updated .cursorrules && restart VSCode

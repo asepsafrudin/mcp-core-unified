@@ -22,7 +22,7 @@ class EmbeddingUnavailableError(Exception):
 
 # Async Connection Pool
 DB_PARAMS = {
-    'host': settings.POSTGRES_SERVER,
+    'host': '/var/run/postgresql',
     'port': settings.POSTGRES_PORT,
     'dbname': settings.POSTGRES_DB,
     'user': settings.POSTGRES_USER,

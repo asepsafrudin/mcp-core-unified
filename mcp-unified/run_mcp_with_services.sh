@@ -36,6 +36,7 @@ Commands:
   start-stdio       Run MCP stdio server only
   start-llm-api     Start the standalone LLM API on port 8088 if it is not already healthy
   start-scheduler   Start the scheduler service or daemon if it is not already running
+  start-openhands   Start the OpenHands Admin UI on port 8095
   status            Show current runtime status
   help              Show this help
 EOF
@@ -83,6 +84,18 @@ start_bots() {
     else
         echo "⚠️  restart_bots.sh not found or not executable. Skipping bots startup."
     fi
+}
+
+start_openhands() {
+    if http_health_ok "http://127.0.0.1:8095/health"; then
+        echo "🤖 OpenHands Admin already healthy on port 8095. Skipping duplicate start."
+        return 0
+    fi
+
+    echo "🤖 Starting OpenHands Admin (Port 8095)..."
+    # Use the script we created earlier
+    nohup "${SCRIPT_DIR}/scripts/run_openhands_admin.sh" > /tmp/openhands_admin.log 2>&1 &
+    echo "📝 OpenHands log: /tmp/openhands_admin.log"
 }
 
 run_stdio() {
@@ -279,9 +292,13 @@ show_status() {
     fi
 
     if [ -d "${SCRIPT_DIR}/plugins/oh_integration" ]; then
-        print_status_line "openhands_int" "integrated"
+        if http_health_ok "http://127.0.0.1:8095/health"; then
+            print_status_line "openhands_8095" "healthy"
+        else
+            print_status_line "openhands_8095" "not listening"
+        fi
     else
-        print_status_line "openhands_int" "missing"
+        print_status_line "openhands_8095" "missing"
     fi
 
     if [ -n "${SUPABASE_URL}" ]; then
@@ -379,6 +396,11 @@ case "${MODE}" in
         start_scheduler_service
         exit 0
         ;;
+    start-openhands)
+        setup_runtime
+        start_openhands
+        exit 0
+        ;;
     help|-h|--help)
         show_usage
         exit 0
@@ -402,6 +424,8 @@ if [ "${ENABLE_ADMIN_UI}" = "true" ]; then
 else
     echo "🖥️  Admin UI auto-start disabled (ENABLE_ADMIN_UI=${ENABLE_ADMIN_UI})"
 fi
+
+start_openhands
 
 start_scheduler
 

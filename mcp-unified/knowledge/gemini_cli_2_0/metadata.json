@@ -1,0 +1,15 @@
+{
+  "title": "Gemini CLI 2.0 & MCP Stream Hardening",
+  "summary": "Implementasi Gemini CLI 2.0 (perintah gemini-pro) dan sistem pembersihan stream MCP untuk integrasi agen IDE yang mulus.",
+  "created_at": "2026-04-13T10:44:00+07:00",
+  "updated_at": "2026-04-13T10:44:00+07:00",
+  "tags": ["gemini", "cli", "mcp", "logging", "tool-calling", "ide-agent"],
+  "artifacts": [
+    "gemini_cli_2_0.md",
+    "mcp_stream_cleaning.md",
+    "implementation_report.md"
+  ],
+  "references": [
+    "0692d99d-fdee-4ba0-a2e2-30b30bcbdeff"
+  ]
+}

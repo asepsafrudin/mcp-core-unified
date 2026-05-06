@@ -1,0 +1,11 @@
+{
+  "title": "Korespondensi Server Submodule Migration",
+  "summary": "Migration of the korespondensi-server directory from a subdirectory in the main MCP repository to a standalone repository with Git Submodule integration.",
+  "tags": ["git", "submodule", "migration", "korespondensi-server"],
+  "created_at": "2026-04-08T11:43:00+07:00",
+  "updated_at": "2026-04-08T11:43:00+07:00",
+  "references": [
+    "https://github.com/asepsafrudin/pusat-korespondensi",
+    "https://github.com/asepsafrudin/mcp-universal-agent-system"
+  ]
+}

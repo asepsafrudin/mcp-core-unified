@@ -203,6 +203,9 @@ class ProcessingResult:
     namespace: str = "default"
     tenant_id: str = "default"
     ltm_key: str = ""
+    gdrive_url: str = ""
+    summary_ai: str = ""
+    signer_name: str = ""
 
 
 # =============================================================================

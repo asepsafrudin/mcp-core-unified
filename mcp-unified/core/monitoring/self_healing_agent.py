@@ -77,6 +77,33 @@ class SelfHealingAgent:
                 logger.error(f"Security remediation failed: {exc}")
                 actions.append({"action": "security_remediation", "status": "FAILED", "error": str(exc)})
 
+        # Efficiency & Workspace Hygiene Remediation
+        efficiency_status = payload.get("checks", {}).get("efficiency", {})
+        if efficiency_status.get("status") == "REDUNDANT_FOUND":
+            logger.info("Executing Workspace Hygiene (Consolidation) SOP...")
+            try:
+                # Run the consolidation script
+                cmd = ["python3", "/home/aseps/MCP/scripts/consolidate_scripts.py"]
+                completed = subprocess.run(cmd, capture_output=True, text=True)
+                actions.append({
+                    "action": "workspace_hygiene",
+                    "status": "COMPLETED" if completed.returncode == 0 else "FAILED",
+                    "stdout": completed.stdout[-1000:]
+                })
+            except Exception as exc:
+                logger.error(f"Workspace hygiene failed: {exc}")
+                actions.append({"action": "workspace_hygiene", "status": "FAILED", "error": str(exc)})
+
+        # Skill Adoption Reporting (No auto-fix for now as it's complex refactoring, just log it)
+        skill_status = payload.get("checks", {}).get("skill_adoption", {})
+        if skill_status.get("status") == "LOW_ADOPTION":
+            logger.warning(f"Low skill adoption detected: {skill_status.get('missing_adoption')}")
+            actions.append({
+                "action": "skill_audit",
+                "status": "WARNING",
+                "note": f"Scripts missing shared skills: {', '.join(skill_status.get('missing_adoption', []))}"
+            })
+
         # Re-check health after recovery
         post_check = await self.health_check.run()
         return {

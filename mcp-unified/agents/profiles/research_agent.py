@@ -25,19 +25,8 @@ from .research.scrapers import JDIHScraper, PeraturanScraper
 
 logger = logging.getLogger(__name__)
 
-# Import research tools (Vane integration)
-try:
-    from tools.research_tools import (
-        vane_search,
-        vane_legal_search,
-        vane_deep_research,
-        vane_gap_fill,
-    )
-    _vane_tools_available = True
-    logger.info("VaneConnector research tools tersedia")
-except ImportError as e:
-    _vane_tools_available = False
-    logger.warning(f"VaneConnector tidak tersedia: {e}. Fallback ke scraper.")
+# Research tools are now handled via skills.research (Layer 3)
+_vane_tools_available = True  # Skill layer handles availability check
 
 
 @register_agent
@@ -140,10 +129,12 @@ class ResearchAgent(BaseAgent):
             # A. VANE AI SEARCH (primary path)
             # ============================================
             if _vane_tools_available and (
-                "search" in task_type or"vane" in task_type or
+                "search" in task_type or "vane" in task_type or
                 "research" in task_type or "legal" in task_type or
                 "query" in task_type or "knowledge" in task_type
             ):
+                from skills.research import vane_ai_research
+                
                 query = (
                     payload.get("query") or
                     payload.get("question") or
@@ -151,59 +142,71 @@ class ResearchAgent(BaseAgent):
                     payload.get("keyword")
                 )
                 if query:
-                    mode       = payload.get("mode", "balanced")
-                    regulation = payload.get("regulation", "UU 23/2014")
-                    is_legal   = any(
-                        kw in query.lower()
-                        for kw in ["uu", "peraturan", "pasal", "jdih", "hukum",
-                                   "kewenangan", "urusan", "spm", "pemerintah"]
-                    )
-
                     # Gap fill khusus
                     if "gap" in task_type or "fill" in task_type:
-                        sub_urusan = payload.get("sub_urusan", query)
-                        bidang     = payload.get("bidang", "Umum")
-                        result     = await vane_gap_fill(sub_urusan, bidang)
+                        result = await vane_ai_research(
+                            query=query, 
+                            action="gap_fill",
+                            sub_urusan=payload.get("sub_urusan", query),
+                            bidang=payload.get("bidang", "Umum")
+                        )
                         return TaskResult.success_result(
                             task_id=task.id,
-                            data=result,
-                            context={"agent": self.name, "action": "gap_fill", "tool": "vane_gap_fill"}
+                            data=result.get("data") if result.get("success") else result,
+                            context={"agent": self.name, "action": "gap_fill"}
                         )
 
                     # Deep research multi-query
                     if "deep" in task_type or payload.get("deep", False):
-                        sub_queries = payload.get("sub_queries")
-                        result      = await vane_deep_research(
-                            main_query=query,
-                            sub_queries=sub_queries,
-                            namespace=payload.get("namespace", "legal_research_deep"),
-                            save_to_kb=payload.get("save_to_kb", False),
+                        result = await vane_ai_research(
+                            query=query,
+                            action="deep_research",
+                            sub_queries=payload.get("sub_queries"),
+                            namespace=payload.get("namespace", "legal_research_deep")
                         )
                         return TaskResult.success_result(
                             task_id=task.id,
-                            data=result,
-                            context={"agent": self.name, "action": "deep_research", "tool": "vane_deep_research"}
+                            data=result.get("data") if result.get("success") else result,
+                            context={"agent": self.name, "action": "deep_research"}
                         )
 
                     # Legal search atau general search
-                    if is_legal:
-                        result = await vane_legal_search(query, regulation=regulation)
-                        action = "legal_research"
-                    else:
-                        result = await vane_search(query, mode=mode)
-                        action = "web_research"
-
-                    return TaskResult.success_result(
-                        task_id=task.id,
-                        data=result,
-                        context={"agent": self.name, "action": action, "tool": "vane"}
+                    is_legal = any(
+                        kw in query.lower()
+                        for kw in ["uu", "peraturan", "pasal", "jdih", "hukum",
+                                   "kewenangan", "urusan", "spm", "pemerintah"]
                     )
+                    
+                    if is_legal:
+                        result = await vane_ai_research(
+                            query=query, 
+                            action="legal", 
+                            regulation=payload.get("regulation", "UU 23/2014")
+                        )
+                        action_name = "legal_research"
+                    else:
+                        result = await vane_ai_research(
+                            query=query, 
+                            action="search", 
+                            mode=payload.get("mode", "balanced")
+                        )
+                        action_name = "web_research"
+
+                    if result.get("success"):
+                        return TaskResult.success_result(
+                            task_id=task.id,
+                            data=result.get("data"),
+                            context={"agent": self.name, "action": action_name}
+                        )
 
             # ============================================
             # B. SCRAPING LANGSUNG (fallback / explicit)
             # ============================================
             if "scrape" in task_type or "regulation" in task_type:
                 keyword = payload.get("keyword") or payload.get("query")
+                if not isinstance(keyword, str):
+                    return TaskResult.failure_result(task.id, error="Keyword/query must be a string", error_code="INVALID_INPUT")
+                    
                 sources = payload.get("sources", ["jdih", "peraturan"])
                 results = await self._scrape_regulations(keyword, sources)
                 return TaskResult.success_result(

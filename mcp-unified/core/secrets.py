@@ -50,7 +50,7 @@ def get_default_secret_files() -> list[Path]:
 def load_runtime_secrets(
     env_files: Iterable[str | os.PathLike[str]] | None = None,
     *,
-    override: bool = False,
+    override: bool = True,
 ) -> list[Path]:
     """
     Load runtime secrets from the central locations.

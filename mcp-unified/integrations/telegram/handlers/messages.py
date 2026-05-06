@@ -137,14 +137,22 @@ class MessageHandlers(BaseHandler):
                 enriched_context = await self.conversation_service.build_enriched_context(user.id, message_text)
                 
                 if use_agentic:
-                    final_response = await provider.generate_with_tools(
-                        user_id=user.id,
-                        message=message_text,
-                        tools=tool_defs,
-                        tool_executor=tool_executor,
-                        context=enriched_context,
-                        max_iterations=5
-                    )
+                    # PRO Mode: Gunakan Gemini CLI untuk tugas kompleks (Logic Brain utama)
+                    if provider_name == 'gemini' and hasattr(self.bot, 'gemini_cli'):
+                        logger.info(f"🧠 Using Gemini CLI for complex task: {message_text[:50]}...")
+                        # Tambahkan context sistem jika perlu
+                        system_context = "You are a helpful assistant with access to MCP tools."
+                        final_response = await self.bot.gemini_cli.process_message(message_text, system_prompt=system_context)
+                    else:
+                        # Fallback ke standard provider generation
+                        final_response = await provider.generate_with_tools(
+                            user_id=user.id,
+                            message=message_text,
+                            tools=tool_defs,
+                            tool_executor=tool_executor,
+                            context=enriched_context,
+                            max_iterations=5
+                        )
                 else:
                     # Streaming (but collect full for failover safety)
                     raw_full = ""

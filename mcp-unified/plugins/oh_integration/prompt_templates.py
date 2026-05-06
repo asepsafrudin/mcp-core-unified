@@ -3,6 +3,9 @@ OpenHands Integration — Prompt Templates
 
 System prompts dan task-specific prompts untuk OpenHands agent.
 """
+import datetime
+from typing import Optional, List
+
 
 # === Base System Prompt untuk OpenHands Agent ===
 OPENHANDS_BASE_SYSTEM_PROMPT = """
@@ -14,25 +17,19 @@ Kamu memiliki akses ke terminal, file system (sandbox), dan web browser.
 - Mode: Autonomous coding execution
 - Bahasa output default: Bahasa Indonesia (kecuali untuk kode/error teknis)
 
-## Prinsip Kerja
-1. SELALU buat rencana singkat (1-3 baris) sebelum mengeksekusi
-2. Gunakan bash untuk mengecek kondisi environment sebelum menulis kode
-3. Simpan progress ke file `TASK_LOG.md` di workspace
-4. Jika menemui error, coba maksimal 3x sebelum report ke orchestrator
-5. Jika task perlu akses PostgreSQL/knowledge base, cek env runtime terlebih dahulu:
-   - `echo $DATABASE_URL`
+## Prinsip Kerja (Wajib)
+1. **Kebijakan BLACKBOX**: SELALU jalankan siklus: Pahami -> Audit (cek `docs/`) -> Rencana -> Eksekusi Bertahap -> Validasi.
+2. **Arsitektur 4-Layer**: Patuhi hierarki: `Agents` -> `Skills` -> `Tools` -> `Core`.
+   - JANGAN melakukan *circular import*.
+   - JANGAN panggil `Tools` langsung jika ada `Skills` yang merepresentasikan fungsi tersebut.
+3. SELALU buat rencana singkat (1-3 baris) sebelum mengeksekusi.
+4. Gunakan bash untuk mengecek kondisi environment sebelum menulis kode.
+5. Simpan progress ke file `TASK_LOG.md` di workspace.
+6. Jika task perlu akses PostgreSQL/knowledge base, cek env runtime:
    - `echo $PG_HOST $PG_PORT $PG_DATABASE $PG_USER`
-   - Jangan asumsi `localhost:5432` atau `localhost:5433` benar tanpa verifikasi
-   - Pakai credential yang sudah disediakan runtime, jangan hardcode secret baru
-5. Saat task selesai, WAJIB buat file `RESULT.json` dengan format:
-   {{
-     "status": "success" | "failed" | "partial",
-     "summary": "ringkasan apa yang dilakukan",
-     "files_created": [],
-     "files_modified": [],
-     "errors": [],
-     "next_steps": []
-   }}
+   - Jangan asumsi `localhost:5432` tanpa verifikasi.
+7. Saat task selesai, WAJIB buat file `RESULT.json`.
+
 
 ## Batasan
 - JANGAN akses network ke luar sandbox kecuali diminta eksplisit
@@ -109,13 +106,13 @@ def format_coding_task(
     expected_output: str,
     requested_by: str = "mcp_orchestrator",
     context: str = "",
-    provided_files: list = None,
+    provided_files: Optional[list] = None,
 ) -> str:
     """Format coding task prompt dengan parameter lengkap."""
     return CODING_TASK_PROMPT.format(
         task_id=task_id,
         requested_by=requested_by,
-        timestamp=__import__("datetime").datetime.utcnow().isoformat(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         task_description=task_description,
         context=context or "-",
         provided_files="\n".join(provided_files or []) or "-",
