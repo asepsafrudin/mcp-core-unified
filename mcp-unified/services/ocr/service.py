@@ -155,8 +155,15 @@ class OCREngine:
             from google.cloud import vision
             image = vision.Image(content=content)
             
-            # Request text detection (Google Vision Charges)
-            response = client.text_detection(image=image)
+            # Use document_text_detection for structured/deep mode to get rich layout data
+            if mode in ["structured", "deep"]:
+                response = client.document_text_detection(image=image)
+                # Store full raw response for downstream spatial analysis
+                raw_response = response
+            else:
+                response = client.text_detection(image=image)
+                raw_response = response
+                
             annotations = response.text_annotations
             
             if not annotations:
@@ -169,6 +176,7 @@ class OCREngine:
                 
             result = self._format_ocr_result(formatted_lines)
             result["mode_requested"] = mode
+            result["raw_response"] = raw_response # Pass the rich object
             
             # B. SEMANTIC REFINEMENT & STRUCTURED EXTRACTION (Penghematan Token)
             from .config import SEMANTIC_REFINER_CONFIG

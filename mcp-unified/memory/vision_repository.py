@@ -732,6 +732,37 @@ async def check_duplicate(file_hash: str, namespace: str = "default") -> Optiona
         return {"exists": False, "error": str(e)}
 
 
+async def check_duplicate_by_gdrive_id(gdrive_id: str, namespace: str = "default") -> Optional[Dict[str, Any]]:
+    """Check if GDrive file already processed (by metadata ID)"""
+    try:
+        pool = await get_pool()
+        table_name = DB_TABLE_CONFIG['table_name']
+        
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(f"""
+                    SELECT id, confidence_score, processed_at
+                    FROM {table_name}
+                    WHERE (processing_metadata->>'gdrive_id' = %s OR extracted_entities->>'gdrive_id' = %s)
+                      AND namespace = %s
+                """, (gdrive_id, gdrive_id, namespace))
+                
+                row = await cur.fetchone()
+                
+                if row:
+                    return {
+                        "exists": True,
+                        "id": str(row[0]),
+                        "confidence_score": float(row[1]),
+                        "processed_at": row[2].isoformat() if row[2] else None
+                    }
+                return {"exists": False}
+                
+    except Exception as e:
+        logger.error("check_duplicate_by_gdrive_id_failed", error=str(e))
+        return {"exists": False, "error": str(e)}
+
+
 # =============================================================================
 # EXPORT
 # =============================================================================
@@ -749,6 +780,7 @@ __all__ = [
     'delete_vision_result',
     'cleanup_old_results',
     'check_duplicate',
+    'check_duplicate_by_gdrive_id',
     'get_pool',
     'close_pool',
 ]
