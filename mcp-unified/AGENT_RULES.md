@@ -4,6 +4,17 @@
 
 ---
 
+## 🚀 REPOSITORY MANAGEMENT (HUB PROTOCOL)
+
+✅ **MANDATORY**: Gunakan `./manage_repos.sh` di root Hub (`/home/aseps/MCP/`) untuk sinkronisasi antar repositori.
+- **Update Repo**: `./manage_repos.sh pull`
+- **Sync All**: `./manage_repos.sh sync`
+- **Push Repo**: `./manage_repos.sh push`
+
+> Jangan melakukan git push/pull manual di dalam folder submodule tanpa koordinasi dengan Hub Manager.
+
+---
+
 ## 🛡️ ATURAN GLOBAL AGENT
 
 ✅ **Rule #1: Namespace Isolasi**
