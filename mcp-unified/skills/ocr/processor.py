@@ -27,39 +27,279 @@ try:
 except ImportError:
     PYTHON_DOCX_AVAILABLE = False
 
+try:
+    from ultralytics import YOLO
+    YOLO_AVAILABLE = True
+except ImportError:
+    YOLO_AVAILABLE = False
+
+# Default model path — can be overridden via constructor
+DEFAULT_YOLO_MODEL_PATH = "/home/aseps/MCP/mcp-data/models/yolo11/best.pt"
+
+
 class OCRProcessor:
     """
     Centralized OCR and Visual Analysis Engine for legal documents.
+    
+    Supports hybrid detection:
+    - Primary: YOLO11 AI model (confidence-scored, trained on PUU documents)
+    - Fallback: OpenCV heuristic (color masking, spatial analysis)
     """
     
-    def __init__(self):
-        pass
+    def __init__(self, yolo_model_path: str = None):
+        self._yolo_model = None
+        self._yolo_model_path = yolo_model_path or DEFAULT_YOLO_MODEL_PATH
+        self._load_yolo_model()
 
-    def analyze_visuals(self, img_data: bytes) -> Dict[str, bool]:
+    def _load_yolo_model(self):
+        """Load YOLO model if available."""
+        if not YOLO_AVAILABLE:
+            return
+        model_path = self._yolo_model_path
+        if os.path.exists(model_path):
+            try:
+                self._yolo_model = YOLO(model_path)
+                # Warm up with a dummy inference
+                dummy = np.zeros((64, 64, 3), dtype=np.uint8)
+                self._yolo_model.predict(dummy, verbose=False)
+            except Exception as e:
+                print(f"⚠️ YOLO model load failed: {e}")
+                self._yolo_model = None
+
+    def _detect_with_yolo(self, img: np.ndarray, conf: float = 0.25) -> list:
         """
-        Detect signatures (blue) and stamps (purple/red) in an image.
+        Run YOLO inference on a document image.
+        Returns list of bboxes in the same format as heuristic detection.
+        """
+        if self._yolo_model is None:
+            return []
+        
+        try:
+            results = self._yolo_model.predict(img, conf=conf, verbose=False)
+            bboxes = []
+            for r in results:
+                for box in r.boxes:
+                    cls_id = int(box.cls)
+                    cls_name = r.names[cls_id]
+                    confidence = float(box.conf)
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    bboxes.append({
+                        "label": cls_name,
+                        "box": [int(x1), int(y1), int(x2 - x1), int(y2 - y1)],
+                        "area": int((x2 - x1) * (y2 - y1)),
+                        "confidence": confidence,
+                        "source": "yolo"
+                    })
+            return bboxes
+        except Exception as e:
+            print(f"⚠️ YOLO inference failed: {e}")
+            return []
+
+    def analyze_visuals(self, img_data: bytes, conf: float = 0.25) -> Dict[str, Any]:
+        """
+        Detect and locate signatures, stamps, and logos.
+        
+        Hybrid strategy:
+        1. YOLO11 AI detection (primary, confidence-scored)
+        2. OpenCV heuristic (fallback for classes YOLO missed)
+        
+        Args:
+            img_data: Raw image bytes (PNG/JPG)
+            conf: YOLO confidence threshold (default 0.25)
         """
         nparr = np.frombuffer(img_data, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
-            return {"has_signature": False, "has_stamp": False}
+            return {"has_wet_signature": False, "has_stamp": False, "has_logo": False, "bboxes": []}
 
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        
-        # Blue mask for signatures
-        blue_mask = cv2.inRange(hsv, np.array([100, 50, 50]), np.array([130, 255, 255]))
-        
-        # Purple/Red mask for stamps
-        purple_mask = cv2.inRange(hsv, np.array([130, 50, 50]), np.array([160, 255, 255]))
-        
-        def check_presence(mask, min_area=1000):
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            return any(cv2.contourArea(c) > min_area for c in contours)
+        # === PRIMARY: YOLO AI Detection ===
+        yolo_bboxes = self._detect_with_yolo(img, conf=conf)
+        if yolo_bboxes:
+            # YOLO found objects — use as primary, augment with heuristic for missed classes
+            yolo_classes = {b["label"] for b in yolo_bboxes}
+            heuristic_bboxes = self._detect_heuristic(img)
+            
+            # Add heuristic detections for classes YOLO didn't find
+            for hb in heuristic_bboxes:
+                hb_class_key = hb["label"].split("_")[0]  # e.g., "wet" from "wet_signature"
+                if not any(hb_class_key in yc for yc in yolo_classes):
+                    hb["source"] = "heuristic_supplement"
+                    hb["confidence"] = 0.3  # Lower confidence for heuristic
+                    yolo_bboxes.append(hb)
+            
+            bboxes = yolo_bboxes
+            detection_method = "yolo_hybrid"
+        else:
+            # YOLO unavailable or found nothing — full heuristic fallback
+            bboxes = self._detect_heuristic(img)
+            for b in bboxes:
+                b["source"] = "heuristic"
+                b["confidence"] = 0.5
+            detection_method = "heuristic"
 
         return {
-            "has_signature": check_presence(blue_mask, 1500),
-            "has_stamp": check_presence(purple_mask, 500)
+            "has_wet_signature": any("signature" in b["label"] for b in bboxes),
+            "has_stamp": any("stamp" in b["label"] for b in bboxes),
+            "has_paraf": any("paraf" in b["label"] for b in bboxes),
+            "has_notes": any("notes" in b["label"] for b in bboxes),
+            "has_logo": any("logo" in b["label"] for b in bboxes),
+            "has_qr_code": any("qr" in b["label"] for b in bboxes),
+            "detection_method": detection_method,
+            "bboxes": bboxes
         }
+
+    def _detect_heuristic(self, img: np.ndarray) -> list:
+        """
+        Original OpenCV heuristic detection (color masking + spatial analysis).
+        Kept as fallback when YOLO is unavailable.
+        """
+
+        h_img, w_img = img.shape[:2]
+        header_limit = int(h_img * 0.25) # Top 25% for logos
+        footer_limit = int(h_img * 0.65) # Bottom 35% for signatures
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        bboxes = []
+        
+        # 1. Color-Based Detection
+        blue_mask = cv2.inRange(hsv, np.array([100, 50, 50]), np.array([130, 255, 255]))
+        purple_mask = cv2.inRange(hsv, np.array([130, 50, 50]), np.array([160, 255, 255]))
+        red_mask1 = cv2.inRange(hsv, np.array([0, 70, 50]), np.array([10, 255, 255]))
+        red_mask2 = cv2.inRange(hsv, np.array([170, 70, 50]), np.array([180, 255, 255]))
+        red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+        gold_mask = cv2.inRange(hsv, np.array([20, 100, 100]), np.array([30, 255, 255]))
+        
+        stamp_logo_mask = cv2.bitwise_or(purple_mask, cv2.bitwise_or(red_mask, gold_mask))
+        
+        def get_bboxes(mask, default_label, min_area=1000):
+            found_bboxes = []
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area > 100: # Capture even small marks (checkboxes)
+                    x, y, w, h = cv2.boundingRect(c)
+                    label = default_label
+                    
+                    # 1. Spatial & Size Logic for Color Marks
+                    if y < header_limit and area > 1500:
+                        label = "logo_instansi"
+                    elif area < 400:
+                        label = "checkbox_mark"
+                    elif area < 1500:
+                        label = "paraf_koordinasi"
+                    else:
+                        # Large objects in the middle are notes, in the bottom are signatures/stamps
+                        if y > footer_limit:
+                            label = "stamp_utama" if "stamp" in default_label else "wet_signature"
+                        elif y > header_limit:
+                            label = "handwritten_notes"
+                    
+                    found_bboxes.append({"label": label, "box": [x, y, w, h], "area": area})
+            return found_bboxes
+
+        bboxes.extend(get_bboxes(blue_mask, "wet_signature", 400))
+        bboxes.extend(get_bboxes(stamp_logo_mask, "stamp", 400))
+
+        # 2. B&W Fallback Logic
+        if len(bboxes) < 2: # Trigger if very few marks found (likely B&W)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+            
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area > 1000: # Threshold for B&W
+                    x, y, w, h = cv2.boundingRect(c)
+                    aspect_ratio = w / float(h)
+                    
+                    if y < header_limit and 0.5 < aspect_ratio < 2.0:
+                        bboxes.append({"label": "logo_instansi_bw", "box": [x, y, w, h], "area": area})
+                    elif y > footer_limit and area > 4500:
+                        bboxes.append({"label": "signature_candidate_bw", "box": [x, y, w, h], "area": area})
+                    elif header_limit < y < footer_limit and area > 5000:
+                        bboxes.append({"label": "handwritten_notes_bw", "box": [x, y, w, h], "area": area})
+
+        # 3. QR Code Detection
+        qr_detector = cv2.QRCodeDetector()
+        has_qr, points, _ = qr_detector.detectAndDecode(img)
+        if has_qr and points is not None:
+            p = points[0].astype(int)
+            x, y = np.min(p, axis=0)
+            x2, y2 = np.max(p, axis=0)
+            bboxes.append({"label": "qr_code", "box": [int(x), int(y), int(x2-x), int(y2-y)], "area": int((x2-x)*(y2-y))})
+
+        # 4. BBox Post-Processing: Merger & Containment Filter
+        if not bboxes:
+            return {"has_wet_signature": False, "has_stamp": False, "has_paraf": False, "has_notes": False, "has_logo": False, "has_qr_code": has_qr != "", "bboxes": []}
+
+        # Sort by area descending to process larger containers first
+        bboxes = sorted(bboxes, key=lambda x: x["area"], reverse=True)
+        refined_bboxes = []
+        
+        for i, current in enumerate(bboxes):
+            is_contained = False
+            for parent in refined_bboxes:
+                # Check if current is inside parent (with some margin)
+                px, py, pw, ph = parent["box"]
+                cx, cy, cw, ch = current["box"]
+                if cx >= px-10 and cy >= py-10 and (cx+cw) <= (px+pw+10) and (cy+ch) <= (py+ph+10):
+                    is_contained = True
+                    break
+            
+            if not is_contained:
+                refined_bboxes.append(current)
+
+        # Final Merger for nearby objects (Cross-Label Merger for Header)
+        final_bboxes = []
+        while refined_bboxes:
+            curr = refined_bboxes.pop(0)
+            merged = False
+            for i, other in enumerate(final_bboxes):
+                c1 = curr["box"]
+                c2 = other["box"]
+                
+                # Distance check
+                dist_x = max(0, max(c1[0], c2[0]) - min(c1[0]+c1[2], c2[0]+c2[2]))
+                dist_y = max(0, max(c1[1], c2[1]) - min(c1[1]+c1[3], c2[1]+c2[3]))
+                
+                # Allow cross-label merging in Header (y < header_limit)
+                is_header_merger = (c1[1] < header_limit and c2[1] < header_limit)
+                
+                if dist_x < 60 and dist_y < 60 and (curr["label"] == other["label"] or is_header_merger):
+                    # Merge boxes
+                    nx = min(c1[0], c2[0])
+                    ny = min(c1[1], c2[1])
+                    nx2 = max(c1[0]+c1[2], c2[0]+c2[2])
+                    ny2 = max(c1[1]+c1[3], c2[1]+c2[3])
+                    
+                    # Update other box
+                    final_bboxes[i]["box"] = [nx, ny, nx2-nx, ny2-ny]
+                    final_bboxes[i]["area"] = (nx2-nx) * (ny2-ny)
+                    
+                    # Inheritance: If any part is a logo, the whole thing is a logo
+                    if "logo" in curr["label"] or "logo" in other["label"]:
+                        final_bboxes[i]["label"] = "logo_instansi"
+                    
+                    merged = True
+                    break
+            if not merged:
+                final_bboxes.append(curr)
+
+        # Final Cleaning: Reject objects that don't make visual sense (e.g. extremely wide text blocks as logos)
+        verified_bboxes = []
+        for b in final_bboxes:
+            x, y, w, h = b["box"]
+            aspect_ratio = w / float(h)
+            
+            if "logo" in b["label"]:
+                # Logos should be somewhat balanced (shield-like), not a thin line of text
+                if 0.4 < aspect_ratio < 3.0: 
+                    verified_bboxes.append(b)
+            else:
+                verified_bboxes.append(b)
+
+        bboxes = verified_bboxes
+
+        return bboxes
 
     async def extract_text_vision(self, content: bytes) -> Dict[str, Any]:
         """

@@ -1,9 +1,9 @@
-#!/home/aseps/MCP/mcp-unified/venv/bin/python3
+#!/home/aseps/MCP/.venv/bin/python3
 import sys
 import subprocess
 import threading
 
-SERVER_SCRIPT = "/home/aseps/MCP/mcp-unified/mcp_server.py"
+SERVER_SCRIPT = "/home/aseps/MCP/core/mcp-unified/mcp_server.py"
 
 proc = subprocess.Popen(
     [sys.executable, "-u", SERVER_SCRIPT] + sys.argv[1:],
