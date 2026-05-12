@@ -66,5 +66,7 @@ ruff>=0.1.0
 rope>=0.20.0
 jedi>=0.18.0
 networkx>=3.0
-paddlepaddle
-paddleocr
+# OCR Engines
+python-doctr[torch]>=0.8.0
+tf2onnx>=1.15.0
+opencv-python-headless
