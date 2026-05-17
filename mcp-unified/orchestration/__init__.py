@@ -34,6 +34,7 @@ from .federation.control_plane import (
     GlobalTaskState,
     get_federation_control_plane,
 )
+from .antigravity_ledger import AntigravityLedger, ledger
 
 __all__ = [
     "ClusterRegistry",
@@ -57,4 +58,6 @@ __all__ = [
     "PolicyAction",
     "GlobalTaskState",
     "get_federation_control_plane",
+    "AntigravityLedger",
+    "ledger",
 ]

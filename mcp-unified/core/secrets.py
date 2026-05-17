@@ -23,7 +23,7 @@ except ImportError:  # pragma: no cover
     load_dotenv = None
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MCP_UNIFIED_ROOT = Path(__file__).resolve().parents[1]
 
 

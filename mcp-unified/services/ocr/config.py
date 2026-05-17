@@ -11,19 +11,16 @@ if not GOOGLE_VISION_CREDENTIALS:
     creds_file = os.getenv("GOOGLE_WORKSPACE_SERVICE_ACCOUNT_FILE", "mcp-gmail-482015-682b788ee191.json")
     GOOGLE_VISION_CREDENTIALS = str(Path(creds_dir) / creds_file)
 
-# PaddleOCR 2.x API (Stable Version)
-# CATATAN: PaddleOCR kini dinonaktifkan sebagai pilihan utama
-PADDLEOCR_ENABLED = os.getenv("PADDLEOCR_ENABLED", "false").lower() == "true"
-OCR_INIT_PARAMS = {
-    "lang":             os.getenv("PADDLEOCR_LANG", "en"),
-    "use_gpu":          False, 
-    "use_angle_cls":    False, # MATIKAN: Sering menyebabkan crash biner di WSL
-    "show_log":         False,
-    "enable_mkldnn":    False, 
-    "cpu_threads":      1,
-    "rec_model_dir":    None,
-    "det_model_dir":    None,
+# docTR Configuration (Unified OCR)
+DOCTR_ENABLED = os.getenv("DOCTR_ENABLED", "true").lower() == "true"
+DOCTR_PARAMS = {
+    "det_arch": os.getenv("DOCTR_DET_ARCH", "db_resnet50"),
+    "reco_arch": os.getenv("DOCTR_RECO_ARCH", "crnn_vgg16_bn"),
+    "assume_straight_pages": False,
 }
+
+# PaddleOCR (LEGACY - Disabled by default)
+PADDLEOCR_ENABLED = os.getenv("PADDLEOCR_ENABLED", "false").lower() == "true"
 
 # PPStructureV3 (Tersedia di library ocr 2.x sebagai mode 'structure')
 STRUCTURE_INIT_PARAMS = {

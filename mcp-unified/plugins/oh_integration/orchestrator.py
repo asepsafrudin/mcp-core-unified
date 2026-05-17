@@ -12,8 +12,10 @@ import asyncio
 import json
 import logging
 import os
+import shutil
+import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -25,6 +27,11 @@ from .prompt_templates import (
     OPENHANDS_BASE_SYSTEM_PROMPT,
     CODING_TASK_PROMPT,
 )
+
+# Antigravity Orchestration Layer Imports
+from orchestration.antigravity_ledger import ledger
+from skills.token_controller import token_controller
+from skills.virtual_queue import virtual_queue
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +72,9 @@ class OpenHandsOrchestrator:
         self._semaphore = asyncio.Semaphore(config.max_concurrent_agents)
         self._running_tasks: Dict[str, asyncio.Task] = {}
         self._sdk_available = SDK_AVAILABLE
+        
+        # Cleanup workspaces lama di background
+        asyncio.create_task(self._cleanup_old_workspaces())
 
     # ------------------------------------------------------------------ #
     # Public API                                                           #
@@ -90,9 +100,13 @@ class OpenHandsOrchestrator:
             ex=86400,
         )
 
+        # --- Antigravity Pre-Flight Check ---
+        estimated_tokens = await token_controller.estimate_files(request.provided_files)
+        logger.info(f"[Antigravity] Pre-flight estimation: {estimated_tokens} tokens for {len(request.provided_files)} files")
+        
         # Jalankan di background agar tidak blocking MCP pipeline
         background_task = asyncio.create_task(
-            self._run_agent(task_id, request, workspace_path)
+            self._run_agent(task_id, request, workspace_path, estimated_tokens)
         )
         self._running_tasks[task_id] = background_task
         background_task.add_done_callback(
@@ -203,6 +217,29 @@ class OpenHandsOrchestrator:
         ]
         env_context.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    async def _cleanup_old_workspaces(self, days: int = 7):
+        """Hapus workspace yang lebih lama dari N hari."""
+        try:
+            base_path = Path(config.workspace_base)
+            if not base_path.exists():
+                return
+
+            now = time.time()
+            max_age = days * 24 * 3600
+            count = 0
+
+            for item in base_path.iterdir():
+                if item.is_dir():
+                    mtime = item.stat().st_mtime
+                    if (now - mtime) > max_age:
+                        shutil.rmtree(item)
+                        count += 1
+            
+            if count > 0:
+                logger.info(f"[OpenHands] Cleaned up {count} old workspaces.")
+        except Exception as e:
+            logger.warning(f"[OpenHands] Workspace cleanup failed: {e}")
+
     async def _save_task(self, task_id: str, result: TaskResult):
         """Save task state ke Redis dengan TTL 24 jam."""
         await self.redis.set(
@@ -216,6 +253,7 @@ class OpenHandsOrchestrator:
         task_id: str,
         request: CodingTaskRequest,
         workspace_path: Path,
+        estimated_tokens: int = 0
     ):
         """
         Jalankan OpenHands agent. Semaphore-limited.
@@ -224,6 +262,9 @@ class OpenHandsOrchestrator:
         Jika tidak → fallback ke FASE 1 mock execution
         """
         async with self._semaphore:
+            # --- Antigravity Traffic Control (Virtual Queue) ---
+            await virtual_queue.wait_for_quota(estimated_tokens)
+            
             # Update status → running
             result = await self.get_status(task_id)
             if result:
@@ -231,6 +272,29 @@ class OpenHandsOrchestrator:
                 await self._save_task(task_id, result)
 
             try:
+                # ── Copy provided files ke workspace ───────────────────
+                for file_path_str in request.provided_files:
+                    try:
+                        src = Path(file_path_str)
+                        if not src.is_absolute():
+                            src = Path("/home/aseps/MCP") / src
+                        
+                        if src.exists():
+                            try:
+                                rel_path = src.relative_to("/home/aseps/MCP")
+                                dest = workspace_path / rel_path
+                            except ValueError:
+                                dest = workspace_path / src.name
+                                
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            if src.is_file():
+                                shutil.copy2(src, dest)
+                            elif src.is_dir():
+                                shutil.copytree(src, dest, dirs_exist_ok=True)
+                            logger.info(f"[OpenHands] Copied {src} to workspace.")
+                    except Exception as e:
+                        logger.warning(f"[OpenHands] Failed to copy {file_path_str} to workspace: {e}")
+
                 # ── Build prompts ────────────────────────────────────────
                 full_prompt = CODING_TASK_PROMPT.format(
                     task_id=task_id,
@@ -254,9 +318,7 @@ class OpenHandsOrchestrator:
                     )
 
                 # ── Cek cancel flag ─────────────────────────────────────
-                cancel_flag = await self.redis.get(
-                    f"{config.redis_prefix}{task_id}:cancel"
-                )
+                cancel_flag = await self.redis.get(f"{config.redis_prefix}{task_id}:cancel")
                 if result and cancel_flag:
                     result.status = TaskStatus.CANCELLED
                     await self._save_task(task_id, result)
@@ -313,6 +375,35 @@ class OpenHandsOrchestrator:
             finally:
                 if result:
                     result.completed_at = datetime.now(timezone.utc).isoformat()
+                    
+                    # ── Sync back changes jika sukses ─────────────────────────
+                    if result.status == TaskStatus.SUCCESS:
+                        logger.info(f"[OpenHands] Syncing back changes for Task {task_id}...")
+                        for file_path_str in request.provided_files:
+                            try:
+                                src_rel = Path(file_path_str)
+                                if src_rel.is_absolute():
+                                    try:
+                                        src_rel = src_rel.relative_to("/home/aseps/MCP")
+                                    except ValueError:
+                                        continue
+                                
+                                src_in_ws = workspace_path / src_rel
+                                dest_in_repo = Path("/home/aseps/MCP") / src_rel
+                                
+                                if src_in_ws.exists() and src_in_ws.is_file():
+                                    # Auto-Fix Indentation/Style jika Python
+                                    if src_in_ws.suffix == ".py":
+                                        await self._format_file(src_in_ws)
+
+                                    if not dest_in_repo.exists() or src_in_ws.read_bytes() != dest_in_repo.read_bytes():
+                                        dest_in_repo.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(src_in_ws, dest_in_repo)
+                                        logger.info(f"[OpenHands] Synced back {src_rel} to repo.")
+                            except Exception as e:
+                                logger.warning(f"[OpenHands] Failed to sync back {file_path_str}: {e}")
+
+                    # Simpan hasil akhir
                     await self._save_task(task_id, result)
                     
                     # Sync to LTM
@@ -320,9 +411,28 @@ class OpenHandsOrchestrator:
                     metadata = json.loads(metadata_raw) if metadata_raw else {}
                     await self._sync_to_ltm(result, metadata)
                     
-                    logger.info(
-                        f"[OpenHands] Task {task_id} completed with status: {result.status}"
-                    )
+                    logger.info(f"[OpenHands] Task {task_id} completed with status: {result.status}")
+
+    async def _format_file(self, file_path: Path):
+        """Format Python file using Black if available."""
+        try:
+            import subprocess
+            # Gunakan black dari .venv
+            venv_path = os.getenv("VIRTUAL_ENV", "/home/aseps/MCP/.venv")
+            black_path = os.path.join(venv_path, "bin/black")
+            
+            if os.path.exists(black_path):
+                result = subprocess.run(
+                    [black_path, str(file_path)],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0:
+                    logger.debug(f"[OpenHands] Auto-formatted {file_path}")
+                else:
+                    logger.warning(f"[OpenHands] Black formatting failed for {file_path}: {result.stderr}")
+        except Exception as e:
+            logger.warning(f"[OpenHands] Failed to run Black for {file_path}: {e}")
 
     async def _sync_to_ltm(self, result: TaskResult, metadata: Dict[str, Any]):
         """Sinkronisasi hasil kerja agent ke Long-Term Memory (LTM)."""
@@ -343,17 +453,20 @@ class OpenHandsOrchestrator:
             }
             
             # Simpan ke LTM menggunakan namespace 'openhands_experience'
-            await registry.execute("memory_save", {
-                "key": f"task:{result.task_id}",
-                "content": json.dumps(experience, ensure_ascii=False),
-                "namespace": "openhands_experience",
-                "metadata": {
-                    "type": "agent_execution",
-                    "agent": "openhands",
-                    "requested_by": metadata.get("requested_by", "mcp_orchestrator")
-                }
-            })
-            logger.info(f"[OpenHands] Task {result.task_id} synced to LTM.")
+            if registry.get_tool("memory_save"):
+                await registry.execute("memory_save", {
+                    "key": f"task:{result.task_id}",
+                    "content": json.dumps(experience, ensure_ascii=False),
+                    "namespace": "openhands_experience",
+                    "metadata": {
+                        "type": "agent_execution",
+                        "agent": "openhands",
+                        "requested_by": metadata.get("requested_by", "mcp_orchestrator")
+                    }
+                })
+                logger.info(f"[OpenHands] Task {result.task_id} synced to LTM.")
+            else:
+                logger.warning(f"[OpenHands] Tool 'memory_save' not found. Skipping LTM sync for {result.task_id}.")
         except Exception as e:
             logger.warning(f"[OpenHands] Failed to sync task {result.task_id} to LTM: {e}")
 
@@ -386,24 +499,32 @@ class OpenHandsOrchestrator:
             oh_logger.addHandler(file_handler)
             oh_logger.setLevel(logging.DEBUG if config.debug_logging else logging.INFO)
 
+            # Suppress banner
+            os.environ["OPENHANDS_SUPPRESS_BANNER"] = "1"
+
             try:
                 # Setup LLM
-                llm_config_kwargs = {
+                llm_kwargs = {
                     "model": config.llm_model,
+                    "api_key": config.llm_api_key,
+                    "base_url": config.llm_api_base,
                 }
-                if config.llm_api_key:
-                    llm_config_kwargs["api_key"] = config.llm_api_key
-                if config.llm_api_base:
-                    llm_config_kwargs["base_url"] = config.llm_api_base
                 
-                llm = LLM(config=LLMConfig(**llm_config_kwargs))
+                # Fix untuk model reasoning di Groq (qwen3)
+                if "qwen3" in config.llm_model.lower():
+                    llm_kwargs["reasoning_effort"] = "none"
+                    llm_kwargs["max_tokens"] = "4096"
+                    llm_kwargs["extra_body"] = json.dumps({"max_tokens": 4096})
+                
+                llm = LLM(**llm_kwargs)
 
                 # Setup tools (jika tersedia)
                 tools = []
                 if _sdk_tools_available:
                     try:
-                        tools.append(TerminalTool())
-                        tools.append(FileEditorTool())
+                        # Di v1.15.0+ tool harus di-wrap dalam Tool spec
+                        tools.append(Tool(name=TerminalTool.name))
+                        tools.append(Tool(name=FileEditorTool.name))
                     except Exception as e:
                         logger.warning(f"[OpenHands] Failed to init SDK tools: {e}")
 
@@ -412,6 +533,7 @@ class OpenHandsOrchestrator:
                     llm=llm,
                     tools=tools,
                     system_prompt=system_prompt,
+                    critic=None,
                 )
 
                 # Create conversation and run
@@ -435,10 +557,33 @@ class OpenHandsOrchestrator:
 
         # Jalankan di executor untuk menghindari blocking event loop
         loop = asyncio.get_event_loop()
-        await asyncio.wait_for(
+        result_obj = await asyncio.wait_for(
             loop.run_in_executor(None, _run_sdk_sync),
             timeout=request.timeout_minutes * 60,
         )
+
+        # --- Antigravity: Record Usage ---
+        try:
+            # Note: Usage metadata extraction depends on SDK version
+            # If result_obj has usage info, record it
+            if hasattr(result_obj, 'usage') and result_obj.usage:
+                await token_controller.record_usage(
+                    usage_metadata=result_obj.usage,
+                    task_id=task_id,
+                    model=config.llm_model
+                )
+            else:
+                # Fallback: estimate based on result length if possible
+                result_text = str(result_obj)
+                est_tokens = token_controller.estimate_tokens(result_text)
+                await token_controller.record_usage(
+                    usage_metadata={"prompt_tokens": 0, "completion_tokens": est_tokens},
+                    task_id=task_id,
+                    model=config.llm_model
+                )
+                logger.info(f"[Antigravity] Recorded estimated usage: {est_tokens} tokens for task {task_id}")
+        except Exception as e:
+            logger.warning(f"[Antigravity] Failed to record usage: {e}")
 
     # ─── FASE 1: Mock Execution (Fallback) ──────────────────────────────
 
