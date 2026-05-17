@@ -81,3 +81,15 @@ __all__.extend([
     "PracticalSelfHealing",
     "APPROVED_AUTO_INSTALL_PACKAGES",
 ])
+
+# Import Antigravity Orchestration Layer skills
+from .token_controller import token_controller, TokenController
+from .virtual_queue import virtual_queue, VirtualQueue
+
+# Extend __all__ with Antigravity skills
+__all__.extend([
+    "token_controller",
+    "TokenController",
+    "virtual_queue",
+    "VirtualQueue",
+])

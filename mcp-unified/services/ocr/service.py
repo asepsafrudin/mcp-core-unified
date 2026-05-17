@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class OCREngine:
     _instance = None
     _lock = threading.Lock()
-    _ocr = None         # Generic placeholder
+    _ocr = None         # docTR Adapter
     _google_client = None
     _init_lock = threading.Lock()
 
@@ -40,17 +40,16 @@ class OCREngine:
         return self._google_client
 
     def get_ocr(self):
-        """Lazy Import & Init for PaddleOCR (Legacy/Fallback)"""
+        """Lazy Import & Init for docTR (Primary Local Engine)"""
         if self._ocr is None:
             with self._init_lock:
                 if self._ocr is None:
-                    from .config import PADDLEOCR_ENABLED
-                    if not PADDLEOCR_ENABLED:
-                        logger.warning("PaddleOCR is disabled in config.")
+                    from .config import DOCTR_ENABLED
+                    if not DOCTR_ENABLED:
+                        logger.warning("docTR is disabled in config.")
                         return None
-                    from paddleocr import PaddleOCR
-                    from .config import OCR_INIT_PARAMS
-                    self._ocr = PaddleOCR(**OCR_INIT_PARAMS)
+                    from .doctr_engine import DoctrUniversalAdapter
+                    self._ocr = DoctrUniversalAdapter()
         return self._ocr
 
     def run_ocr(self, image_path: str, mode: str = "standard") -> dict:
@@ -61,22 +60,21 @@ class OCREngine:
         - deep      : Pre-processing + Google Vision + Force LLM Refinement. (Akurasi Tinggi)
         - structured: Deep + Entity Extraction (JSON). (Terstruktur)
         """
-        from .config import GOOGLE_VISION_ENABLED, PADDLEOCR_ENABLED
+        from .config import GOOGLE_VISION_ENABLED, DOCTR_ENABLED
 
-        # 1. GOOGLE VISION (Preferred)
+        # 1. GOOGLE VISION (Preferred Cloud)
         if GOOGLE_VISION_ENABLED:
             try:
-                import google.cloud.vision
                 return self._execute_google_vision_logic(image_path, mode=mode)
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 logger.error(f"Google Vision failed: {e}")
 
-        # 2. PADDLE OCR (Fallback)
-        if PADDLEOCR_ENABLED:
+        # 2. docTR (Primary Local)
+        if DOCTR_ENABLED:
             try:
-                import paddleocr
-                return self._execute_ocr_logic(image_path) # Paddle currently standard only
-            except (ImportError, Exception):
+                return self._execute_ocr_logic(image_path)
+            except Exception as e:
+                logger.error(f"docTR failed: {e}")
                 if sys.version_info >= (3, 12):
                     return self._run_via_worker(image_path, mode="ocr")
         
@@ -84,14 +82,20 @@ class OCREngine:
 
     def run_structure(self, file_path: str) -> dict:
         """
-        Public Structure Runner: Google Vision (Full text) or Paddle Structure
+        Public Structure Runner: Reconstructs layout using docTR.
         """
-        from .config import GOOGLE_VISION_ENABLED
-        if GOOGLE_VISION_ENABLED:
-            # Google Vision handling full document layout extraction
-            return self.run_ocr(file_path)
+        from .config import DOCTR_ENABLED
+        if DOCTR_ENABLED:
+            ocr = self.get_ocr()
+            if ocr:
+                text = ocr.extract_layout_blocks(file_path)
+                return {
+                    "status": "success",
+                    "full_text": text,
+                    "engine": "doctr_layout"
+                }
             
-        return {"status": "error", "message": "Structure extraction currently relies on PaddleOCR which is disabled."}
+        return {"status": "error", "message": "Structure extraction requires docTR which is disabled."}
 
     def _run_via_worker(self, file_path: str, mode: str = "ocr") -> dict:
         """
@@ -214,11 +218,11 @@ class OCREngine:
                             # Standard refinement (hanya merapikan teks/typografi)
                             result["refined_data"] = {"summary": full_text[:200] + "..."}
                             
-                        logger.info("llm_refinement_executed", mode=mode, quality=quality_score)
+                        logger.info(f"LLM refinement executed: mode={mode}, quality={quality_score}")
                 except Exception as e:
                     logger.warning(f"Semantic refinement skipped: {e}")
             elif mode != "fast":
-                logger.info("llm_refinement_skipped_to_save_tokens", quality=quality_score)
+                logger.info(f"LLM refinement skipped to save tokens: quality={quality_score}")
                 result["llm_status"] = "skipped_high_confidence"
 
             return result
@@ -228,7 +232,7 @@ class OCREngine:
 
     def _execute_ocr_logic(self, image_path: str) -> dict:
         """
-        Logika OCR (Legacy PaddleOCR).
+        Logika OCR mengunakan docTR (Local Engine).
         """
         from .preprocessor import ImagePreProcessor
         from .utils import cleanup_tempfile
@@ -237,15 +241,21 @@ class OCREngine:
         clean_path = preprocessor.process(image_path)
         
         try:
-            ocr = self.get_ocr()
-            if not ocr: return {"status": "error", "message": "OCR Engine not initialized"}
-            raw = ocr.ocr(clean_path, cls=True)
+            adapter = self.get_ocr()
+            if not adapter: return {"status": "error", "message": "docTR Engine not initialized"}
             
-            if raw and isinstance(raw, list) and len(raw) > 0:
-                page_result = raw[0] if isinstance(raw[0], list) else []
-                result = self._format_ocr_result(page_result)
-            else:
-                result = self._format_ocr_result([])
+            # Extract absolute geometry to maintain compatibility with _format_ocr_result
+            raw_items = adapter.extract_absolute_geometry(clean_path)
+            
+            # Map docTR geometry to PaddleOCR-like format for _format_ocr_result
+            # docTR geom: {'text': ..., 'confidence': ..., 'box': [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]}
+            # Expected: [box, (text, confidence)]
+            formatted_raw = []
+            for item in raw_items:
+                formatted_raw.append([item['box'], (item['text'], item['confidence'])])
+            
+            result = self._format_ocr_result(formatted_raw)
+            result["engine"] = "doctr"
             
             # 2. Semantic Refinement (LLM)
             from .config import SEMANTIC_REFINER_CONFIG
@@ -271,13 +281,9 @@ class OCREngine:
 
     def _execute_structure_logic(self, file_path: str) -> str:
         """
-        Logika Structure Murni (Hanya dipanggil dalam environment 3.11).
+        Legacy Structure Logic (Obsolete, use run_structure).
         """
-        structure = self.get_structure()
-        # API 2.x call style
-        raw = structure(file_path)
-        # Placeholder for 2.x structure parsing - can be enhanced based on needs
-        return "Structure Extraction Complete (Stable Process)"
+        return "Structure Extraction Complete (docTR)"
 
     def _format_ocr_result(self, raw: list) -> dict:
         from .nlp_processor import get_nlp_processor
@@ -298,7 +304,7 @@ class OCREngine:
             lines.append({"text": corrected_text, "score": score, "bbox": poly, "original_text": text})
             all_confidences.append(score)
 
-        all_text = "\n".join([l["text"] for l in lines])
+        all_text = "\n".join([str(l["text"]) for l in lines])
         avg_conf = sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
         quality_score = avg_conf * (1.0 - (corrected_count / max(len(lines), 1) * 0.2))
 

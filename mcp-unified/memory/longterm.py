@@ -22,7 +22,7 @@ class EmbeddingUnavailableError(Exception):
 
 # Async Connection Pool
 DB_PARAMS = {
-    'host': '/var/run/postgresql',
+    'host': settings.POSTGRES_SERVER,
     'port': settings.POSTGRES_PORT,
     'dbname': settings.POSTGRES_DB,
     'user': settings.POSTGRES_USER,
@@ -175,6 +175,23 @@ async def initialize_db():
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
                 """)
+                
+                # [ANTIGRAVITY] Token usage tracking for pattern analysis
+                await cur.execute("""
+                CREATE TABLE IF NOT EXISTS token_usage (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    task_id TEXT,
+                    agent_id TEXT,
+                    model TEXT,
+                    prompt_tokens INTEGER DEFAULT 0,
+                    completion_tokens INTEGER DEFAULT 0,
+                    total_tokens INTEGER DEFAULT 0,
+                    metadata JSONB DEFAULT '{}',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                await cur.execute("CREATE INDEX IF NOT EXISTS token_usage_task_idx ON token_usage(task_id);")
+                await cur.execute("CREATE INDEX IF NOT EXISTS token_usage_created_idx ON token_usage(created_at);")
                 
         logger.info("db_schema_initialized")
         
