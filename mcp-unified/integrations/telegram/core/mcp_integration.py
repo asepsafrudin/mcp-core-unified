@@ -5,8 +5,14 @@ import logging
 from typing import Dict, Any
 
 # Add paths untuk import shared module (di awal file)
-sys.path.insert(0, '/home/aseps/MCP/mcp-unified')
-sys.path.insert(0, '/home/aseps/MCP')
+from pathlib import Path
+_core_dir = str(Path(__file__).resolve().parents[3]) # /home/aseps/MCP/core or /home/aseps/MCP
+_mcp_unified_dir = str(Path(__file__).resolve().parents[2]) # /home/aseps/MCP/core/mcp-unified
+
+if _mcp_unified_dir not in sys.path:
+    sys.path.insert(0, _mcp_unified_dir)
+if _core_dir not in sys.path:
+    sys.path.append(_core_dir) # Use append to avoid shadowing
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +27,11 @@ class MCPIntegration:
     def _init_client(self):
         """Initialize MCP client."""
         try:
-            # Add absolute paths untuk import shared module
-            sys.path.insert(0, '/home/aseps/MCP/mcp-unified')
-            sys.path.insert(0, '/home/aseps/MCP')
+            # Use append to avoid shadowing main project modules
+            if _mcp_unified_dir not in sys.path:
+                sys.path.insert(0, _mcp_unified_dir)
+            if _core_dir not in sys.path:
+                sys.path.append(_core_dir)
             
             from shared.mcp_client import MCPClient
             self.client = MCPClient()

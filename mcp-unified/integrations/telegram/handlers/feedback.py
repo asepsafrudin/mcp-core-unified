@@ -99,7 +99,10 @@ class FeedbackHandler(BaseHandler):
         try:
             import psycopg
             import sys
-            sys.path.insert(0, '/home/aseps/MCP/mcp-unified')
+            from pathlib import Path
+            _unified_root = str(Path(__file__).resolve().parents[3])
+            if _unified_root not in sys.path:
+                sys.path.insert(0, _unified_root)
             from core.config import settings
             from core.secrets import load_runtime_secrets
             load_runtime_secrets()

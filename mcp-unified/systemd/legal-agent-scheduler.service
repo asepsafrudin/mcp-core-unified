@@ -13,7 +13,7 @@ Environment="PYTHONPATH=/home/aseps/MCP"
 Environment="TZ=Asia/Jakarta"
 
 # Main execution
-ExecStart=/home/aseps/MCP/mcp-unified/scheduler/legal_agent_implementation.sh
+ExecStart=/home/aseps/MCP/core/mcp-unified/scheduler/legal_agent_implementation.sh
 
 # Logging
 StandardOutput=append:/home/aseps/MCP/logs/legal_agent/systemd.log
@@ -23,7 +23,7 @@ StandardError=append:/home/aseps/MCP/logs/legal_agent/systemd_error.log
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/aseps/MCP/logs/legal_agent /home/aseps/MCP/mcp-unified/agents/profiles/research /home/aseps/MCP/mcp-unified/agents/coordination /home/aseps/MCP/mcp-unified/knowledge/sync
+ReadWritePaths=/home/aseps/MCP/logs/legal_agent /home/aseps/MCP/core/mcp-unified/agents/profiles/research /home/aseps/MCP/core/mcp-unified/agents/coordination /home/aseps/MCP/core/mcp-unified/knowledge/sync
 
 [Install]
 WantedBy=multi-user.target

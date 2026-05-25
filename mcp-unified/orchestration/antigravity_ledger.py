@@ -1,9 +1,18 @@
 from datetime import datetime
 import json
 import logging
+import sys
+from pathlib import Path
 from typing import Optional, Dict, Any
 import redis.asyncio as aioredis
+
+# Ensure project root (mcp-unified/) is in sys.path
+_project_root = str(Path(__file__).resolve().parents[1])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 from core.config import settings
+
 
 logger = logging.getLogger(__name__)
 

@@ -102,7 +102,7 @@ class HealthCheckService:
         try:
             import subprocess
             # Use serena audit to find potential redundancies
-            cmd = ["/home/aseps/MCP/services/serena/.venv/bin/python", "/home/aseps/MCP/scripts/serena_audit.py"]
+            cmd = ["/home/aseps/MCP/.venv/bin/python", "/home/aseps/MCP/scripts/serena_audit.py"]
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             
             # Additional check: Scan for residuals

@@ -3,7 +3,7 @@
 
 from typing import Dict, Any, List
 import sys
-sys.path.insert(0, '/home/aseps/MCP/mcp-unified')
+# Path sudah diset oleh PYTHONPATH dan mcp_server_sse.py — tidak perlu inject manual
 
 from tools.base import register_tool
 from memory.longterm import memory_save, memory_search, memory_list, memory_get
