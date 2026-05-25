@@ -4,7 +4,9 @@ import time
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 import sys
-sys.path.insert(0, '/home/aseps/MCP/mcp-unified')
+_project_root = str(Path(__file__).resolve().parents[2])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 from core.semantic_analysis import SemanticAnalyzer
 
 logger = logging.getLogger(__name__)

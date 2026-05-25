@@ -28,10 +28,69 @@ from .prompt_templates import (
     CODING_TASK_PROMPT,
 )
 
-# Antigravity Orchestration Layer Imports
-from orchestration.antigravity_ledger import ledger
-from skills.token_controller import token_controller
-from skills.virtual_queue import virtual_queue
+# Ensure project root is in sys.path before importing orchestration and skills
+import sys
+import os
+from pathlib import Path
+# parents[0]=oh_integration/, parents[1]=plugins/, parents[2]=core/mcp-unified/
+project_root = str(Path(__file__).resolve().parents[2])
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Evict any wrong-path versions of orchestration/skills from sys.modules
+# (terjadi jika /home/aseps/MCP/mcp-unified/ masuk sys.path lebih dulu dari PYTHONPATH)
+def _get_mod_path(mod):
+    f = getattr(mod, '__file__', None)
+    if f:
+        return f
+    p = getattr(mod, '__path__', None)
+    if p:
+        try:
+            return str(list(p)[0])
+        except Exception:
+            return ''
+    return ''
+
+_correct_orchestration = os.path.join(project_root, "orchestration")
+_correct_skills = os.path.join(project_root, "skills")
+for _mn in list(sys.modules.keys()):
+    _mp = _get_mod_path(sys.modules[_mn])
+    if (_mn == "orchestration" or _mn.startswith("orchestration.")) and _mp and _correct_orchestration not in _mp:
+        del sys.modules[_mn]
+    elif (_mn == "skills" or _mn.startswith("skills.")) and _mp and _correct_skills not in _mp:
+        del sys.modules[_mn]
+
+
+
+# Antigravity Orchestration Layer Imports — dengan graceful fallback
+try:
+    from orchestration.antigravity_ledger import ledger
+except ImportError as _e:
+    import logging as _log_import
+    _log_import.getLogger(__name__).warning(
+        "orchestration.antigravity_ledger tidak tersedia: %s — ledger dinonaktifkan.", _e
+    )
+    ledger = None  # type: ignore
+
+try:
+    from skills.token_controller import token_controller
+except ImportError as _e:
+    import logging as _log_import2
+    _log_import2.getLogger(__name__).warning(
+        "skills.token_controller tidak tersedia: %s", _e
+    )
+    token_controller = None  # type: ignore
+
+try:
+    from skills.virtual_queue import virtual_queue
+except ImportError as _e:
+    import logging as _log_import3
+    _log_import3.getLogger(__name__).warning(
+        "skills.virtual_queue tidak tersedia: %s", _e
+    )
+    virtual_queue = None  # type: ignore
+
+
 
 logger = logging.getLogger(__name__)
 

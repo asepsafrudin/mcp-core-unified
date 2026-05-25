@@ -8,22 +8,22 @@ Wants=postgresql.service redis.service
 Type=simple
 User=aseps
 Group=aseps
-WorkingDirectory=/home/aseps/MCP/mcp-unified
+WorkingDirectory=/home/aseps/MCP/core/mcp-unified
 
 # Environment
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/home/aseps/MCP"
+Environment="PYTHONPATH=/home/aseps/MCP/core/mcp-unified"
 Environment="TZ=Asia/Jakarta"
 Environment="PYTHONUNBUFFERED=1"
 
 # Load environment variables from .env file if exists
-EnvironmentFile=-/home/aseps/MCP/mcp-unified/.env
+EnvironmentFile=-/home/aseps/MCP/core/mcp-unified/.env
 
 # Main daemon execution
-ExecStart=/usr/bin/python3 /home/aseps/MCP/mcp-unified/scheduler/daemon.py
+ExecStart=/home/aseps/MCP/.venv/bin/python3 /home/aseps/MCP/core/mcp-unified/scheduler/daemon.py
 
 # Graceful shutdown
-ExecStop=/usr/bin/python3 /home/aseps/MCP/mcp-unified/scheduler/daemon.py --stop
+ExecStop=/home/aseps/MCP/.venv/bin/python3 /home/aseps/MCP/core/mcp-unified/scheduler/daemon.py --stop
 TimeoutStopSec=30
 KillSignal=SIGTERM
 

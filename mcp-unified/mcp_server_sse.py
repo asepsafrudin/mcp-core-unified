@@ -11,6 +11,9 @@ Jalankan:
 Atau via systemd service (lihat docs/setup_persistent_service.md)
 """
 import sys
+# Clean up sys.path to prevent path shadowing from the old workspace
+sys.path = [p for p in sys.path if not (p.rstrip('/') == '/home/aseps/MCP/mcp-unified' or '/home/aseps/MCP/mcp-unified/' in p)]
+
 import os
 import asyncio
 import json

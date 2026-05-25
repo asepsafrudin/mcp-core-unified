@@ -265,7 +265,7 @@ show_status() {
     fi
 
     # External Projects (Sibling Directories)
-    if [ -d "${PROJECT_ROOT}/serena" ]; then
+    if [ -d "${PROJECT_ROOT}/../connectors/services/serena" ]; then
         if pgrep -f "serena" >/dev/null 2>&1; then
             print_status_line "serena_agent" "running"
         else
@@ -275,7 +275,7 @@ show_status() {
         print_status_line "serena_agent" "not found"
     fi
 
-    if [ -d "${PROJECT_ROOT}/sql-server" ]; then
+    if [ -d "${PROJECT_ROOT}/../sql-server" ]; then
         if pgrep -f "sql-server" >/dev/null 2>&1; then
             print_status_line "sql_server" "running"
         else

@@ -36,6 +36,14 @@ Gunakan tool `serena_*` untuk pencarian kode yang efisien:
 2. Gunakan `serena_get_symbols_overview` SEBELUM membaca isi file mentah
 3. Fokus pada `serena_find_symbol` untuk memahami definisi fungsi/class
 
+✅ **Rule #6: WAHA (WhatsApp Gateway) Startup Protocol**
+Ketika menerima instruksi/permintaan untuk kesiapan, penyegaran, atau penautan sesi WhatsApp (WAHA):
+1. **Audit Sesi**: Selalu periksa status sesi aktif saat ini menggunakan `python3 scripts/waha_manager.py status`.
+2. **Fresh Restart**: Jika status sesi adalah `FAILED` atau tidak aktif, lakukan restart bersih via `python3 scripts/waha_manager.py restart` dan tunggu minimal 15 detik agar browser headless Chromium memuat WhatsApp Web.
+3. **Dual-Mode Pairing**: Selalu dapatkan Pairing Code instan (`python3 scripts/waha_manager.py pair <phone>`) **DAN** unduh gambar QR aktif (`python3 scripts/waha_manager.py qr`) secara bersamaan untuk kenyamanan user.
+4. **Visual & Text Delivery**: Sajikan kode pairing 8-digit secara jelas dengan font tebal/blok dan cantumkan tautan file gambar QR ([waha_qr.png](file:///home/aseps/MCP/waha_qr.png)).
+5. **Verifikasi & Hygiene**: Setelah status menjadi `WORKING`, lakukan verifikasi pengiriman pesan tes (`python3 scripts/waha_manager.py send <phone> "..."`) dan **WAJIB** segera menghapus berkas residu `waha_qr.png` (`rm -f waha_qr.png`) untuk menjaga kerapian workspace.
+
 ---
 
 ## 📦 NAMESPACE REFERENSI

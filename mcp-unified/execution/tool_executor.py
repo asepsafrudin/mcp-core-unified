@@ -35,14 +35,45 @@ import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
-# Import skills
+# Import skills — ensure project root is in sys.path
+import sys as _sys
+import os as _os
+from pathlib import Path as _Path
+# parents[0]=execution/, parents[1]=core/mcp-unified/
+_project_root = str(_Path(__file__).resolve().parents[1])
+if _project_root not in _sys.path:
+    _sys.path.insert(0, _project_root)
+
+# Evict any wrong-path skills modules cached from /mcp-unified/ (old dir)
+def _get_mp(mod):
+    f = getattr(mod, '__file__', None)
+    if f:
+        return f
+    p = getattr(mod, '__path__', None)
+    if p:
+        try:
+            return str(list(p)[0])
+        except Exception:
+            return ''
+    return ''
+
+_correct_skills = _os.path.join(_project_root, "skills")
+for _mn in list(_sys.modules.keys()):
+    if _mn == "skills" or _mn.startswith("skills."):
+        _mp = _get_mp(_sys.modules[_mn])
+        if _mp and _correct_skills not in _mp:
+            del _sys.modules[_mn]
+
 try:
     from skills.monitoring.anomaly_analyzer import AnomalyAnalyzer
-except ImportError:
-    # Fallback if path not in sys.path
-    import sys
-    sys.path.insert(0, "/home/aseps/MCP/mcp-unified")
-    from skills.monitoring.anomaly_analyzer import AnomalyAnalyzer
+except ImportError as _e:
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "skills.monitoring.anomaly_analyzer tidak tersedia: %s — fitur anomaly detection dinonaktifkan.", _e
+    )
+    AnomalyAnalyzer = None  # type: ignore
+
+
 
 
 # Koneksi DB langsung untuk tools Modul 1

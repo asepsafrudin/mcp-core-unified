@@ -7,13 +7,13 @@ Wants=postgresql.service redis.service
 [Service]
 Type=simple
 User=aseps
-WorkingDirectory=/home/aseps/MCP/mcp-unified
-Environment="PYTHONPATH=/home/aseps/MCP/mcp-unified"
+WorkingDirectory=/home/aseps/MCP/core/mcp-unified
+Environment="PYTHONPATH=/home/aseps/MCP/core/mcp-unified"
 EnvironmentFile=/home/aseps/MCP/.env
 
 # [REVIEWER] ExecStart menggunakan python3 langsung
 # Ganti path python3 jika menggunakan virtualenv
-ExecStart=/home/aseps/MCP/mcp-unified/venv/bin/python3 /home/aseps/MCP/mcp-unified/mcp_server_sse.py
+ExecStart=/home/aseps/MCP/.venv/bin/python3 /home/aseps/MCP/core/mcp-unified/mcp_server_sse.py
 
 # Restart policy — restart otomatis jika crash, tunggu 5 detik
 Restart=always

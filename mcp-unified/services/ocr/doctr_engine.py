@@ -7,7 +7,7 @@ import sys
 from typing import Optional, List, Dict
 from pathlib import Path
 from doctr.io import DocumentFile
-from doctr.models import ocr_predictor
+from doctr.models import ocr_predictor, db_resnet50, crnn_vgg16_bn
 
 # Use structlog if available, fallback to logging
 try:
@@ -42,7 +42,6 @@ class DoctrUniversalAdapter:
                     logger.info(f"Initializing docTR predictor on {device}")
                 
                 # Initialize the model once. assume_straight_pages=False helps with skewed documents.
-                # Using default architectures which are robust for Indonesian documents.
                 cls._instance.predictor = ocr_predictor(
                     det_arch='db_resnet50', 
                     reco_arch='crnn_vgg16_bn', 

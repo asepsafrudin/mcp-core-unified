@@ -283,7 +283,10 @@ class DailyReportService:
         """Generate the daily report — menggunakan output /dashboard."""
         try:
             import sys as _sys
-            _sys.path.insert(0, "/home/aseps/MCP/mcp-unified")
+            from pathlib import Path
+            _unified_root = str(Path(__file__).resolve().parents[3])
+            if _unified_root not in _sys.path:
+                _sys.path.insert(0, _unified_root)
             from services.correspondence_dashboard import CorrespondenceDashboard
             message = CorrespondenceDashboard().get_recent_summary()
             return message, []

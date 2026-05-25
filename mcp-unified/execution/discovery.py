@@ -1,6 +1,9 @@
 import os
 import importlib.util
 import sys
+# Clean up sys.path to prevent path shadowing from the old workspace
+sys.path = [p for p in sys.path if not (p.rstrip('/') == '/home/aseps/MCP/mcp-unified' or '/home/aseps/MCP/mcp-unified/' in p)]
+
 import asyncio
 from pathlib import Path
 from observability.logger import logger
@@ -16,6 +19,12 @@ def discover_plugins(plugin_dir: str):
     if not plugin_path.exists():
         logger.warning(f"Plugin directory not found: {plugin_dir}")
         return
+
+    # Ensure PROJECT_ROOT (mcp-unified/) is in sys.path so all plugins can
+    # import from services/, orchestration/, skills/, etc.
+    project_root = str(Path(__file__).resolve().parents[1])
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
 
     # Add plugin folder to sys.path if not there
     if str(plugin_path) not in sys.path:
@@ -56,7 +65,10 @@ def self_register_python(file_path: Path, plugin_path: Path):
             spec.loader.exec_module(module)
             return 1
     except Exception as e:
+        import traceback
         logger.error(f"Error loading python plugin {file_path}: {str(e)}")
+        logger.error(f"sys.path: {sys.path}")
+        logger.error(traceback.format_exc())
     return 0
 
 def self_register_shell(file_path: Path, plugin_path: Path):
