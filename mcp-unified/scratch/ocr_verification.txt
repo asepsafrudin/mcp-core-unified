@@ -1,0 +1,97 @@
+=== OCR CONTEXT SEARCH ===
+
+[1] PEKERJAAN UMUM DAN PENATAAN RUANG (pemerintah_pusat) - butir 1
+CUT TEXT: Pengembangan dan pengelolaan sistem irigasi primer dan sekunder pada daerah irigasi yang luasnya lebih dari 3000 ha, daerah irigasi lintas Daerah provinsi, daerah irigasi lintas negara, dan daerah irigasi strategis
+--> NOT FOUND in OCR pages
+
+[2] SOSIAL (daerah_provinsi) - butir 1
+CUT TEXT: Penyelenggaraan pemberdayaan masyarakat terhadap kesiapsiagaan dalam menghadapi bencana
+--> NOT FOUND in OCR pages
+
+[3] TENAGA KERJA (daerah_kabupaten_kota) - butir 0
+CUT TEXT: Pelayanan antar kerja di Daerah kabupaten/kota
+--> NOT FOUND in OCR pages
+
+[4] PEMBERDAYAAN PEREMPUAN DAN PELINDUNGAN ANAK (daerah_provinsi) - butir 2
+CUT TEXT: Penyediaan layanan bagi keluarga dalam mewujudkan KG dan hak
+--> NOT FOUND in OCR pages
+
+[5] PENGENDALIAN PENDUDUK DAN KELUARGA BERENCANA (daerah_kabupaten_kota) - butir 0
+CUT TEXT: Pelaksanaan advokasi, komunikasi, informasi dan edukasi (KIE) pengendalian penduduk
+--> NOT FOUND in OCR pages
+
+[6] PERHUBUNGAN (daerah_provinsi) - butir 1
+CUT TEXT: Penerbitan izin usaha angkutan laut pelayaran rakyat bagi orang perorangan atau badan usaha yang berdomisili dan yang beroperasi pada lintas pelabuhan antar- Daerah kabupaten/kota dalam Daerah provinsi, pelabuhan antar-Daerah provinsi, dan pelabuhan
+--> NOT FOUND in OCR pages
+
+[7] PERHUBUNGAN (daerah_kabupaten_kota) - butir 2
+CUT TEXT: Penerbitan izin usaha penyelenggaraan angkutan sungai dan penyeberangan
+--> NOT FOUND in OCR pages
+
+[8] PERHUBUNGAN (daerah_kabupaten_kota) - butir 2
+CUT TEXT: Penetapan jaringan jalur kereta api yang jaringannya dalam 1 (satu) Daerah
+--> NOT FOUND in OCR pages
+
+[9] PENANAMAN MODAL (pemerintah_pusat) - butir 2
+CUT TEXT: C. Pelayanan penanaman modal pada bidang industri yang merupakan prioritas tinggi pada skala pelayanan perizinan dan nonperizinan secara terpadu satu pintu:
+--> NOT FOUND in OCR pages
+
+[10] PERPUSTAKAAN (pemerintah_pusat) - butir 2
+CUT TEXT: Pelestarian naskah kuno dan pengembalian
+--> NOT FOUND in OCR pages
+
+[11] KEARSIPAN (pemerintah_pusat) - butir 1
+CUT TEXT: Pengelolaan arsip statis yang diciptakan oleh lembaga negara di Pusat dan Daerah, BUMN, organisasi kemasyarakatan tingkat nasional, organisasi politik tingkat nasional, tokoh nasional dan perusahaan swasta yang
+--> NOT FOUND in OCR pages
+
+[12] KEARSIPAN (daerah_provinsi) - butir 1
+CUT TEXT: Pengelolaan arsip statis yang diciptakan oleh Pemerintah Daerah provinsi, BUMD provinsi, perusahaan swasta yang cabang usahanya lebih dari 1 (satu) Daerah kabupaten/kota dalam 1 (satu) Daerah provinsi, organisasi kemasyarakatan
+--> NOT FOUND in OCR pages
+
+[13] KEARSIPAN (daerah_kabupaten_kota) - butir 1
+CUT TEXT: Pengelolaan arsip statis yang diciptakan oleh Pemerintahan Daerah kabupaten/kota, BUMD kabupaten/kota, perusahaan swasta yang kantor usahanya dalam 1 (satu) Daerah kabupaten/kota, organisasi
+--> NOT FOUND in OCR pages
+
+[14] KEARSIPAN (daerah_provinsi) - butir 3
+CUT TEXT: Melakukan autentikasi pemekaran Kecamatan
+--> NOT FOUND in OCR pages
+
+[15] KELAUTAN DAN PERIKANAN (pemerintah_pusat) - butir 2
+CUT TEXT: Penerbitan izin usaha perikanan tangkap untuk:
+--> NOT FOUND in OCR pages
+
+[16] PERTANIAN (daerah_provinsi) - butir 4
+CUT TEXT: Pengawasan mutu dan peredaran benih/bibit ternak dan sumber daya genetik (SDG) hewan
+--> NOT FOUND in OCR pages
+
+[17] PERTANIAN (daerah_kabupaten_kota) - butir 4
+CUT TEXT: Pengendalian penyediaan dan peredaran benih/bibit ternak, dan hijauan pakan
+--> NOT FOUND in OCR pages
+
+[18] PERTANIAN (pemerintah_pusat) - butir 1
+CUT TEXT: Penetapan dan penerapan persyaratan kesehatan hewan dan kesehatan masyarakat veteriner
+--> NOT FOUND in OCR pages
+
+[19] PERTANIAN (daerah_kabupaten_kota) - butir 1
+CUT TEXT: Pengawasan pemasukan hewan dan produk hewan
+--> NOT FOUND in OCR pages
+
+[20] KEHUTANAN (pemerintah_pusat) - butir 3
+CUT TEXT: Penyelenggaraan pemanfaatan jenis
+--> NOT FOUND in OCR pages
+
+[21] ENERGI DAN SUMBER DAYA MINERAL (pemerintah_pusat) - butir 0
+CUT TEXT: Penetapan wilayah pertambangan sebagai bagian dari rencana tata ruang wilayah nasional, yang terdiri atas wilayah usaha pertambangan, wilayah pertambangan rakyat dan wilayah pencadangan negara serta wilayah usaha
+--> NOT FOUND in OCR pages
+
+[22] ENERGI DAN SUMBER DAYA MINERAL (daerah_provinsi) - butir 2
+CUT TEXT: Penetapan tarif tenaga listrik untuk konsumen dan penerbitan izin pemanfaatan jaringan untuk telekomunikasi, multimedia, dan informatika dari pemegang
+--> NOT FOUND in OCR pages
+
+[23] PERDAGANGAN (pemerintah_pusat) - butir 0
+CUT TEXT: Penerbitan izin usaha untuk: 1) perantara perdagangan properti; 2) penjualan langsung; 3) perwakilan perusahaan perdagangan asing; 4) usaha perdagangan yang di dalamnya terdapat modal asing; 5) jasa survei dan jasa lainnya di bidang perdagangan tertentu; dan
+--> NOT FOUND in OCR pages
+
+[24] TRANSMIGRASI (pemerintah_pusat) - butir 1
+CUT TEXT: Pengembangan satuan permukiman pada tahap penyesuaian. Pengembangan satuan permukiman pada tahap pemantapan. Pengembangan satuan permukiman pada tahap kemandirian. II. MANAJEMEN PENYELENGGARAAN URUSAN PEMERINTAHAN KONKUREN Substansi urusan yang dibagi antara Pemerintah Pusat dan Daerah provinsi dan Daerah kabupaten/kota sebagaimana dimuat dalam matriks pembagian Urusan Pemerintahan konkuren antara Pemerintah Pusat dan Daerah provinsi dan Daerah kabupaten/kota tersebut di atas termasuk kewenangan dalam pengelolaan unsur manajemen (yang meliputi sarana dan prasarana, personil, bahan-bahan, metode kerja) dan kewenangan dalam penyelenggaraan fungsi manajemen (yang meliputi perencanaan, pengorganisasian, pelaksanaan, pengoordinasian, penganggaran, pengawasan, penelitian dan pengembangan, standardisasi, dan pengelolaan informasi) dalam substansi Urusan Pemerintahan tersebut melekat menjadi kewenangan masing-masing tingkatan atau susunan pemerintahan tersebut, kecuali apabila dalam matriks pembagian Urusan Pemerintahan konkuren antara Pemerintah Pusat dan Daerah provinsi dan Daerah kabupaten/kota tersebut terdapat unsur manajemen dan/atau fungsi manajemen yang secara khusus sudah dinyatakan menjadi kewenangan suatu tingkatan atau susunan pemerintahan yang lain, sehingga tidak lagi melekat pada substansi Urusan Pemerintahan pada tingkatan atau susunan pemerintahan tersebut. Salah satu contoh matriks pembagian Urusan Pemerintahan bidang Pendidikan. Dalam matriks Urusan Pemerintahan bidang Pendidikan terdiri atas 6 (enam) sub Urusan Pemerintahan yaitu manajemen pendidikan, kurikulum, akreditasi, pendidik dan tenaga kependidikan, perizinan pendidikan, dan bahasa dan sastra. Dari keenam sub Urusan Pemerintahan tersebut yang merupakan substansi Urusan Pemerintahan adalah sub urusan manajemen pendidikan; kurikulum; perizinan pendidikan; dan bahasa dan sastra, sedangkan yang merupakan unsur manajemen adalah sub urusan pendidik dan tenaga kependidikan dan yang merupakan fungsi manajemen adalah sub urusan akreditasi. Perincian pembagian Urusan Pemerintahan bidang pendidikan yang merupakan substansi Urusan Pemerintahan bidang pendidikan adalah sebagai berikut: 1. Sub urusan manajemen pendidikan:
+--> NOT FOUND in OCR pages

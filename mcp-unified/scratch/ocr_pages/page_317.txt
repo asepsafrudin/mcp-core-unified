@@ -1,0 +1,50 @@
+ag
+
+PAS EN
+
+TN
+
+Any
+
+data On,
+
+Tg
+
+P
+
+1
+
+PRESIDEN
+REPUBLIK INDONESIA
+
+-4-
+
+B. PEMBAGIAN URUSAN PEMERINTAHAN BIDANG KESEHATAN
+
+standardisasi fasilitas
+pelayanan kesehatan
+publik dan swasta.
+
+tingkat Daerah provinsi.
+
+kabupaten/kota.
+
+NO | URUSAN PEMERINTAH PUSAT DAERAH PROVINSI DAERAH
+KABUPATEN/KOTA
+1 2 3 4 5
+
+1. Upaya Kesehatan a. Pengelolaan upaya |a. Pengelolaan UKP rujukan |a. Pengelolaan UKP Daerah
+kesehatan perorangan tingkat Daerah kabupaten/kota dan
+(UKP) rujukan provinsi/lintas Daerah rujukan tingkat Daerah
+
+nasional/lintas Daerah kabupaten/kota. kabupaten/kota.
+provinsi. b. Pengelolaan UKM Daerah | b. Pengelolaan UKM Daerah
+b. Pengelolaan upaya provinsi dan rujukan kabupaten/kota dan
+kesehatan masyarakat tingkat Daerah rujukan tingkat Daerah
+
+(UKM nasional dan provinsi/lintas Daerah kabupaten/kota.
+rujukan nasional/lintas kabupaten/kota. c. Penerbitan izin rumah
+Daerah provinsi. c. Penerbitan izin rumah sakit kelas C dan D dan
+c. Penyelenggaraan sakit kelas B dan fasilitas fasilitas pelayanan
+registrasi, akreditasi, dan pelayanan kesehatan kesehatan tingkat Daerah
+

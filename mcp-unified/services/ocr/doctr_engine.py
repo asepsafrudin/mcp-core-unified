@@ -42,12 +42,38 @@ class DoctrUniversalAdapter:
                     logger.info(f"Initializing docTR predictor on {device}")
                 
                 # Initialize the model once. assume_straight_pages=False helps with skewed documents.
-                cls._instance.predictor = ocr_predictor(
-                    det_arch='db_resnet50', 
-                    reco_arch='crnn_vgg16_bn', 
-                    pretrained=True,
-                    assume_straight_pages=False
-                )
+                det_model_path = "/home/aseps/MCP/mcp-data/models/doctr/detection/db_resnet50.pt"
+                reco_model_path = "/home/aseps/MCP/mcp-data/models/doctr/recognition/crnn_vgg16_bn.pt"
+
+                if os.path.exists(det_model_path) and os.path.exists(reco_model_path):
+                    try:
+                        logger.info("loading_custom_doctr_weights", detection=det_model_path, recognition=reco_model_path)
+                    except TypeError:
+                        logger.info("Loading custom docTR weights from local disk")
+                        
+                    det_model = db_resnet50(pretrained=False, pretrained_backbone=False)
+                    det_model.load_state_dict(torch.load(det_model_path, map_location=device, weights_only=True))
+                    
+                    reco_model = crnn_vgg16_bn(pretrained=False, pretrained_backbone=False)
+                    reco_model.load_state_dict(torch.load(reco_model_path, map_location=device, weights_only=True))
+                    
+                    cls._instance.predictor = ocr_predictor(
+                        det_arch=det_model,
+                        reco_arch=reco_model,
+                        assume_straight_pages=False
+                    )
+                else:
+                    try:
+                        logger.info("loading_pretrained_doctr_weights")
+                    except TypeError:
+                        logger.info("Loading default pretrained docTR weights")
+                        
+                    cls._instance.predictor = ocr_predictor(
+                        det_arch='db_resnet50', 
+                        reco_arch='crnn_vgg16_bn', 
+                        pretrained=True,
+                        assume_straight_pages=False
+                    )
                 
                 if torch.cuda.is_available():
                     cls._instance.predictor.cuda()

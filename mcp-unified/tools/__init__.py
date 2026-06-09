@@ -78,6 +78,26 @@ def _register_all_tools():
     except ImportError:
         pass  # Telegram dependencies may not be installed
 
+    # Hybrid Browser Tools (agent-browser)
+    try:
+        from .agent_browser_tools import (
+            ab_navigate,
+            ab_snapshot,
+            ab_click,
+            ab_type,
+            ab_extract,
+            ab_screenshot,
+        )
+        from .hybrid_router import (
+            browser_route,
+        )
+        from .session_bridge import (
+            session_bridge_export,
+            session_bridge_import,
+        )
+    except ImportError:
+        pass
+
     # Research tools (Vane AI Search)
     try:
         from .research_tools import (
@@ -170,6 +190,16 @@ __all__.extend([
     # Integration tools
     "TelegramTool",
     "telegram_tool",
+    # Hybrid Browser Tools
+    "ab_navigate",
+    "ab_snapshot",
+    "ab_click",
+    "ab_type",
+    "ab_extract",
+    "ab_screenshot",
+    "browser_route",
+    "session_bridge_export",
+    "session_bridge_import",
     # Research tools (Vane AI Search)
     "vane_search",
     "vane_legal_search",

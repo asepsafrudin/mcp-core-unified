@@ -1,0 +1,304 @@
+=== CONTEXT FOR SUSPICIOUS ITEMS ===
+
+[1] Bidang C (PEKERJAAN UMUM DAN PENATAAN RUANG) -> Sumber Daya Air (SDA) | pemerintah_pusat | butir 1
+CUT TEXT: Pengembangan dan pengelolaan sistem irigasi primer dan sekunder pada daerah irigasi yang luasnya lebih dari 3000 ha, daerah irigasi lintas Daerah provinsi, daerah irigasi lintas negara, dan daerah irigasi strategis
+
+CONTEXT: NOT FOUND IN MD
+--------------------------------------------------------------------------------
+[2] Bidang F (SOSIAL) -> Penanganan Bencana | daerah_provinsi | butir 1
+CUT TEXT: Penyelenggaraan pemberdayaan masyarakat terhadap kesiapsiagaan dalam menghadapi bencana
+
+CONTEXT: NOT FOUND IN MD
+--------------------------------------------------------------------------------
+[3] Bidang G (TENAGA KERJA) -> Penempatan Tenaga Kerja | daerah_kabupaten_kota | butir 0
+CUT TEXT: Pelayanan antar kerja di Daerah kabupaten/kota
+
+CONTEXT (Lines after):
+8424: - a. Pelayanan antar kerja di Daerah kabupaten/kota
+8425: - b. Penerbitan izin LPTKS dalam 1 (satu) Daerah kabupaten/kota.
+8426: - c. Pengelolaan informasi pasar kerja dalam Daerah kabupaten/kota.
+8428: NO
+8430: **SUB BIDANG**
+8432: **PEMERINTAH PUSAT**
+8434: **DAERAH PROVINSI**
+8436: **DAERAH KABUPATEN/KOTA**
+8437: 1
+8438: 2
+--------------------------------------------------------------------------------
+[4] Bidang H (PEMBERDAYAAN PEREMPUAN DAN PELINDUNGAN ANAK) -> Kualitas Keluarga | daerah_provinsi | butir 2
+CUT TEXT: Penyediaan layanan bagi keluarga dalam mewujudkan KG dan hak
+
+CONTEXT (Lines after):
+8600: peningkatan kualitas keluarga	dalam mewujudkan KG dan hak anak tingkat nasional.
+8601: - c. Standardisasi lembaga penyediaan	layanan
+8602: peningkatan kualitas keluarga	dalam mewujudkan KG dan hak anak.
+8603: - a. Peningkatan	kualitas keluarga		dalam mewujudkan kesetaraan gender (KG) dan hak anak tingkat Daerah provinsi dan lintas Daerah kabupaten/kota.
+8604: - b. Penguatan		dan pengembangan lembaga penyedia	layanan
+8605: peningkatan	kualitas keluarga		dalam mewujudkan KG dan hak anak yang wilayah kerjanya lintas Daerah kabupaten/kota.
+8606: - c. Penyediaan layanan bagi keluarga	dalam
+8607: mewujudkan KG dan hak
+8608: - a. Peningkatan kualitas keluarga		dalam mewujudkan kesetaraan gender (KG) dan hak anak tingkat	Daerah kabupaten/kota.
+8609: - b. Penguatan		dan pengembangan lembaga penyedia	layanan
+8610: peningkatan kualitas keluarga	dalam mewujudkan KG dan hak anak yang wilayah kerjanya dalam Daerah kabupaten/kota.
+8611: - c. Penyediaan layanan bagi keluarga	dalam mewujudkan KG dan hak
+8612: anak   yang   wilayah
+8614: NO
+--------------------------------------------------------------------------------
+[5] Bidang N (PENGENDALIAN PENDUDUK DAN KELUARGA BERENCANA) -> Keluarga Berencana (KB) | daerah_kabupaten_kota | butir 0
+CUT TEXT: Pelaksanaan advokasi, komunikasi, informasi dan edukasi (KIE) pengendalian penduduk
+
+CONTEXT (Lines after):
+9250: edukasi (KIE) pengendalian penduduk dan KB sesuai kearifan budaya lokal.
+9251: - b. Pemberdayaan		dan peningkatan peran serta organisasi kemasyarakatan tingkat Daerah provinsi dalam	pengelolaan pelayanan dan pembinaan kesertaan ber-KB.
+9252: dan KB sesuai kearifan budaya lokal.
+9253: - b. Pendayagunaan tenaga penyuluh KB/petugas lapangan KB (PKB/PLKB).
+9254: - c. Pengendalian				dan pendistribusian kebutuhan alat dan obat kontrasepsi			serta pelaksanaan	pelayanan KB	di		Daerah kabupaten/kota.
+9255: - d. Pemberdayaan			dan peningkatan	peran		serta organisasi kemasyarakatan	tingkat Daerah	kabupaten/kota
+9256: dalam	pelaksanaan pelayanan dan pembinaan
+9258: NO
+9260: **SUB URUSAN**
+9262: **PEMERINTAH PUSAT**
+9264: **DAERAH PROVINSI**
+--------------------------------------------------------------------------------
+[6] Bidang O (PERHUBUNGAN) -> Pelayaran | daerah_provinsi | butir 1
+CUT TEXT: Penerbitan izin usaha angkutan laut pelayaran rakyat bagi orang perorangan atau badan usaha yang berdomisili dan yang beroperasi pada lintas pelabuhan antar- Daerah kabupaten/kota dalam Daerah provinsi, pelabuhan antar-Daerah provinsi, dan pelabuhan
+
+CONTEXT (Lines after):
+9502: - b. Penerbitan izin usaha angkutan laut pelayaran rakyat bagi orang perorangan atau badan usaha yang berdomisili dan yang beroperasi pada lintas pelabuhan antar- Daerah kabupaten/kota dalam Daerah provinsi, pelabuhan antar-Daerah provinsi,  dan  pelabuhan
+9503: - a. Penerbitan izin usaha angkutan laut bagi badan usaha yang berdomisili dalam	Daerah kabupaten/kota dan beroperasi pada lintas pelabuhan di Daerah kabupaten/kota.
+9504: - b. Penerbitan izin usaha angkutan laut pelayaran rakyat bagi orang perorangan atau badan usaha yang berdomisili dan yang beroperasi pada lintas pelabuhan dalam Daerah kabupaten/kota.
+9505: - c. Penerbitan izin usaha penyelenggaraan
+9506: angkutan  sungai  dan
+9508: NO
+9510: **SUB URUSAN**
+9512: **PEMERINTAH PUSAT**
+9514: **DAERAH PROVINSI**
+9516: **DAERAH KABUPATEN/KOTA**
+--------------------------------------------------------------------------------
+[7] Bidang O (PERHUBUNGAN) -> Pelayaran | daerah_kabupaten_kota | butir 2
+CUT TEXT: Penerbitan izin usaha penyelenggaraan angkutan sungai dan penyeberangan
+
+CONTEXT: NOT FOUND IN MD
+--------------------------------------------------------------------------------
+[8] Bidang O (PERHUBUNGAN) -> Perkeretaapian | daerah_kabupaten_kota | butir 2
+CUT TEXT: Penetapan jaringan jalur kereta api yang jaringannya dalam 1 (satu) Daerah
+
+CONTEXT: NOT FOUND IN MD
+--------------------------------------------------------------------------------
+[9] Bidang R (PENANAMAN MODAL) -> Pelayanan Penanaman Modal | pemerintah_pusat | butir 2
+CUT TEXT: C. Pelayanan penanaman modal pada bidang industri yang merupakan prioritas tinggi pada skala pelayanan perizinan dan nonperizinan secara terpadu satu pintu:
+
+CONTEXT (Lines after):
+10033: Pelayanan perizinan dan nonperizinan secara terpadu satu pintu:
+10034: - a. Penanaman modal yang ruang lingkupnya lintas Daerah kabupaten/kota;
+10035: - b. Penanaman Modal yang menurut	ketentuan
+10036: peraturan	perundang-
+10037: undangan	menjadi
+10038: kewenangan	Daerah provinsi.
+10039: Pelayanan perizinan dan nonperizinan secara terpadu
+10040: 1 (satu) pintu di bidang penanaman modal yang menjadi kewenangan Daerah kabupaten/kota.
+10042: NO
+10044: **SUB URUSAN**
+10046: **PEMERINTAH PUSAT**
+--------------------------------------------------------------------------------
+[10] Bidang W (PERPUSTAKAAN) -> Pelestarian Koleksi Nasional dan Naskah Kuno | pemerintah_pusat | butir 2
+CUT TEXT: Pelestarian naskah kuno dan pengembalian
+
+CONTEXT (Lines after):
+10371: - c. Pelestarian naskah kuno dan	pengembalian
+10372: - a. Pelestarian karya cetak dan karya rekam koleksi Daerah di Daerah provinsi.
+10373: - b. Penerbitan katalog induk Daerah dan bibliografi Daerah.
+10374: - c. Pelestarian naskah kuno milik Daerah provinsi.
+10375: - a. Pelestarian naskah kuno milik	Daerah
+10376: kabupaten/kota.
+10377: - b. Pengembangan koleksi budaya etnis nusantara yang ditemukan oleh Pemerintah	Daerah kabupaten/kota.
+10379: NO
+10381: **SUB URUSAN**
+10383: **PEMERINTAH PUSAT**
+10385: **DAERAH PROVINSI**
+--------------------------------------------------------------------------------
+[11] Bidang X (KEARSIPAN) -> Pengelolaan Arsip | pemerintah_pusat | butir 1
+CUT TEXT: Pengelolaan arsip statis yang diciptakan oleh lembaga negara di Pusat dan Daerah, BUMN, organisasi kemasyarakatan tingkat nasional, organisasi politik tingkat nasional, tokoh nasional dan perusahaan swasta yang
+
+CONTEXT: NOT FOUND IN MD
+--------------------------------------------------------------------------------
+[12] Bidang X (KEARSIPAN) -> Pengelolaan Arsip | daerah_provinsi | butir 1
+CUT TEXT: Pengelolaan arsip statis yang diciptakan oleh Pemerintah Daerah provinsi, BUMD provinsi, perusahaan swasta yang cabang usahanya lebih dari 1 (satu) Daerah kabupaten/kota dalam 1 (satu) Daerah provinsi, organisasi kemasyarakatan
+
+CONTEXT: NOT FOUND IN MD
+--------------------------------------------------------------------------------
+[13] Bidang X (KEARSIPAN) -> Pengelolaan Arsip | daerah_kabupaten_kota | butir 1
+CUT TEXT: Pengelolaan arsip statis yang diciptakan oleh Pemerintahan Daerah kabupaten/kota, BUMD kabupaten/kota, perusahaan swasta yang kantor usahanya dalam 1 (satu) Daerah kabupaten/kota, organisasi
+
+CONTEXT (Lines after):
+10452: kemasyarakatan tingkat Daerah kabupaten/kota, organisasi politik tingkat Daerah kabupaten/kota, pemerintahan desa dan tokoh masyarakat tingkat Daerah kabupaten/kota.
+10453: - c. Pengelolaan	simpul jaringan dalam SIKN melalui JIKN pada tingkat kabupaten/kota.
+10455: NO
+10457: **SUB URUSAN**
+10459: **PEMERINTAH PUSAT**
+10461: **DAERAH PROVINSI**
+10463: **DAERAH KABUPATEN/KOTA**
+10464: 1
+10465: 2
+10466: 3
+--------------------------------------------------------------------------------
+[14] Bidang X (KEARSIPAN) -> Pelindungan dan Penyelamatan Arsip | daerah_provinsi | butir 3
+CUT TEXT: Melakukan autentikasi pemekaran Kecamatan
+
+CONTEXT: NOT FOUND IN MD
+--------------------------------------------------------------------------------
+[15] Bidang Y (KELAUTAN DAN PERIKANAN) -> Perikanan Tangkap | pemerintah_pusat | butir 2
+CUT TEXT: Penerbitan izin usaha perikanan tangkap untuk:
+
+CONTEXT (Lines after):
+10625: - c. Penerbitan izin usaha perikanan	tangkap untuk:
+10626: - a. kapal	perikanan berukuran		di	atas
+10627: 30 Gross Tonase (GT);
+10628: - a. Pengelolaan penangkapan ikan di wilayah laut sampai dengan 12 mil.
+10629: - b. Penerbitan izin usaha perikanan tangkap untuk kapal	perikanan berukuran di atas 5 GT sampai dengan 30 GT.
+10630: - c. Penetapan	lokasi pembangunan		serta pengelolaan pelabuhan perikanan provinsi.
+10631: - d. Penerbitan izin pengadaan kapal penangkap ikan dan
+10632: - a. Pemberdayaan nelayan kecil dalam Daerah kabupaten/kota.
+10633: - b. Pengelolaan	dan penyelenggaraan Tempat Pelelangan Ikan (TPI).
+10635: NO
+10637: **SUB URUSAN**
+10639: **PEMERINTAH PUSAT**
+--------------------------------------------------------------------------------
+[16] Bidang AA (PERTANIAN) -> Sarana Pertanian | daerah_provinsi | butir 4
+CUT TEXT: Pengawasan mutu dan peredaran benih/bibit ternak dan sumber daya genetik (SDG) hewan
+
+CONTEXT (Lines after):
+10830: - c. Penetapan standar mutu benih/bibit, sumber daya genetik (SDG) hewan (rumpun/galur ternak).
+10831: - d. Penerbitan sertifikasi benih/bibit	ternak, pakan, hijauan pakan ternak (HPT) dan obat hewan.
+10832: - a. Pengawasan peredaran sarana pertanian.
+10833: - b. Penerbitan sertifikasi dan pengawasan peredaran benih tanaman.
+10834: - c. Pengelolaan SDG hewan yang terdapat pada lebih dari 1 (satu) Daerah kabupaten dalam 1 (satu) Daerah provinsi.
+10835: - d. Pengawasan benih ternak, pakan, HPT dan obat hewan.
+10836: - e. Pengawasan mutu dan peredaran benih/bibit ternak dan tanaman pakan
+10837: - a. Pengawasan	penggunaan sarana pertanian.
+10838: - b. Pengelolaan	SDG		hewan dalam		Daerah
+10839: kabupaten/kota.
+10840: - c. Pengawasan mutu dan peredaran benih/bibit ternak dan tanaman pakan ternak serta pakan dalam	Daerah
+10841: kabupaten/kota.
+10842: - d. Pengawasan obat hewan di tingkat pengecer.
+10843: - e. Pengendalian penyediaan dan peredaran benih/bibit ternak, dan hijauan pakan
+--------------------------------------------------------------------------------
+[17] Bidang AA (PERTANIAN) -> Sarana Pertanian | daerah_kabupaten_kota | butir 4
+CUT TEXT: Pengendalian penyediaan dan peredaran benih/bibit ternak, dan hijauan pakan
+
+CONTEXT (Lines after):
+10843: - e. Pengendalian penyediaan dan peredaran benih/bibit ternak, dan hijauan pakan
+10845: NO
+10847: **SUB URUSAN**
+10849: **PEMERINTAH PUSAT**
+10851: **DAERAH PROVINSI**
+10853: **DAERAH KABUPATEN/KOTA**
+10854: 1
+10855: 2
+10856: 3
+10857: 4
+--------------------------------------------------------------------------------
+[18] Bidang AA (PERTANIAN) -> Kesehatan Hewan dan Kesehatan Masyarakat Veteriner | pemerintah_pusat | butir 1
+CUT TEXT: Penetapan dan penerapan persyaratan kesehatan hewan dan kesehatan masyarakat veteriner
+
+CONTEXT (Lines after):
+10932: - e. Penetapan persyaratan teknis	kesehatan masyarakat veteriner.
+10933: - f. Penetapan	persyaratan teknis		sertifikasi zona/kompartemen bebas penyakit dan unit usaha produk hewan.
+10934: - g. Penetapan		persyaratan teknis	kesejahteraan
+10935: - b. Pengawasan pemasukan dan pengeluaran hewan dan produk hewan lintas Daerah provinsi.
+10936: - c. Penerapan persyaratan teknis	sertifikasi zona/kompartemen bebas penyakit dan unit usaha produk hewan.
+10937: - d. Sertifikasi persyaratan teknis	kesehatan masyarakat veteriner dan kesejahteraan hewan.
+10938: hewan dan produk hewan ke	Daerah
+10939: kabupaten/kota serta pengeluaran hewan dan produk hewan dari Daerah kabupaten/kota.
+10940: - c. Pengelolaan pelayanan jasa laboratorium dan jasa medik veteriner dalam Daerah kabupaten/kota.
+10941: - d. Penerapan		dan pengawasan persyaratan teknis	kesehatan masyarakat veteriner.
+10942: - e. Penerapan		dan pengawasan persyaratan teknis	kesejahteraan hewan.
+10944: NO
+10946: **SUB URUSAN**
+--------------------------------------------------------------------------------
+[19] Bidang AA (PERTANIAN) -> Kesehatan Hewan dan Kesehatan Masyarakat Veteriner | daerah_kabupaten_kota | butir 1
+CUT TEXT: Pengawasan pemasukan hewan dan produk hewan
+
+CONTEXT: NOT FOUND IN MD
+--------------------------------------------------------------------------------
+[20] Bidang BB (KEHUTANAN) -> Konservasi Sumber Daya Alam Hayati dan Ekosistemnya | pemerintah_pusat | butir 3
+CUT TEXT: Penyelenggaraan pemanfaatan jenis
+
+CONTEXT (Lines after):
+11110: - d. Penyelenggaraan pemanfaatan	jenis
+11111: - a. Pelaksanaan perlindungan, pengawetan dan	pemanfaatan	secara lestari		taman		hutan raya		(TAHURA)			lintas Daerah kabupaten/kota.
+11112: - b. Pelaksanaan perlindungan tumbuhan dan satwa liar yang tidak dilindungi dan/atau tidak masuk dalam lampiran (Appendix) CITES.
+11113: - c. Pelaksanaan	pengelolaan kawasan		bernilai
+11114: Pelaksanaan	pengelolaan TAHURA kabupaten/kota.
+11116: NO
+11118: **SUB URUSAN**
+11120: **PEMERINTAH PUSAT**
+11122: **DAERAH PROVINSI**
+11124: **DAERAH KABUPATEN/KOTA**
+--------------------------------------------------------------------------------
+[21] Bidang CC (ENERGI DAN SUMBER DAYA MINERAL) -> Mineral dan Batubara | pemerintah_pusat | butir 0
+CUT TEXT: Penetapan wilayah pertambangan sebagai bagian dari rencana tata ruang wilayah nasional, yang terdiri atas wilayah usaha pertambangan, wilayah pertambangan rakyat dan wilayah pencadangan negara serta wilayah usaha
+
+CONTEXT (Lines after):
+11217: - a. Penetapan	wilayah pertambangan sebagai bagian dari rencana tata ruang wilayah nasional, yang terdiri atas wilayah usaha pertambangan, wilayah pertambangan rakyat dan wilayah pencadangan negara serta   wilayah usaha
+11218: - a. Penetapan wilayah izin usaha	pertambangan mineral bukan logam dan batuan dalam 1 (satu) Daerah provinsi dan wilayah laut sampai dengan 12 mil.
+11219: - b. Penerbitan izin usaha pertambangan mineral logam dan batubara dalam
+11221: NO
+11223: **SUB URUSAN**
+11225: **PEMERINTAH PUSAT**
+11227: **DAERAH PROVINSI**
+11229: **DAERAH KABUPATEN/KOTA**
+11230: 1
+11231: 2
+--------------------------------------------------------------------------------
+[22] Bidang CC (ENERGI DAN SUMBER DAYA MINERAL) -> Ketenagalistrikan | daerah_provinsi | butir 2
+CUT TEXT: Penetapan tarif tenaga listrik untuk konsumen dan penerbitan izin pemanfaatan jaringan untuk telekomunikasi, multimedia, dan informatika dari pemegang
+
+CONTEXT (Lines after):
+11392: multimedia,	dan informatika dari pemegang
+11394: NO
+11396: **SUB URUSAN**
+11398: **PEMERINTAH PUSAT**
+11400: **DAERAH PROVINSI**
+11402: **DAERAH KABUPATEN/KOTA**
+11403: 1
+11404: 2
+11405: 3
+11406: 4
+--------------------------------------------------------------------------------
+[23] Bidang DD (PERDAGANGAN) -> Perizinan dan Pendaftaran Perusahaan | pemerintah_pusat | butir 0
+CUT TEXT: Penerbitan izin usaha untuk: 1) perantara perdagangan properti; 2) penjualan langsung; 3) perwakilan perusahaan perdagangan asing; 4) usaha perdagangan yang di dalamnya terdapat modal asing; 5) jasa survei dan jasa lainnya di bidang perdagangan tertentu; dan
+
+CONTEXT (Lines after):
+11466: 5) jasa survei dan jasa lainnya di bidang perdagangan tertentu; dan
+11467: - a. Penertiban surat izin usaha	perdagangan minuman beralkohol toko bebas bea dan rekomendasi penerbitan SIUP-MB bagi distributor.
+11468: - b. Penerbitan surat izin usaha perdagangan bahan berbahaya	pengecer terdaftar, pemeriksaan sarana distribusi bahan berbahaya,			dan pengawasan distribusi, pengemasan			dan pelabelan		bahan berbahaya   di   tingkat
+11469: - a. Penerbitan	izin
+11470: pengelolaan	pasar
+11471: rakyat,	pusat
+11472: perbelanjaan	dan	izin usaha toko swalayan.
+11473: - b. Penerbitan tanda daftar gudang, dan surat keterangan penyimpanan barang (SKPB).
+11474: - c. Penerbitan surat tanda pendaftaran waralaba (STPW) untuk:
+11475: 1) penerima waralaba dari waralaba dalam negeri;
+11477: NO
+11479: **SUB URUSAN**
+--------------------------------------------------------------------------------
+[24] Bidang FF (TRANSMIGRASI) -> Pengembangan Kawasan Transmigrasi | pemerintah_pusat | butir 1
+CUT TEXT: Pengembangan satuan permukiman pada tahap penyesuaian. Pengembangan satuan permukiman pada tahap pemantapan. Pengembangan satuan permukiman pada tahap kemandirian. II. MANAJEMEN PENYELENGGARAAN URUSAN PEMERINTAHAN KONKUREN Substansi urusan yang dibagi antara Pemerintah Pusat dan Daerah provinsi dan Daerah kabupaten/kota sebagaimana dimuat dalam matriks pembagian Urusan Pemerintahan konkuren antara Pemerintah Pusat dan Daerah provinsi dan Daerah kabupaten/kota tersebut di atas termasuk kewenangan dalam pengelolaan unsur manajemen (yang meliputi sarana dan prasarana, personil, bahan-bahan, metode kerja) dan kewenangan dalam penyelenggaraan fungsi manajemen (yang meliputi perencanaan, pengorganisasian, pelaksanaan, pengoordinasian, penganggaran, pengawasan, penelitian dan pengembangan, standardisasi, dan pengelolaan informasi) dalam substansi Urusan Pemerintahan tersebut melekat menjadi kewenangan masing-masing tingkatan atau susunan pemerintahan tersebut, kecuali apabila dalam matriks pembagian Urusan Pemerintahan konkuren antara Pemerintah Pusat dan Daerah provinsi dan Daerah kabupaten/kota tersebut terdapat unsur manajemen dan/atau fungsi manajemen yang secara khusus sudah dinyatakan menjadi kewenangan suatu tingkatan atau susunan pemerintahan yang lain, sehingga tidak lagi melekat pada substansi Urusan Pemerintahan pada tingkatan atau susunan pemerintahan tersebut. Salah satu contoh matriks pembagian Urusan Pemerintahan bidang Pendidikan. Dalam matriks Urusan Pemerintahan bidang Pendidikan terdiri atas 6 (enam) sub Urusan Pemerintahan yaitu manajemen pendidikan, kurikulum, akreditasi, pendidik dan tenaga kependidikan, perizinan pendidikan, dan bahasa dan sastra. Dari keenam sub Urusan Pemerintahan tersebut yang merupakan substansi Urusan Pemerintahan adalah sub urusan manajemen pendidikan; kurikulum; perizinan pendidikan; dan bahasa dan sastra, sedangkan yang merupakan unsur manajemen adalah sub urusan pendidik dan tenaga kependidikan dan yang merupakan fungsi manajemen adalah sub urusan akreditasi. Perincian pembagian Urusan Pemerintahan bidang pendidikan yang merupakan substansi Urusan Pemerintahan bidang pendidikan adalah sebagai berikut: 1. Sub urusan manajemen pendidikan:
+
+CONTEXT (Lines after):
+11792: 1. Sub urusan manajemen pendidikan:
+11793: - a. penetapan standar nasional pendidikan dan pengelolaan pendidikan tinggi menjadi kewenangan Pemerintah Pusat;
+11794: - b. pengelolaan pendidikan menengah dan pendidikan khusus menjadi kewenangan Daerah Provinsi; dan
+11795: - c. pengelolaan pendidikan dasar, pendidikan anak usia dini, dan pendidikan nonformal menjadi kewenangan Daerah kabupaten/kota.
+11796: 2. Sub urusan kurikulum:
+11797: - a. Penetapan kurikulum nasional pendidikan menengah, pendidikan dasar, pendidikan anak usia dini, dan pendidikan nonformal menjadi kewenangan Pemerintah Pusat;
+11798: - b. Penetapan kurikulum muatan lokal pendidikan menengah dan muatan lokal pendidikan khusus menjadi kewenangan Daerah provinsi; dan
+11799: - c. Penetapan kurikulum muatan lokal pendidikan dasar, pendidikan anak usia dini, dan pendidikan nonformal menjadi kewenangan Daerah kabupaten/kota.
+11800: 3. Sub urusan perizinan pendidikan:
+11801: - a. penerbitan izin perguruan tinggi swasta yang diselenggarakan masyarakat dan penerbitan izin penyelenggaraan satuan pendidikan asing menjadi kewenangan Pemerintah Pusat;
+11802: - b. penerbitan izin pendidikan menengah yang diselenggarakan masyarakat dan penerbitan izin pendidikan khusus yang diselenggarakan oleh masyarakat menjadi kewenangan Daerah provinsi; dan
+11803: - c. penerbitan izin pendidikan dasar yang diselenggarakan masyarakat dan penerbitan izin pendidikan anak usia dini dan pendidikan nonformal yang diselenggarakan oleh masyarakat menjadi kewenangan Daerah kabupaten/kota.
+11805: 4. Sub urusan bahasa dan sastra:
+11806: - a. pembinaan bahasa dan sastra Indonesia menjadi kewenangan Pemerintah Pusat;
+--------------------------------------------------------------------------------
