@@ -126,7 +126,7 @@ class DoctrUniversalAdapter:
 
     def extract_layout_blocks(self, file_path: str) -> str:
         """Mode B: Reconstructs paragraphs using \n\n for blocks and \n for lines.
-        Replacement for PaddleOCR's RecoveryToDoc.
+        Replacement for DocTR's RecoveryToDoc.
         """
         export = self._get_export(file_path)
         full_text = []

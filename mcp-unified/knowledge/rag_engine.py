@@ -26,7 +26,10 @@ Usage:
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+import json
+import hashlib
+import os
 
 # Add parent to path untuk imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -47,6 +50,38 @@ class RAGResult:
     namespace: str
 
 
+class SemanticQueryCache:
+    """Cache untuk membypass RAG processing pada query yang berulang."""
+    def __init__(self, redis_url: str = None):
+        import redis.asyncio as redis_client
+        self.redis_url = redis_url or os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        self.redis = redis_client.from_url(self.redis_url)
+        self.ttl = 86400  # 24 hours
+        
+    async def get(self, query: str, namespace: str) -> Optional[dict]:
+        key = self._generate_key(query, namespace)
+        try:
+            data = await self.redis.get(key)
+            if data:
+                logger.info("semantic_cache_hit", query=query, namespace=namespace)
+                return json.loads(data)
+        except Exception as e:
+            logger.error("semantic_cache_get_error", error=str(e))
+        return None
+        
+    async def set(self, query: str, namespace: str, result_dict: dict):
+        key = self._generate_key(query, namespace)
+        try:
+            await self.redis.setex(key, self.ttl, json.dumps(result_dict))
+            logger.info("semantic_cache_set", query=query, namespace=namespace)
+        except Exception as e:
+            logger.error("semantic_cache_set_error", error=str(e))
+            
+    def _generate_key(self, query: str, namespace: str) -> str:
+        normalized = " ".join(query.lower().strip().split())
+        query_hash = hashlib.sha256(normalized.encode()).hexdigest()
+        return f"rag:cache:{namespace}:{query_hash}"
+
 class RAGEngine:
     """
     RAG Engine untuk document retrieval dan context assembly.
@@ -58,6 +93,7 @@ class RAGEngine:
     def __init__(self, vector_store: PGVectorStore = None):
         config = get_knowledge_config()
         self.vector_store = vector_store or PGVectorStore()
+        self.cache = SemanticQueryCache()
         self.default_top_k = config.default_top_k
         self.similarity_threshold = config.similarity_threshold
         self.max_context_length = config.max_context_length
@@ -130,7 +166,8 @@ class RAGEngine:
         query: str,
         namespace: str = "default",
         top_k: int = None,
-        min_similarity: float = None
+        min_similarity: float = None,
+        metadata_filters: Dict[str, Any] = None
     ) -> RAGResult:
         """
         Query knowledge base dengan retrieval.
@@ -140,12 +177,20 @@ class RAGEngine:
             namespace: Namespace untuk search
             top_k: Number of results (default dari config)
             min_similarity: Minimum similarity threshold
+            metadata_filters: Dictionary filter metadata
         
         Returns:
             RAGResult dengan context dan sources
         """
         top_k = top_k or self.default_top_k
         min_similarity = min_similarity or self.similarity_threshold
+        
+        # 1. Cek Semantic Cache (Bypass PGVector jika hit)
+        # Jika ada metadata filters, abaikan cache sementara untuk keamanan filtering dinamis
+        if not metadata_filters:
+            cached = await self.cache.get(query, namespace)
+            if cached:
+                return RAGResult(**cached)
         
         try:
             # Generate query embedding
@@ -165,7 +210,8 @@ class RAGEngine:
                 query_embedding=query_embedding,
                 top_k=top_k,
                 namespace=namespace,
-                min_similarity=min_similarity
+                min_similarity=min_similarity,
+                metadata_filters=metadata_filters
             )
             
             # Build context dari retrieved documents
@@ -192,6 +238,10 @@ class RAGEngine:
                 total_documents=len(documents),
                 namespace=namespace
             )
+            
+            # Simpan ke cache jika sukses
+            if not metadata_filters and result.total_documents > 0:
+                await self.cache.set(query, namespace, asdict(result))
             
             logger.info("rag_query_complete",
                        query=query[:50],

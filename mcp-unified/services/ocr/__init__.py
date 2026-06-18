@@ -1,4 +1,4 @@
-"""OCR Service Package — PaddleOCR + NLP + indonesian-embedding-small + LLM."""
+"""OCR Service Package — DocTR + NLP + indonesian-embedding-small + LLM."""
 from .tools import register_tools
 from .service import OCREngine
 from .nlp_processor import NLPProcessor, get_nlp_processor, normalize_ocr_text, extract_entities

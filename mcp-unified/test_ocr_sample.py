@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script untuk OCR service PaddleOCR 3.x menggunakan sample file gambar.
+Test script untuk OCR service DocTR 3.x menggunakan sample file gambar.
 """
 import sys
 import os
@@ -22,7 +22,7 @@ OUTPUT_DIR = "/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan"
 
 async def main():
     print("=" * 60)
-    print("OCR Service Test - Sample Image (PaddleOCR 3.x)")
+    print("OCR Service Test - Sample Image (DocTR 3.x)")
     print("=" * 60)
 
     # Verify sample image exists
@@ -45,7 +45,7 @@ async def main():
 
     # Test 1: OCR text extraction (using predict() API)
     print("\n[3] Testing ocr/extract_text (PP-OCRv5)...")
-    print("    Running PaddleOCR predict() (this may take a moment)...")
+    print("    Running DocTR predict() (this may take a moment)...")
 
     try:
         ocr_result = engine.run_ocr(SAMPLE_IMAGE)

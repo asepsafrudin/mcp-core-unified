@@ -94,7 +94,16 @@ async def initialize_all_components():
         logger.info("Working memory (Redis) connected successfully")
     except Exception as e:
         logger.warning(f"Working memory unavailable: {e}")
-    
+
+    # 3b. Warm up StaticDataCache (Redis cache untuk data regulasi & referensi statis)
+    try:
+        from core.static_cache import static_cache
+        warmed = await static_cache.warm_up()
+        total_rows = sum(warmed.values())
+        logger.info(f"StaticDataCache warmed up: {len(warmed)} tabel, {total_rows} baris di Redis")
+    except Exception as e:
+        logger.warning(f"StaticDataCache warm_up gagal (non-critical): {e}")
+
     # 4. Register scheduler tools
     try:
         scheduler_tools = get_scheduler_tools()
@@ -222,7 +231,7 @@ async def initialize_all_components():
         register_ocr_tools()
         logger.info("Registered OCR tools (ocr/extract_text, ocr/parse_document)")
     except ImportError:
-        logger.warning("OCR tools (paddleocr) dependencies missing. Skipping OCR registration.")
+        logger.warning("OCR tools (doctr) dependencies missing. Skipping OCR registration.")
     except Exception as e:
         logger.warning(f"Failed to register OCR tools: {e}")
 

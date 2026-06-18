@@ -128,7 +128,8 @@ class AgentKnowledgeBridge:
         top_k: int = 5,
         aggregate: bool = True,
         agent_id: Optional[str] = None,
-        dms_filters: Optional[Dict[str, str]] = None
+        dms_filters: Optional[Dict[str, str]] = None,
+        metadata_filters: Optional[Dict[str, Any]] = None
     ) -> UnifiedKnowledgeResult:
         """
         Query knowledge dari multiple sources.
@@ -142,6 +143,7 @@ class AgentKnowledgeBridge:
             aggregate: Aggregate results into single context
             agent_id: Optional agent ID untuk access-filtering namespace
             dms_filters: Filter untuk DMS (jenis_dokumen, instansi, tahun, category, source)
+            metadata_filters: Exact match metadata filter untuk database
         
         Returns:
             UnifiedKnowledgeResult
@@ -188,7 +190,8 @@ class AgentKnowledgeBridge:
                     db_result = await self.db_connector.query(
                         query=query,
                         namespace=ns,
-                        top_k=top_k
+                        top_k=top_k,
+                        metadata_filters=metadata_filters
                     )
                     if db_result and db_result.success:
                         db_total_documents += db_result.total_documents
@@ -402,7 +405,8 @@ class AgentKnowledgeBridge:
         query: str,
         namespace: str = "default",
         top_k: int = 5,
-        min_similarity: float = 0.7
+        min_similarity: float = 0.7,
+        metadata_filters: Optional[Dict[str, Any]] = None
     ) -> KnowledgeQueryResult:
         """
         Query database knowledge only.
@@ -412,6 +416,7 @@ class AgentKnowledgeBridge:
             namespace: Database namespace
             top_k: Number of results
             min_similarity: Minimum similarity threshold
+            metadata_filters: Exact match filter on metadata
         
         Returns:
             KnowledgeQueryResult
@@ -420,7 +425,8 @@ class AgentKnowledgeBridge:
             query=query,
             namespace=namespace,
             top_k=top_k,
-            min_similarity=min_similarity
+            min_similarity=min_similarity,
+            metadata_filters=metadata_filters
         )
     
     async def query_file_kb(
@@ -537,7 +543,7 @@ class AgentKnowledgeBridge:
         top_k: int = 5
     ) -> KnowledgeQueryResult:
         """
-        Search regulations dengan filter.
+        Search regulations dengan filter hybrid metadata.
         
         Args:
             query: Query text
@@ -549,12 +555,17 @@ class AgentKnowledgeBridge:
         Returns:
             KnowledgeQueryResult
         """
-        return await self.db_connector.search_regulations(
+        metadata_filters = {}
+        if regulation_type:
+            metadata_filters["regulation_type"] = regulation_type
+        if year:
+            metadata_filters["year"] = year
+            
+        return await self.db_connector.query(
             query=query,
-            regulation_type=regulation_type,
-            year=year,
             namespace=namespace,
-            top_k=top_k
+            top_k=top_k,
+            metadata_filters=metadata_filters if metadata_filters else None
         )
     
     async def get_context_for_llm(

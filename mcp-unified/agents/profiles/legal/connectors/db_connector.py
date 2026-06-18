@@ -90,7 +90,8 @@ class DBKnowledgeConnector:
         query: str,
         namespace: str = "default",
         top_k: int = 5,
-        min_similarity: float = 0.7
+        min_similarity: float = 0.7,
+        metadata_filters: Dict[str, Any] = None
     ) -> KnowledgeQueryResult:
         """
         Query knowledge base dengan semantic search.
@@ -100,6 +101,7 @@ class DBKnowledgeConnector:
             namespace: Namespace untuk search scope
             top_k: Number of top results
             min_similarity: Minimum similarity threshold (0-1)
+            metadata_filters: Exact match filter on metadata
         
         Returns:
             KnowledgeQueryResult dengan context dan sources
@@ -121,7 +123,8 @@ class DBKnowledgeConnector:
                 query=query,
                 namespace=namespace,
                 top_k=top_k,
-                min_similarity=min_similarity
+                min_similarity=min_similarity,
+                metadata_filters=metadata_filters
             )
             
             logger.info("knowledge_query_complete",

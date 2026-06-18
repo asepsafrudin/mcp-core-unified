@@ -1,5 +1,5 @@
 """
-NLP Processor untuk pipeline OCR PaddleOCR.
+NLP Processor untuk pipeline OCR DocTR.
 
 Modul ini menggunakan NLP (Natural Language Processing) untuk:
 1. Normalisasi teks hasil OCR (typo correction, spacing)
