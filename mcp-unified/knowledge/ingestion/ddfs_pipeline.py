@@ -76,20 +76,32 @@ class DDFSPipeline:
             db_url = os.environ.get("DATABASE_URL", "postgresql://mcp_user:mcp_password_2024@localhost:5433/mcp_knowledge")
             conn = await asyncpg.connect(db_url)
             
-            # Update field metadata JSONB
-            await conn.execute(
-                """
-                UPDATE surat_masuk 
-                SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{document_summary}', $1::jsonb) 
-                WHERE kode_surat = $2 OR nomor_surat = $2
-                """,
-                json.dumps(summary), document_id
-            )
+            # Update field berdasarkan namespace
+            if namespace == "arsip_2025":
+                await conn.execute(
+                    """
+                    UPDATE arsip.surat_masuk 
+                    SET ringkasan_ai = $1 
+                    WHERE kode_surat = $2
+                    """,
+                    summary, document_id
+                )
+                logger.info(f"Berhasil meng-update tabel arsip.surat_masuk (ringkasan_ai) untuk document {document_id}")
+            else:
+                await conn.execute(
+                    """
+                    UPDATE surat_masuk_puu_internal 
+                    SET catatan = COALESCE(catatan, '') || '\n\n[DDFS Summary]\n' || $1 
+                    WHERE unique_id = $2 OR nomor_nd = $2
+                    """,
+                    summary, document_id
+                )
+                logger.info(f"Berhasil meng-update tabel surat_masuk_puu_internal untuk document {document_id}")
+                
             await conn.close()
             db_updated = True
-            logger.info(f"Berhasil meng-update tabel surat_masuk untuk document {document_id}")
         except Exception as e:
-            logger.error(f"Gagal update tabel surat_masuk (mungkin document ID tidak ada di tabel relasional): {e}")
+            logger.error(f"Gagal update tabel database: {e}")
             
         return {
             "success": True,
