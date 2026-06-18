@@ -61,6 +61,18 @@ from .pptx_tools import (
     add_slide_pptx
 )
 
+# Semantic Converter Tools (Fase 1 — Pengonversi Semantik Dokumen)
+# CATATAN: Berbeda dari extract_text_docx() yang mengembalikan teks mentah.
+# Tool-tool ini menghasilkan Markdown TERSTRUKTUR yang ramah LLM.
+from .document_converter_tool import (
+    convert_docx_to_markdown,
+    convert_xlsx_to_markdown,
+    defragment_docx_xml
+)
+
+# Template Tools (Fase 2 — Generative Templates)
+from .template_tools import render_docx_template
+
 __all__ = [
     # DOCX Tools - Basic
     'read_docx',
@@ -106,5 +118,11 @@ __all__ = [
     'read_pptx',
     'write_pptx',
     'extract_text_pptx',
-    'add_slide_pptx'
+    'add_slide_pptx',
+    # Semantic Converter Tools - Fase 1
+    'convert_docx_to_markdown',
+    'convert_xlsx_to_markdown',
+    'defragment_docx_xml',
+    # Template Tools - Fase 2
+    'render_docx_template',
 ]

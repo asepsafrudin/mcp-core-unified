@@ -2,7 +2,8 @@
 Document Manager Skill for Office Document Operations
 """
 from typing import Dict, List, Optional, Any
-from skills.base import BaseSkill, register_skill
+from skills.base import BaseSkill, register_skill, SkillDefinition, SkillComplexity
+from core.task import Task, TaskResult
 from tools.office.docx_tools import (
     read_docx, write_docx, extract_text_docx, edit_docx,
     merge_table_cells_docx, modify_table_structure_docx, style_table_cell_docx
@@ -21,6 +22,92 @@ class DocumentManagerSkill(BaseSkill):
     skill_description = "Manage and manipulate Office documents (Word and Excel)"
     skill_complexity = "medium"
     
+    @property
+    def skill_definition(self) -> SkillDefinition:
+        return SkillDefinition(
+            name="document_manager",
+            description=self.skill_description,
+            complexity=SkillComplexity.MODERATE,
+            dependencies=[],
+            tags=["document", "docx", "xlsx", "manager", "office"],
+        )
+        
+    async def execute(self, task: Task) -> TaskResult:
+        """
+        Execute DocumentManagerSkill with task payload.
+        """
+        action = task.payload.get('action', 'read')
+        file_path = task.payload.get('file_path', '')
+        
+        try:
+            if action == 'create':
+                result = await self.create_document(
+                    file_path=file_path,
+                    content=task.payload.get('content', []),
+                    title=task.payload.get('title'),
+                    author=task.payload.get('author')
+                )
+            elif action == 'read':
+                result = await self.read_document(
+                    file_path=file_path,
+                    **task.payload.get('kwargs', {})
+                )
+            elif action == 'extract':
+                result = await self.extract_text(
+                    file_path=file_path,
+                    **task.payload.get('kwargs', {})
+                )
+            elif action == 'edit':
+                result = await self.edit_document(
+                    file_path=file_path,
+                    edits=task.payload.get('edits', [])
+                )
+            elif action == 'analyze':
+                result = await self.analyze_document(file_path=file_path)
+            elif action == 'compare':
+                result = await self.compare_documents(
+                    file_path1=task.payload.get('file_path1', ''),
+                    file_path2=task.payload.get('file_path2', '')
+                )
+            elif action == 'modify_table':
+                result = await self.modify_table(
+                    file_path=file_path,
+                    table_idx=task.payload.get('table_idx', 0),
+                    operation=task.payload.get('operation', ''),
+                    **task.payload.get('kwargs', {})
+                )
+            elif action == 'batch':
+                result = await self.batch_process(
+                    file_paths=task.payload.get('file_paths', []),
+                    operation=task.payload.get('operation', 'read'),
+                    **task.payload.get('kwargs', {})
+                )
+            else:
+                return TaskResult.failure_result(
+                    task_id=task.id,
+                    error=f"Unknown action: {action}",
+                    error_code="UNKNOWN_ACTION"
+                )
+                
+            if result.get('success'):
+                return TaskResult.success_result(
+                    task_id=task.id,
+                    data=result,
+                    context={"skill": self.name}
+                )
+            else:
+                return TaskResult.failure_result(
+                    task_id=task.id,
+                    error=result.get('error', 'Unknown error'),
+                    error_code="OPERATION_ERROR"
+                )
+        except Exception as e:
+            return TaskResult.failure_result(
+                task_id=task.id,
+                error=str(e),
+                error_code="SKILL_ERROR"
+            )
+            
     def __init__(self):
         super().__init__()
         self.supported_formats = ['.docx', '.xlsx']
