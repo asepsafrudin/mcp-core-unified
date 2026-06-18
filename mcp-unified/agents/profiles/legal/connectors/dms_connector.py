@@ -18,7 +18,14 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 
 # Add DMS to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent / 'src'))
+for p in [
+    Path(__file__).resolve().parents[6] / 'src' if len(Path(__file__).resolve().parents) > 6 else Path(__file__).resolve().parents[-1],
+    Path(__file__).resolve().parents[5] / 'src' if len(Path(__file__).resolve().parents) > 5 else Path(__file__).resolve().parents[-1],
+    Path("/home/aseps/MCP/src")
+]:
+    if (p / 'document_management').exists():
+        sys.path.insert(0, str(p))
+        break
 
 from document_management.core.database import DatabaseManager, get_db
 from document_management.core.config import SQLITE_PATH

@@ -20,6 +20,26 @@ from .vision import (
     list_vision_results,
 )
 
+from .unsplash_tools import (
+    search_unsplash_image,
+    download_unsplash_image,
+)
+
+from .pexels_tools import (
+    search_pexels_image,
+    download_pexels_image,
+)
+
+from .vector_tools import (
+    search_local_svg,
+)
+
+from .canva_tools import (
+    get_canva_token,
+    upload_canva_asset,
+    create_canva_design,
+)
+
 __all__ = [
     "VISION_MODEL",
     "OLLAMA_URL",
@@ -30,4 +50,12 @@ __all__ = [
     "analyze_image",
     "analyze_pdf_pages",
     "list_vision_results",
+    "search_unsplash_image",
+    "download_unsplash_image",
+    "search_pexels_image",
+    "download_pexels_image",
+    "search_local_svg",
+    "get_canva_token",
+    "upload_canva_asset",
+    "create_canva_design",
 ]

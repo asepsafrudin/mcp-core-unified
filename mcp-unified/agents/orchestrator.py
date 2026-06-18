@@ -198,11 +198,11 @@ class AgentOrchestrator:
         
         # Priority 2: By domain
         if sub_task.agent_domain:
-            agents = self._registry.get_agents_by_domain(sub_task.agent_domain)
+            agents = self._registry.list_agents_by_domain(sub_task.agent_domain)
             available = [a for a in agents if a.is_available()]
             if available:
                 # Select least busy
-                return min(available, key=lambda a: a._current_tasks)
+                return min(available, key=lambda a: len(a.state.active_tasks))
             logger.warning("no_agent_available_for_domain", 
                           domain=sub_task.agent_domain)
         
@@ -217,7 +217,7 @@ class AgentOrchestrator:
                      for name in self._registry.list_agents()]
         available = [a for a in all_agents if a and a.is_available()]
         if available:
-            return min(available, key=lambda a: a._current_tasks)
+            return min(available, key=lambda a: len(a.state.active_tasks))
         
         logger.error("no_agent_available", task_type=sub_task.type)
         return None

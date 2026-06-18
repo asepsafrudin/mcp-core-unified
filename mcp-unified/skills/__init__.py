@@ -93,3 +93,25 @@ __all__.extend([
     "virtual_queue",
     "VirtualQueue",
 ])
+
+# Import media skills
+from .media import (
+    create_canva_presentation_pipeline,
+)
+
+__all__.extend([
+    "create_canva_presentation_pipeline",
+])
+
+# Import office skills
+from .office import (
+    DocumentManagerSkill,
+    SemanticConverterSkill,
+    TemplateInjectionSkill,
+)
+
+__all__.extend([
+    "DocumentManagerSkill",
+    "SemanticConverterSkill",
+    "TemplateInjectionSkill",
+])
