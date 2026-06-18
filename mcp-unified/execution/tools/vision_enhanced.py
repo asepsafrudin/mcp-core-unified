@@ -8,7 +8,7 @@ New Features:
 3. Structured Extraction — JSON output from images
 4. Image Enhancement — Auto-enhance before analysis
 5. URL Support — Analyze images from URLs
-6. OCR Hybrid — PaddleOCR fallback for text extraction
+6. OCR Hybrid — DocTR fallback for text extraction
 7. Confidence Scoring — Reliability metrics
 8. Template Matching — Pattern detection
 9. Video Frame Analysis — Extract and analyze frames

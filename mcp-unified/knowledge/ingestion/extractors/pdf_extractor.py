@@ -58,7 +58,7 @@ class PDFExtractor:
             self._ocr_backend = "tesseract"
         except ImportError:
             try:
-                from paddleocr import PaddleOCR
+                from doctr import DocTR
                 self._ocr_available = True
                 self._ocr_backend = "paddle"
             except ImportError:
@@ -203,7 +203,7 @@ class PDFExtractor:
                         import pytesseract
                         text = pytesseract.image_to_string(img, lang="ind+eng")
                     else:  # paddle
-                        # Implementasi PaddleOCR
+                        # Implementasi DocTR
                         text = ""
                     
                     if text.strip():

@@ -1,6 +1,6 @@
 # tools.py
 """
-MCP Tools untuk PaddleOCR 3.x service.
+MCP Tools untuk DocTR 3.x service.
 Namespace: ocr/
 
 Tools:
@@ -145,7 +145,7 @@ def register_tools(server=None) -> None:
     @registry.register(name="ocr/export_yolo")
     async def export_yolo(dataset_dir: str) -> dict:
         """
-        Mengonversi dataset PaddleOCR ke format YOLO (.txt per gambar).
+        Mengonversi dataset DocTR ke format YOLO (.txt per gambar).
         """
         path = convert_to_yolo(dataset_dir)
         return {"status": "success", "yolo_label_dir": path}
@@ -153,7 +153,7 @@ def register_tools(server=None) -> None:
     @registry.register(name="ocr/export_coco")
     async def export_coco(dataset_dir: str) -> dict:
         """
-        Mengonversi dataset PaddleOCR ke format COCO JSON tunggal.
+        Mengonversi dataset DocTR ke format COCO JSON tunggal.
         """
         path = convert_to_coco(dataset_dir)
         return {"status": "success", "coco_json_path": path}
@@ -194,7 +194,7 @@ def register_tools(server=None) -> None:
                          val: float = 0.15, test: float = 0.15) -> dict:
         """
         Membagi dataset menjadi 3 bagian: TRAIN, VAL, TEST.
-        Sinkronisasi otomatis untuk format PaddleOCR dan YOLO.
+        Sinkronisasi otomatis untuk format DocTR dan YOLO.
 
         Args:
             dataset_dir: Folder dataset berisi Label.txt

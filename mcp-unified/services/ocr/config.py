@@ -19,7 +19,7 @@ DOCTR_PARAMS = {
     "assume_straight_pages": False,
 }
 
-# PaddleOCR (LEGACY - Disabled by default)
+# DocTR (LEGACY - Disabled by default)
 PADDLEOCR_ENABLED = os.getenv("PADDLEOCR_ENABLED", "false").lower() == "true"
 
 # PPStructureV3 (Tersedia di library ocr 2.x sebagai mode 'structure')

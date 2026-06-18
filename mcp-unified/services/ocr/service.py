@@ -8,7 +8,7 @@ import subprocess
 import logging
 from pathlib import Path
 
-# Catatan: Kita TIDAK melakukan impor paddleocr di level global 
+# Catatan: Kita TIDAK melakukan impor doctr di level global 
 # agar kompatibel dengan Python 3.12 yang belum terinstal library tersebut.
 
 logger = logging.getLogger(__name__)
@@ -247,7 +247,7 @@ class OCREngine:
             # Extract absolute geometry to maintain compatibility with _format_ocr_result
             raw_items = adapter.extract_absolute_geometry(clean_path)
             
-            # Map docTR geometry to PaddleOCR-like format for _format_ocr_result
+            # Map docTR geometry to DocTR-like format for _format_ocr_result
             # docTR geom: {'text': ..., 'confidence': ..., 'box': [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]}
             # Expected: [box, (text, confidence)]
             formatted_raw = []

@@ -25,7 +25,7 @@ from execution import registry
 import os
 VISION_MODEL = os.environ.get("MCP_VISION_MODEL", "llava")
 OLLAMA_URL = "http://localhost:11434"
-VISION_TIMEOUT = 60  # Detik — vision butuh lebih lama dari text embedding
+VISION_TIMEOUT = 300  # Detik — vision butuh lebih lama dari text embedding
 
 # Format yang didukung
 ALLOWED_IMAGE_EXTENSIONS = frozenset([
@@ -60,14 +60,21 @@ async def _call_ollama_vision(
         "stream": False
     })
     
+    import tempfile
+    
     try:
+        # Tulis payload ke temporary file untuk menghindari limit ARG_MAX (Argument list too long)
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_payload:
+            temp_payload.write(payload)
+            payload_path = temp_payload.name
+            
         proc = await asyncio.create_subprocess_exec(
             "curl", "-s",
             "--max-time", str(VISION_TIMEOUT),  # [REVIEWER] Timeout explicit
             "-X", "POST",
             f"{OLLAMA_URL}/api/generate",
             "-H", "Content-Type: application/json",
-            "-d", payload,
+            "-d", f"@{payload_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -84,15 +91,30 @@ async def _call_ollama_vision(
             return None
         
         response_data = json.loads(stdout)
+        
+        # Cleanup temp file
+        try:
+            os.remove(payload_path)
+        except OSError:
+            pass
+            
         return response_data.get("response", "")
         
     except asyncio.TimeoutError:
         logger.error("ollama_vision_timeout",
                     model=target_model,
                     timeout=VISION_TIMEOUT)
+        try:
+            os.remove(payload_path)
+        except OSError:
+            pass
         return None
     except Exception as e:
         logger.error("ollama_vision_failed", error=str(e))
+        try:
+            os.remove(payload_path)
+        except OSError:
+            pass
         return None
 
 

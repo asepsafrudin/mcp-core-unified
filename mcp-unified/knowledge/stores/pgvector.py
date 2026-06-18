@@ -156,7 +156,8 @@ class PGVectorStore:
         query_embedding: List[float],
         top_k: int = 5,
         namespace: str = "default",
-        min_similarity: float = 0.0
+        min_similarity: float = 0.0,
+        metadata_filters: Dict[str, Any] = None
     ) -> List[VectorDocument]:
         """
         Search documents similar to query embedding.
@@ -166,6 +167,7 @@ class PGVectorStore:
             top_k: Number of results
             namespace: Namespace untuk filter
             min_similarity: Minimum similarity threshold
+            metadata_filters: Exact match filter on metadata JSONB
         
         Returns:
             List of VectorDocument ordered by similarity
@@ -180,17 +182,24 @@ class PGVectorStore:
             # Convert query embedding to pgvector format
             query_embedding_str = "[" + ",".join(str(f) for f in query_embedding) + "]"
             
+            query_params = [query_embedding_str, namespace, min_similarity, top_k]
+            filter_sql = ""
+            if metadata_filters:
+                filter_sql = " AND metadata @> $5::jsonb"
+                query_params.append(json.dumps(metadata_filters))
+            
             async with self._pool.acquire() as conn:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(f"""
                     SELECT 
                         id, content, embedding, metadata, namespace,
                         1 - (embedding <=> $1::vector) as similarity
                     FROM knowledge_documents
                     WHERE namespace = $2
                         AND 1 - (embedding <=> $1::vector) >= $3
+                        {filter_sql}
                     ORDER BY embedding <=> $1::vector
                     LIMIT $4
-                """, query_embedding_str, namespace, min_similarity, top_k)
+                """, *query_params)
             
             documents = []
             for row in rows:
