@@ -22,7 +22,7 @@ async def run_batch():
         SELECT kode_surat as unique_id, file_link as drive_file_url 
         FROM arsip.surat_masuk 
         WHERE file_link IS NOT NULL 
-          AND file_link != ''
+          AND file_link LIKE 'http%'
           AND ringkasan_ai IS NULL
     """
     rows = await conn.fetch(query)

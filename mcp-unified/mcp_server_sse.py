@@ -56,7 +56,7 @@ logger = logging.getLogger("mcp-unified-sse")
 
 # [REVIEWER] Localhost only — tidak expose ke network luar
 HOST = "127.0.0.1"
-PORT = 8000
+PORT = int(os.getenv("MCP_TEST_PORT", "8000"))
 
 # MCP Server instance
 mcp_server = Server("mcp-unified")
