@@ -30,6 +30,8 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Callable
 
+from pydantic import BaseModel, Field, ValidationError
+
 import psycopg2
 import psycopg2.extras
 
@@ -100,6 +102,29 @@ def _db_query(sql: str, params: Optional[list] = None, limit: int = 50) -> list:
 # =============================================================================
 # DEFINISI TOOLS — Schema untuk Function Calling
 # =============================================================================
+
+# Pydantic Schemas for Validation
+class CountLettersArgs(BaseModel):
+    tipe: str = Field(..., description="Tipe surat: masuk, keluar, internal")
+    bulan: Optional[int] = Field(None, description="Bulan (angka)")
+    tahun: int = Field(2026, description="Tahun")
+
+class GetCorrespondenceArgs(BaseModel):
+    tipe: str = Field("semua", description="Tipe: masuk, keluar, semua")
+    tahun: int = Field(2026, description="Tahun")
+
+class SearchLettersArgs(BaseModel):
+    query: str = Field(..., description="Kata kunci pencarian")
+
+class QueryDatabaseArgs(BaseModel):
+    pertanyaan: str = Field(..., description="Pertanyaan natural language")
+
+TOOL_PYDANTIC_SCHEMAS = {
+    "count_letters": CountLettersArgs,
+    "get_correspondence": GetCorrespondenceArgs,
+    "search_letters": SearchLettersArgs,
+    "query_database": QueryDatabaseArgs
+}
 
 TOOL_DEFINITIONS = [
     {
@@ -421,7 +446,7 @@ TOOL_DEFINITIONS = [
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Kata kunci perihal atau nama instansi pengirim"
+                        "description": "Kata kunci entitas pencarian (misal: nama pengirim, instansi, perihal, tujuan disposisi). WAJIB diisi jika user mencari entitas spesifik seperti 'PUU', 'Kemendagri', dll. Namun, JANGAN masukkan kata sifat waktu seperti 'terbaru' atau 'terakhir' ke dalam parameter ini."
                     },
                     "limit": {
                         "type": "integer",
@@ -430,6 +455,30 @@ TOOL_DEFINITIONS = [
                     }
                 },
                 "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_arsip_surat_masuk_2025",
+            "description": (
+                "Cari data histori arsip surat eksternal tahun 2025 (2.382 arsip). "
+                "Gunakan tool ini JIKA user bertanya spesifik tentang surat tahun 2025, atau histori surat masa lalu. "
+                "Alat ini juga mampu mencari berdasarkan ringkasan isi dokumen (AI/OCR)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Kata kunci pencarian (misal: pengirim, nomor surat, perihal, atau isi ringkasan dokumen)."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Batas jumlah arsip yang dikembalikan (default: 5, max: 20)"
+                    }
+                }
             }
         }
     },
@@ -529,6 +578,7 @@ TELEGRAM_CHAT_TOOL_NAMES = {
     "get_disposisi_chain",
     "get_surat_keluar",
     "get_surat_luar_bangda",
+    "get_arsip_surat_masuk_2025",
     # Modul 3
     "search_documents",
     "get_file_index",
@@ -577,6 +627,7 @@ class ToolExecutor:
             "get_disposisi_chain": self._exec_get_disposisi_chain,
             "get_surat_keluar": self._exec_get_surat_keluar,
             "get_surat_luar_bangda": self._exec_get_surat_luar_bangda,
+            "get_arsip_surat_masuk_2025": self._exec_get_arsip_surat_masuk_2025,
             "search_documents": self._exec_search_documents,
             "get_file_index": self._exec_get_file_index,
             # Modul 4
@@ -598,10 +649,24 @@ class ToolExecutor:
             }, ensure_ascii=False)
 
         try:
+            # 1. Pydantic Validation (Structured Tool Calling)
+            if tool_name in TOOL_PYDANTIC_SCHEMAS:
+                try:
+                    schema_model = TOOL_PYDANTIC_SCHEMAS[tool_name]
+                    tool_args = schema_model(**tool_args).model_dump()
+                except ValidationError as ve:
+                    logger.warning(f"⚠️ [AUDIT] Pydantic Validation Failed for {tool_name}: {ve}")
+                    return json.dumps({
+                        "error": f"Invalid arguments for {tool_name}:\n{str(ve)}",
+                        "status": "validation_error",
+                        "hint": "Please fix your tool arguments and try again."
+                    }, ensure_ascii=False)
+
             # Audit log start
             start_time = datetime.now()
             logger.info(f"🔧 [AUDIT] Tool START: {tool_name} | Args: {json.dumps(tool_args, ensure_ascii=False)}")
             
+            # 2. Tool Execution
             result = await executor(tool_args)
             
             # Audit log success
@@ -1070,36 +1135,105 @@ class ToolExecutor:
     async def _exec_get_surat_luar_bangda(self, args: Dict) -> str:
         """Cari surat dari instansi eksternal Bangda."""
         query = args.get("query", "").strip()
+        if query == "*":
+            query = ""
+            
         limit = min(int(args.get("limit", 10)), 30)
 
-        if not query:
-            return json.dumps({"error": "Parameter 'query' tidak boleh kosong"}, ensure_ascii=False)
-
         try:
-            q = f"%{query}%"
-            sql = """
-                SELECT surat_dari, nomor_surat, tgl_surat, tgl_diterima_ula,
-                       LEFT(perihal, 120) AS perihal,
-                       LEFT(arahan, 80) AS arahan,
-                       agenda_ula, status_mailmerge,
-                       dispo_nomor, LEFT(dispo_perihal, 120) AS dispo_perihal
-                FROM surat_dari_luar_bangda
-                WHERE (perihal ILIKE %s OR surat_dari ILIKE %s
-                       OR nomor_surat ILIKE %s)
-                ORDER BY tgl_surat DESC
-                LIMIT %s
-            """
-            rows = _db_query(sql, [q, q, q, limit], limit=limit)
+            if query:
+                q = f"%{query}%"
+                sql = """
+                    SELECT s.surat_dari, s.nomor_surat, s.tgl_surat, s.tgl_diterima_ula,
+                           LEFT(s.perihal, 120) AS perihal,
+                           LEFT(s.arahan, 80) AS arahan,
+                           s.agenda_ula, s.status_mailmerge,
+                           s.dispo_nomor, LEFT(s.dispo_perihal, 120) AS dispo_perihal,
+                           STRING_AGG(d.kepada, ', ') AS diteruskan_kepada
+                    FROM surat_dari_luar_bangda s
+                    LEFT JOIN disposisi_distributions d ON s.id = d.surat_keluar_id
+                    WHERE (s.perihal ILIKE %s OR s.surat_dari ILIKE %s
+                           OR s.nomor_surat ILIKE %s OR d.kepada ILIKE %s)
+                           AND (s.tgl_surat IS NULL OR s.tgl_surat <= CURRENT_DATE)
+                    GROUP BY s.id
+                    ORDER BY s.tgl_surat DESC NULLS LAST
+                    LIMIT %s
+                """
+                rows = _db_query(sql, [q, q, q, q, limit], limit=limit)
+            else:
+                sql = """
+                    SELECT s.surat_dari, s.nomor_surat, s.tgl_surat, s.tgl_diterima_ula,
+                           LEFT(s.perihal, 120) AS perihal,
+                           LEFT(s.arahan, 80) AS arahan,
+                           s.agenda_ula, s.status_mailmerge,
+                           s.dispo_nomor, LEFT(s.dispo_perihal, 120) AS dispo_perihal,
+                           STRING_AGG(d.kepada, ', ') AS diteruskan_kepada
+                    FROM surat_dari_luar_bangda s
+                    LEFT JOIN disposisi_distributions d ON s.id = d.surat_keluar_id
+                    WHERE s.surat_dari IS NOT NULL AND s.surat_dari != ''
+                          AND (s.tgl_surat IS NULL OR s.tgl_surat <= CURRENT_DATE)
+                    GROUP BY s.id
+                    ORDER BY s.tgl_surat DESC NULLS LAST
+                    LIMIT %s
+                """
+                rows = _db_query(sql, [limit], limit=limit)
 
             return json.dumps({
                 "status": "success",
-                "query": query,
+                "query": query if query else "ALL (Terbaru)",
                 "total_ditemukan": len(rows),
                 "sumber": "surat_dari_luar_bangda (578 surat eksternal)",
                 "data": rows
             }, ensure_ascii=False, default=str)
         except Exception as e:
             logger.error(f"get_surat_luar_bangda error: {e}")
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    async def _exec_get_arsip_surat_masuk_2025(self, args: Dict) -> str:
+        """Cari surat histori dari arsip 2025 (arsip.surat_masuk)."""
+        query = args.get("query", "").strip()
+        if query == "*":
+            query = ""
+            
+        limit = min(int(args.get("limit", 5)), 20)
+
+        try:
+            if query:
+                q = f"%{query}%"
+                sql = """
+                    SELECT pengirim, no_surat, tgl_surat, tgl_terima,
+                           LEFT(perihal, 150) AS perihal,
+                           disposisi_awal,
+                           LEFT(ringkasan_ai, 200) AS ringkasan_ai
+                    FROM arsip.surat_masuk
+                    WHERE (perihal ILIKE %s OR pengirim ILIKE %s
+                           OR no_surat ILIKE %s OR ringkasan_ai ILIKE %s)
+                    ORDER BY tgl_surat DESC NULLS LAST
+                    LIMIT %s
+                """
+                rows = _db_query(sql, [q, q, q, q, limit], limit=limit)
+            else:
+                sql = """
+                    SELECT pengirim, no_surat, tgl_surat, tgl_terima,
+                           LEFT(perihal, 150) AS perihal,
+                           disposisi_awal,
+                           LEFT(ringkasan_ai, 200) AS ringkasan_ai
+                    FROM arsip.surat_masuk
+                    WHERE pengirim IS NOT NULL AND pengirim != ''
+                    ORDER BY tgl_surat DESC NULLS LAST
+                    LIMIT %s
+                """
+                rows = _db_query(sql, [limit], limit=limit)
+
+            return json.dumps({
+                "status": "success",
+                "query": query if query else "ALL (Terbaru)",
+                "total_ditemukan": len(rows),
+                "sumber": "arsip.surat_masuk (2382 arsip 2025)",
+                "data": rows
+            }, ensure_ascii=False, default=str)
+        except Exception as e:
+            logger.error(f"get_arsip_surat_masuk_2025 error: {e}")
             return json.dumps({"error": str(e)}, ensure_ascii=False)
 
     async def _exec_search_documents(self, args: Dict[str, Any]) -> str:

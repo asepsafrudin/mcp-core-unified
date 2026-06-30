@@ -205,8 +205,17 @@ class KnowledgeService:
                 """, embedding_str, min_similarity, top_k)
                 
                 search_results = []
+                import json
                 for row in rows:
-                    metadata = row['metadata'] or {}
+                    raw_metadata = row['metadata']
+                    if isinstance(raw_metadata, str):
+                        try:
+                            metadata = json.loads(raw_metadata)
+                        except:
+                            metadata = {}
+                    else:
+                        metadata = raw_metadata or {}
+                        
                     search_results.append(SearchResult(
                         content=row['content'][:500] + "..." if len(row['content']) > 500 else row['content'],
                         source=metadata.get('source_file', 'Unknown'),
@@ -221,6 +230,50 @@ class KnowledgeService:
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
             return []
+
+    async def add_document(
+        self,
+        doc_id: str,
+        content: str,
+        metadata: Dict[str, Any] = None,
+        namespace: str = "default"
+    ) -> bool:
+        """
+        Add a document to the knowledge database (used for long-term memory).
+        """
+        if not self.db_pool:
+            logger.warning("Database not available for add_document")
+            return False
+            
+        try:
+            # Generate embedding
+            embedding = await self._generate_embedding(content)
+            if not embedding:
+                logger.warning(f"Failed to generate embedding for doc_id {doc_id}")
+                return False
+                
+            async with self.db_pool.acquire() as conn:
+                import json
+                embedding_str = "[" + ",".join(str(f) for f in embedding) + "]"
+                metadata_str = json.dumps(metadata or {})
+                
+                await conn.execute("""
+                    INSERT INTO knowledge_documents (id, content, embedding, metadata, namespace)
+                    VALUES ($1, $2, $3::vector, $4::jsonb, $5)
+                    ON CONFLICT (id) DO UPDATE SET
+                        content = EXCLUDED.content,
+                        embedding = EXCLUDED.embedding,
+                        metadata = EXCLUDED.metadata,
+                        namespace = EXCLUDED.namespace,
+                        created_at = CURRENT_TIMESTAMP
+                """, doc_id, content, embedding_str, metadata_str, namespace)
+                
+                logger.info(f"💾 Document {doc_id} saved to namespace {namespace}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"add_document failed: {e}")
+            return False
     
     async def sql_query(self, query: str) -> Optional[SQLResult]:
         """

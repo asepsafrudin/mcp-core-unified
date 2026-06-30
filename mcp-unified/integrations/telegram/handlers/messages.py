@@ -117,17 +117,43 @@ class MessageHandlers(BaseHandler):
             if not provider: continue
 
             try:
-                # 1. Deteksi Mode (Agentic vs Streaming)
+                # 1. Deteksi Mode (Agentic vs Streaming) via RouterService (Fase 4)
                 tool_executor = getattr(self.bot, 'tool_executor', None)
-                tool_defs = getattr(self.bot, 'tool_definitions', [])
-                use_agentic = (
-                    tool_executor and tool_defs 
-                    and _should_use_agentic(message_text)
-                    and hasattr(provider, 'generate_with_tools')
-                )
+                all_tool_defs = getattr(self.bot, 'tool_definitions', [])
+                
+                intent = "CHAT"
+                if hasattr(self.bot, 'router_service'):
+                    # Panggil LLM router super cepat untuk klasifikasi intent
+                    intent = await self.bot.router_service.classify_intent(user.id, message_text)
+                
+                # Default non-agentic
+                use_agentic = False
+                filtered_tool_defs = []
+
+                if tool_executor and all_tool_defs and hasattr(provider, 'generate_with_tools') and intent != "CHAT":
+                    use_agentic = True
+                    # Filter alat (tools) yang diberikan ke LLM sesuai Intent untuk menghemat token & memfokuskan konteks
+                    if intent == "DATABASE_QUERY":
+                        allowed_tools = ["query_database", "count_letters"]
+                    elif intent == "PERSONNEL":
+                        allowed_tools = ["get_staff_workload", "get_staff_details", "sync_personnel_data", "check_anomalies"]
+                    else:
+                        # CORRESPONDENCE atau lainnya
+                        allowed_tools = [
+                            "search_letters", "get_correspondence", "count_letters", 
+                            "search_raw_pool", "get_agenda_pending", "get_disposisi_chain", 
+                            "get_surat_keluar", "get_surat_luar_bangda", "search_documents", 
+                            "get_file_index", "search_by_position"
+                        ]
+                    
+                    filtered_tool_defs = [t for t in all_tool_defs if t["function"]["name"] in allowed_tools]
+                    
+                    # Fallback jika filter keliru
+                    if not filtered_tool_defs:
+                        filtered_tool_defs = all_tool_defs
 
                 # 2. Inisialisasi/Update Indikator
-                status_text = f"🤔 *Sedang mencari data ({provider_name})...*" if use_agentic else f"🤔 *Sedang berpikir ({provider_name})...*"
+                status_text = f"🤔 *Sedang menganalisis ({provider_name})...*" if use_agentic else f"🤔 *Sedang berpikir ({provider_name})...*"
                 if not thinking_msg:
                     thinking_msg = await update.message.reply_text(status_text, parse_mode="Markdown")
                 else:
@@ -137,22 +163,15 @@ class MessageHandlers(BaseHandler):
                 enriched_context = await self.conversation_service.build_enriched_context(user.id, message_text)
                 
                 if use_agentic:
-                    # PRO Mode: Gunakan Gemini CLI untuk tugas kompleks (Logic Brain utama)
-                    if provider_name == 'gemini' and hasattr(self.bot, 'gemini_cli'):
-                        logger.info(f"🧠 Using Gemini CLI for complex task: {message_text[:50]}...")
-                        # Tambahkan context sistem jika perlu
-                        system_context = "You are a helpful assistant with access to MCP tools."
-                        final_response = await self.bot.gemini_cli.process_message(message_text, system_prompt=system_context)
-                    else:
-                        # Fallback ke standard provider generation
-                        final_response = await provider.generate_with_tools(
-                            user_id=user.id,
-                            message=message_text,
-                            tools=tool_defs,
-                            tool_executor=tool_executor,
-                            context=enriched_context,
-                            max_iterations=5
-                        )
+                    # Selalu gunakan provider.generate_with_tools agar Pydantic dan Router filter (Fase 2 & 4) berjalan
+                    final_response = await provider.generate_with_tools(
+                        user_id=user.id,
+                        message=message_text,
+                        tools=filtered_tool_defs,
+                        tool_executor=tool_executor,
+                        context=enriched_context,
+                        max_iterations=5
+                    )
                 else:
                     # Streaming (but collect full for failover safety)
                     raw_full = ""
