@@ -227,9 +227,7 @@ class OCRProcessor:
             x2, y2 = np.max(p, axis=0)
             bboxes.append({"label": "qr_code", "box": [int(x), int(y), int(x2-x), int(y2-y)], "area": int((x2-x)*(y2-y))})
 
-        # 4. BBox Post-Processing: Merger & Containment Filter
-        if not bboxes:
-            return {"has_wet_signature": False, "has_stamp": False, "has_paraf": False, "has_notes": False, "has_logo": False, "has_qr_code": has_qr != "", "bboxes": []}
+
 
         # Sort by area descending to process larger containers first
         bboxes = sorted(bboxes, key=lambda x: x["area"], reverse=True)

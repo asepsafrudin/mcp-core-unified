@@ -28,6 +28,7 @@ from integrations.telegram.services.tool_executor import (
 )
 from integrations.telegram.services.knowledge_service import KnowledgeService
 from integrations.telegram.services.text_to_sql_service import TextToSQLService
+from integrations.telegram.services.router_service import RouterService
 from integrations.telegram.handlers import CommandHandlers, MessageHandlers, MediaHandlers, FeedbackHandler
 from integrations.telegram.middleware import AuthMiddleware, LoggingMiddleware, RateLimitMiddleware
 from integrations.telegram.workers import MessageWorker
@@ -78,11 +79,12 @@ class TelegramBot:
             chunk_size=self.config.worker.chunk_size
         )
         self.gemini_cli = GeminiCLIService()
-        self.conversation_service = TelegramContextService()
         
         # Knowledge & Text-to-SQL for DB access
         self.knowledge = KnowledgeService()
+        self.conversation_service = TelegramContextService(knowledge_service=self.knowledge)
         self.text_to_sql = TextToSQLService(ai_service=self.ai_manager)
+        self.router_service = RouterService(ai_manager=self.ai_manager)
         
         # Correspondence Dashboard
         from services.correspondence_dashboard import CorrespondenceDashboard

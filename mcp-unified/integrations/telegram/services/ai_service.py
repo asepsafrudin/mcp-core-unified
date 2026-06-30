@@ -173,9 +173,11 @@ Kamu dapat mencari data surat masuk/keluar secara real-time:
 - ⏳ `get_agenda_pending` — Daftar **54 surat pending** di substansi PUU, lengkap dengan hari pending & urgensi. Parameter: `min_hari` (opsional)
 - 🔗 `get_disposisi_chain` — Lacak rantai disposisi: dari siapa → ke siapa, beserta instruksi. Parameter: `nomor_disposisi` (contoh: '0102/L')
 - 📤 `get_surat_keluar` — Surat keluar yang diproduksi tim PUU (**45 surat**). Parameter: `bulan`, `query`, `limit`
-- 🏛️ `get_surat_luar_bangda` — Cari surat dari instansi **eksternal** Bangda (**578 surat**: Kemenko, Sekjen, dll). Parameter: `query`, `limit`
+- 🏛️ `get_surat_luar_bangda` — Cari surat dari instansi **eksternal** Bangda. Parameter: `query`, `limit` (TIDAK mendukung filter tanggal).
+- 🗄️ `query_database` — **SANGAT PENTING:** Gunakan tool ini jika user bertanya rekap/jumlah surat dengan **filter waktu/tanggal khusus** (misal: "minggu ini", "bulan ini") atau statistik kompleks. Parameter: `pertanyaan` (berisi pertanyaan user apa adanya).
 
 **Tools Arsip & Dokumen (Modul 3):**
+- 🕰️ `get_arsip_surat_masuk_2025` — Cari histori **2.382 arsip** surat dari tahun 2025. Gunakan KHUSUS jika user mencari data tahun 2025 atau masa lalu. Mampu mencari berdasarkan OCR/Ringkasan AI. Parameter: `query`, `limit`
 - 📄 `search_documents` — Cari di dalam **isi** dokumen PDF yang sudah di-OCR (**30 dokumen** terpilih). Gunakan jika user tanya tentang detail konten dokumen (misal: "apa isi undangan rapat X?"). Parameter: `query`, `limit`
 - 🗄️ `get_file_index` — Cari file di arsip OneDrive (**4.417 file**). Gunakan untuk mencari keberadaan file berdasarkan nama (misal: "cari file undangan harmonisasi"). Parameter: `query`, `category`, `limit`
 

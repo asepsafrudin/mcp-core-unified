@@ -10,6 +10,13 @@ import re
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
+try:
+    import sqlglot
+    import sqlglot.expressions as exp
+    SQLGLOT_AVAILABLE = True
+except ImportError:
+    SQLGLOT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -125,6 +132,55 @@ Data pegawai/staf Ditjen Bina Bangda.
 | jabatan | TEXT | Jabatan |
 | unit | TEXT | Unit kerja |
 | nip | TEXT | NIP pegawai |
+
+### 🏢 Tabel: surat_dari_luar_bangda
+Surat masuk dari eksternal Ditjen Bina Bangda (Unit Layanan Administrasi).
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| unique_id | TEXT | ID Unik surat |
+| surat_dari | TEXT | Pengirim surat |
+| nomor_surat | TEXT | Nomor surat |
+| tgl_surat | DATE | Tanggal surat dibuat |
+| tgl_diterima_ula | DATE | Tanggal surat diterima |
+| perihal | TEXT | Hal/Perihal |
+| agenda_ula | TEXT | Nomor agenda ULA |
+
+### 🎯 Tabel: surat_untuk_substansi_puu
+Detail distribusi atau turunan surat masuk ke unit substansi Perundang-undangan.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| surat_id | BIGINT | ID relasi ke surat_dari_luar_bangda |
+| agenda | TEXT | Nomor agenda substansi |
+| surat_dari | TEXT | Asal surat |
+| disposisi_kepada | TEXT | Tujuan disposisi (PIC) |
+| isi_disposisi | TEXT | Instruksi/isi disposisi |
+| tanggal_disposisi | DATE | Tanggal disposisi |
+| status | TEXT | Status (pending/selesai) |
+
+### 📑 Tabel: mcp_korespondensi_unified
+Database dokumen korespondensi terpadu (dokumen fisik terdigitalisasi).
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| doc_id | TEXT | ID Dokumen |
+| status | TEXT | Status file ('FINAL' atau 'DRAFT') |
+| jenis_naskah | TEXT | Jenis dokumen (misal: Undangan, Nota Dinas) |
+| nomor_surat | TEXT | Nomor surat di dalam dokumen |
+| tanggal | TEXT | Tanggal dokumen |
+| hal | TEXT | Perihal dari dokumen |
+| context_summary | TEXT | Ringkasan konteks otomatis |
+
+### ⏱️ Tabel: correspondence_events
+Audit log atau riwayat pergerakan (event) untuk setiap surat masuk/keluar.
+
+| Kolom | Tipe | Keterangan |
+|-------|------|------------|
+| letter_id | BIGINT | ID relasi ke surat utama |
+| event_type | TEXT | Jenis event ('position', 'status', 'disposition') |
+| event_value | TEXT | Nilai/deskripsi dari event |
+| event_at | TIMESTAMPTZ | Waktu pergerakan/event terjadi |
 """
     
     # Query patterns yang tidak diizinkan
@@ -181,31 +237,45 @@ Output: {{
     "sql": "SELECT COUNT(*) FROM vision_results WHERE file_name ILIKE '%PUU%2026%'",
     "explanation": "Menghitung jumlah file PUU 2026 dari hasil OCR"
 }}
+
+User: "Ada berapa surat dari luar bangda minggu ini?"
+Output: {{
+    "sql": "SELECT COUNT(*) FROM surat_dari_luar_bangda WHERE tgl_diterima_ula >= CURRENT_DATE - INTERVAL '7 days'",
+    "explanation": "Menghitung jumlah surat masuk dari eksternal selama 7 hari terakhir"
+}}
 """
     
     def _validate_sql(self, sql: str) -> Tuple[bool, Optional[str]]:
         """
-        Validasi SQL query untuk keamanan.
+        Validasi SQL query untuk keamanan menggunakan AST parsing (sqlglot).
+        Hanya mengizinkan SELECT statement.
         
         Returns:
             (is_valid, error_message)
         """
-        sql_upper = sql.strip().upper()
-        
-        # Must start with SELECT
-        if not sql_upper.startswith('SELECT'):
-            return False, "Query harus dimulai dengan SELECT"
-        
-        # Check forbidden patterns
-        for pattern in self.FORBIDDEN_PATTERNS:
-            if re.search(pattern, sql, re.IGNORECASE):
-                return False, f"Query mengandung pattern yang tidak diizinkan"
-        
-        # Basic SQL validation
-        if sql.count('(') != sql.count(')'):
-            return False, "Unbalanced parentheses"
-        
-        return True, None
+        if not SQLGLOT_AVAILABLE:
+            # Fallback ke regex lama jika sqlglot belum ada
+            sql_upper = sql.strip().upper()
+            if not sql_upper.startswith('SELECT'):
+                return False, "Query harus dimulai dengan SELECT"
+            for pattern in self.FORBIDDEN_PATTERNS:
+                if re.search(pattern, sql, re.IGNORECASE):
+                    return False, f"Query mengandung pattern yang tidak diizinkan"
+            return True, None
+
+        try:
+            parsed_statements = sqlglot.parse(sql, dialect="postgres")
+            if not parsed_statements or parsed_statements[0] is None:
+                return False, "Query SQL kosong atau tidak valid"
+                
+            for statement in parsed_statements:
+                # Blokir semua operasi selain SELECT
+                if not isinstance(statement, exp.Select):
+                    return False, f"Hanya operasi SELECT yang diizinkan (mendeteksi: {type(statement).__name__})"
+                    
+            return True, None
+        except Exception as e:
+            return False, f"SQL Parsing Error: {str(e)}"
     
     def _sanitize_sql(self, sql: str) -> str:
         """
@@ -224,12 +294,28 @@ Output: {{
         # Clean up whitespace
         sql = sql.strip()
         
-        # Ensure LIMIT if not present and not a count query
-        sql_upper = sql.upper()
-        if 'LIMIT' not in sql_upper and 'COUNT' not in sql_upper:
-            sql = sql.rstrip(';') + ' LIMIT 50'
-        
-        return sql
+        if not SQLGLOT_AVAILABLE:
+            sql_upper = sql.upper()
+            if 'LIMIT' not in sql_upper and 'COUNT' not in sql_upper:
+                sql = sql.rstrip(';') + ' LIMIT 50'
+            return sql
+
+        try:
+            # Parse statement dengan sqlglot
+            expression = sqlglot.parse_one(sql, dialect="postgres")
+            if isinstance(expression, exp.Select):
+                # Deteksi apakah query memiliki LIMIT
+                has_limit = expression.args.get("limit") is not None
+                # Deteksi apakah ada fungsi COUNT/SUM
+                is_agg = any(isinstance(node, (exp.Count, exp.Sum, exp.Avg, exp.Max, exp.Min)) for node in expression.find_all(exp.Func))
+                
+                # Tambahkan LIMIT otomatis jika tidak ada
+                if not has_limit and not is_agg:
+                    expression = expression.limit(50)
+                    
+            return expression.sql(dialect="postgres")
+        except Exception:
+            return sql # Fallback jika parsing gagal
     
     def _extract_json_from_response(self, text: str) -> Dict[str, Any]:
         """
@@ -314,7 +400,7 @@ Output: {{
                 # Legacy AI service (Groq/Gemini direct)
                 system_prompt = self._build_system_prompt()
                 
-                ai_response = await self.ai_service.generate_response(
+                ai_response = await self.ai_service.current_provider.generate_response(
                     user_id=user_id,
                     message=question,
                     system_prompt=system_prompt
