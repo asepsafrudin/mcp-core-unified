@@ -11,7 +11,7 @@ sys.path.insert(0, str(project_root))
 from services.ocr.service import OCREngine
 
 def main():
-    img = '/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.png'
+    img = '/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.png'
     print(f"--- MEMULAI PENGUJIAN FINAL (PADDLE + LLM REFINER) ---")
     print(f"Target: {os.path.basename(img)}")
     

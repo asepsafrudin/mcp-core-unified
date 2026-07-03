@@ -96,7 +96,7 @@ def get_sync_history():
 
 # PERSONNEL DB LOGIC (RESTORED)
 def get_all_pics():
-    json_path = "/home/aseps/MCP/mcp-data/document_management/storage/admin_data/struktur_organisasi/master_struktur_bangda_2025.json"
+    json_path = "/home/aseps/MCP/storage/admin_data/struktur_organisasi/master_struktur_bangda_2025.json"
     pics = []
     try:
         with open(json_path, 'r') as f:
@@ -114,7 +114,7 @@ def get_all_pics():
     return pics
 
 def search_staff_pppk(query: str):
-    json_path = "/home/aseps/MCP/mcp-data/document_management/storage/admin_data/struktur_organisasi/user_p3k.json"
+    json_path = "/home/aseps/MCP/storage/admin_data/struktur_organisasi/user_p3k.json"
     res = []
     try:
         with open(json_path, 'r') as f:

@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
 from .base import BaseHandler
+from ..utils.formatters import MessageFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -154,10 +155,11 @@ class MessageHandlers(BaseHandler):
 
                 # 2. Inisialisasi/Update Indikator
                 status_text = f"🤔 *Sedang menganalisis ({provider_name})...*" if use_agentic else f"🤔 *Sedang berpikir ({provider_name})...*"
+                formatted_status = MessageFormatter.markdown_to_telegram_html(status_text)
                 if not thinking_msg:
-                    thinking_msg = await update.message.reply_text(status_text, parse_mode="Markdown")
+                    thinking_msg = await update.message.reply_text(formatted_status, parse_mode="HTML")
                 else:
-                    await thinking_msg.edit_text(status_text, parse_mode="Markdown")
+                    await thinking_msg.edit_text(formatted_status, parse_mode="HTML")
 
                 # 3. Eksekusi
                 enriched_context = await self.conversation_service.build_enriched_context(user.id, message_text)
@@ -189,14 +191,21 @@ class MessageHandlers(BaseHandler):
                     continue
 
                 if len(final_response) <= 4096:
+                    formatted_response = MessageFormatter.markdown_to_telegram_html(final_response)
                     try:
-                        await thinking_msg.edit_text(final_response, parse_mode="Markdown")
-                    except Exception:
+                        await thinking_msg.edit_text(formatted_response, parse_mode="HTML")
+                    except Exception as err:
+                        logger.warning(f"Failed to send HTML message: {err}")
                         await thinking_msg.edit_text(final_response)
                 else:
                     await thinking_msg.delete()
                     for i in range(0, len(final_response), 4000):
-                        await update.message.reply_text(final_response[i:i+4000])
+                        part = final_response[i:i+4000]
+                        formatted_part = MessageFormatter.markdown_to_telegram_html(part)
+                        try:
+                            await update.message.reply_text(formatted_part, parse_mode="HTML")
+                        except Exception:
+                            await update.message.reply_text(part)
 
                 # Switch active provider for future messages to the successful one
                 self.ai_manager.switch_provider(provider_name)
@@ -234,8 +243,8 @@ class MessageHandlers(BaseHandler):
         sambil tetap memberikan UX 'sedang mengetik'.
         """
         thinking_msg = await update.message.reply_text(
-            "🤔 *Sedang berpikir...*",
-            parse_mode="Markdown"
+            "🤔 <b>Sedang berpikir...</b>",
+            parse_mode="HTML"
         )
 
         try:
@@ -281,16 +290,22 @@ class MessageHandlers(BaseHandler):
                     if streamed != last_sent:
                         try:
                             display = self.messaging_service.truncate_message(streamed[:4096])
-                            await thinking_msg.edit_text(display)
+                            formatted_display = MessageFormatter.markdown_to_telegram_html(display)
+                            await thinking_msg.edit_text(formatted_display, parse_mode="HTML")
                             last_sent = streamed
                         except Exception:
-                            pass
+                            try:
+                                await thinking_msg.edit_text(display)
+                                last_sent = streamed
+                            except Exception:
+                                pass
 
             # ─── TAHAP 4: Final message ────────────────────────────────────
             if clean_response != last_sent:
                 try:
                     display = self.messaging_service.truncate_message(clean_response[:4096])
-                    await thinking_msg.edit_text(display)
+                    formatted_display = MessageFormatter.markdown_to_telegram_html(display)
+                    await thinking_msg.edit_text(formatted_display, parse_mode="HTML")
                 except Exception:
                     await update.message.reply_text(clean_response[:4096])
 

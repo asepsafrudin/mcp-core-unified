@@ -11,6 +11,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler
 
 from .base import BaseHandler
+from ..utils.formatters import MessageFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -547,23 +548,27 @@ class UIHandlers(BaseHandler):
             results = self.bot.dashboard.search_letters(" ") # Spasi untuk trigger list terbaru
             from services.correspondence_dashboard import format_search_results
             text = format_search_results(results, "Terbaru (Masuk/Semua)")
-            await query.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+            formatted_text = MessageFormatter.markdown_to_telegram_html(text)
+            await query.message.reply_text(formatted_text, parse_mode="HTML", disable_web_page_preview=True)
             
         elif action == "keluar":
             # Tampilkan laporan produksi surat keluar
             text = self.bot.dashboard.get_puu_production()
-            await query.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+            formatted_text = MessageFormatter.markdown_to_telegram_html(text)
+            await query.message.reply_text(formatted_text, parse_mode="HTML", disable_web_page_preview=True)
             
         elif action == "anomali":
             # Tampilkan laporan anomali
             text = self.bot.dashboard.get_anomalies_report()
-            await query.message.reply_text(text, parse_mode="Markdown")
+            formatted_text = MessageFormatter.markdown_to_telegram_html(text)
+            await query.message.reply_text(formatted_text, parse_mode="HTML")
             
         elif action == "sync":
             # Pemicu sinkronisasi
             success = self.bot.dashboard.trigger_sync()
             msg = "🔄 *Sinkronisasi dipicu!*\n\nData akan diperbarui di background. Silakan cek /dashboard atau /status kembali dalam 5 menit." if success else "⚠️ *Sinkronisasi sedang berjalan* atau baru saja dipicu.\n\nHarap tunggu beberapa menit sebelum mencoba lagi."
-            await query.message.reply_text(msg, parse_mode="Markdown")
+            formatted_msg = MessageFormatter.markdown_to_telegram_html(msg)
+            await query.message.reply_text(formatted_msg, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════════════

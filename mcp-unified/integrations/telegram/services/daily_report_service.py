@@ -360,12 +360,20 @@ _• Waktu dalam format WIB (UTC+7)_
         
         try:
             import aiohttp
+            import sys as _sys
+            from pathlib import Path as _Path
+            _unified_root = str(_Path(__file__).resolve().parents[3])
+            if _unified_root not in _sys.path:
+                _sys.path.insert(0, _unified_root)
+            from integrations.telegram.utils.formatters import MessageFormatter
+            
+            formatted_msg = MessageFormatter.markdown_to_telegram_html(message)
             
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             payload = {
                 "chat_id": self.chat_id,
-                "text": message,
-                "parse_mode": "Markdown",
+                "text": formatted_msg,
+                "parse_mode": "HTML",
                 "disable_web_page_preview": True
             }
             

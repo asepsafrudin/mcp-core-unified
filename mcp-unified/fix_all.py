@@ -38,7 +38,7 @@ Teks OCR:
     return raw_text
 
 def run_fix():
-    base_path = Path("/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/")
+    base_path = Path("/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/")
     files = sorted(list(base_path.glob("*.png")))
     engine = OCREngine.get_instance()
     

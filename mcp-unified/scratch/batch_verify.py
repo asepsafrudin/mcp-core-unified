@@ -18,7 +18,7 @@ genai.configure(api_key=api_key)
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 img_dir = Path("/home/aseps/.gemini/antigravity-ide/brain/58fbbbe1-6617-498e-b870-663590db1356/verification_pages")
-json_path = Path('/home/aseps/MCP/src/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_lampiran.json')
+json_path = Path('/home/aseps/MCP/workspace/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_lampiran.json')
 
 with open(json_path, 'r', encoding='utf-8') as f:
     data = json.load(f)

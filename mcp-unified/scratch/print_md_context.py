@@ -2,8 +2,8 @@ import json
 import re
 from pathlib import Path
 
-json_path = Path('/home/aseps/MCP/src/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_lampiran.json')
-md_path = Path('/home/aseps/MCP/src/Bangda_PUU/data/workspace/lampiran_UU_23/raw/UU_23_2014_PEMERINTAHAN_DAERAH.md')
+json_path = Path('/home/aseps/MCP/workspace/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_lampiran.json')
+md_path = Path('/home/aseps/MCP/workspace/Bangda_PUU/data/workspace/lampiran_UU_23/raw/UU_23_2014_PEMERINTAHAN_DAERAH.md')
 
 with open(json_path, 'r', encoding='utf-8') as f:
     data = json.load(f)

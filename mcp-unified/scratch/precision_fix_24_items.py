@@ -2,7 +2,7 @@ import json
 import shutil
 from pathlib import Path
 
-json_path = Path('/home/aseps/MCP/src/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_single_source_of_truth.json')
+json_path = Path('/home/aseps/MCP/workspace/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_single_source_of_truth.json')
 
 # Backup before modifying
 backup_path = json_path.with_name(json_path.name + ".bak_24_items")

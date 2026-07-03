@@ -133,7 +133,7 @@ Monitoring pipeline memori 3-layer (STM-LTM-Knowledge).
 | **Quantize Layer 1** | `scripts/quantize_stm_to_ltm.py` | Kompresi semantik STM ke LTM |
 | **Quantize Layer 2** | `scripts/abstract_ltm_to_knowledge.py` | Sintesis pola dari LTM ke Knowledge |
 | **Status Report** | `scripts/report_memory_status.py` | **MANDATORY** untuk pelaporan status cepat |
-| **Knowledge Base** | `docs/00-meta/ontology.json` | Sumber kebenaran terstruktur (Truth) |
+| **Knowledge Base** | `storage/admin_data/ontology/ontology.json` | Sumber kebenaran terstruktur (Truth) |
 
 > 💡 Protokol Pelaporan:
 > 1. Eksekusi `/home/aseps/MCP/scripts/report_memory_status.py`

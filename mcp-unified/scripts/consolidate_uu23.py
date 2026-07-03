@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 # Paths
-base_dir = Path("/home/aseps/MCP/src/Bangda_PUU/data/workspace/lampiran_UU_23/processed")
+base_dir = Path("/home/aseps/MCP/workspace/Bangda_PUU/data/workspace/lampiran_UU_23/processed")
 body_path = base_dir / "UU_23_2014_PEMERINTAHAN_DAERAH_parsed.json"
 lampiran_path = base_dir / "UU_23_2014_lampiran.json"
 output_path = base_dir / "UU_23_2014_single_source_of_truth.json"

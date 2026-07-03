@@ -46,7 +46,7 @@ Teks OCR Mentah:
     return raw_text
 
 def get_pending_files():
-    base_path = Path("/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/")
+    base_path = Path("/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/")
     all_pngs = sorted(list(base_path.glob("*.png")))
     pending = []
     for png in all_pngs:
@@ -56,7 +56,7 @@ def get_pending_files():
     return pending
 
 def process_batch(file_names):
-    base_path = Path("/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/")
+    base_path = Path("/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/")
     engine = OCREngine.get_instance()
     
     for filename in file_names:

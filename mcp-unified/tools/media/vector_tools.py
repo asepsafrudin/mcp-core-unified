@@ -1,7 +1,7 @@
 import os
 import difflib
 
-ICONS_DIR = "/home/aseps/MCP/mcp-data/icons/lucide"
+ICONS_DIR = "/home/aseps/MCP/storage/admin_data/icons/lucide"
 
 def search_local_svg(keyword: str) -> dict:
     """

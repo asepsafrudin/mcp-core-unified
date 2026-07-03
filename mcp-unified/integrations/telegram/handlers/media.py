@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
 from .base import BaseHandler
+from ..utils.formatters import MessageFormatter
 from ..config.constants import MAX_FILE_SIZE
 
 logger = logging.getLogger(__name__)
@@ -66,9 +67,10 @@ class MediaHandlers(BaseHandler):
                 
                 if gemini and gemini.is_available:
                     # Send processing message
+                    formatted_status = MessageFormatter.markdown_to_telegram_html("🔍 *Menganalisis gambar...*")
                     processing_msg = await update.message.reply_text(
-                        "🔍 *Menganalisis gambar...*",
-                        parse_mode="Markdown"
+                        formatted_status,
+                        parse_mode="HTML"
                     )
                     
                     # Generate response
@@ -78,7 +80,8 @@ class MediaHandlers(BaseHandler):
                         prompt=caption
                     )
                     
-                    await processing_msg.edit_text(response.text)
+                    formatted_res = MessageFormatter.markdown_to_telegram_html(response.text)
+                    await processing_msg.edit_text(formatted_res, parse_mode="HTML")
                     
                     # Save conversation
                     await self.conversation_service.save_conversation(
@@ -150,9 +153,11 @@ class MediaHandlers(BaseHandler):
                 )
                 return
 
+            status_text = f"🔍 *Mengekstrak teks dari {document.file_name}...*"
+            formatted_status = MessageFormatter.markdown_to_telegram_html(status_text)
             processing_msg = await update.message.reply_text(
-                f"🔍 *Mengekstrak teks dari {document.file_name}...*",
-                parse_mode="Markdown"
+                formatted_status,
+                parse_mode="HTML"
             )
 
             try:
@@ -184,10 +189,12 @@ class MediaHandlers(BaseHandler):
                     if len(display_text) > 3000:
                         display_text = display_text[:3000] + "\n\n...(teks dipotong karena terlalu panjang)..."
                     
+                    formatted_ocr = MessageFormatter.markdown_to_telegram_html(
+                        f"📄 *Hasil Ekstraksi Teks:*\n\n```\n{display_text}\n```"
+                    )
                     await processing_msg.edit_text(
-                        f"📄 *Hasil Ekstraksi Teks:*\n\n"
-                        f"```\n{display_text}\n```",
-                        parse_mode="Markdown"
+                        formatted_ocr,
+                        parse_mode="HTML"
                     )
                     
                     # Simpan ke memory agar AI bisa referensi
@@ -233,9 +240,10 @@ class MediaHandlers(BaseHandler):
             action="record_voice"
         )
 
+        formatted_status = MessageFormatter.markdown_to_telegram_html("🎤 *Mentranskripsi pesan suara...*")
         thinking_msg = await update.message.reply_text(
-            "🎤 *Mentranskripsi pesan suara...*",
-            parse_mode="Markdown"
+            formatted_status,
+            parse_mode="HTML"
         )
 
         try:
@@ -259,9 +267,11 @@ class MediaHandlers(BaseHandler):
                     return
 
                 # Tampilkan transkripsi ke user
+                status_text = f"🎤 *Anda berkata:*\n_{transcript}_\n\n🤔 *Sedang memproses...*"
+                formatted_status = MessageFormatter.markdown_to_telegram_html(status_text)
                 await thinking_msg.edit_text(
-                    f"🎤 *Anda berkata:*\n_{transcript}_\n\n🤔 *Sedang memproses...*",
-                    parse_mode="Markdown"
+                    formatted_status,
+                    parse_mode="HTML"
                 )
 
                 # Proses transkripsi sebagai pesan teks biasa
@@ -434,8 +444,9 @@ class MediaHandlers(BaseHandler):
                     if full_response != last_update:
                         try:
                             display = prefix + full_response[:4000]
+                            formatted_display = MessageFormatter.markdown_to_telegram_html(display)
                             if edit_msg:
-                                await edit_msg.edit_text(display, parse_mode="Markdown")
+                                await edit_msg.edit_text(formatted_display, parse_mode="HTML")
                             last_update = full_response
                             chunk_count = 0
                         except Exception:
@@ -452,11 +463,12 @@ class MediaHandlers(BaseHandler):
                 clean_response = full_response
 
             display = prefix + clean_response[:4000]
+            formatted_display = MessageFormatter.markdown_to_telegram_html(display)
             try:
                 if edit_msg:
-                    await edit_msg.edit_text(display, parse_mode="Markdown")
+                    await edit_msg.edit_text(formatted_display, parse_mode="HTML")
                 else:
-                    await update.message.reply_text(display, parse_mode="Markdown")
+                    await update.message.reply_text(formatted_display, parse_mode="HTML")
             except Exception:
                 await update.message.reply_text(clean_response[:4096])
 

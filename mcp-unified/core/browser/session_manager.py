@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-SESSION_DIR = Path("/home/aseps/MCP/mcp-data/browser_sessions")
+SESSION_DIR = Path("/home/aseps/MCP/storage/cache/browser_sessions")
 SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
 class SessionManager:

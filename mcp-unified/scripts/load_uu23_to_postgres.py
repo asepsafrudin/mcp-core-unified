@@ -5,7 +5,7 @@ from pathlib import Path
 import psycopg2
 
 # Paths
-json_path = Path("/home/aseps/MCP/src/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_single_source_of_truth.json")
+json_path = Path("/home/aseps/MCP/workspace/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_single_source_of_truth.json")
 
 # Read database URL from .env
 db_url = None

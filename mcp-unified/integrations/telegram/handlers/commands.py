@@ -14,6 +14,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 from integrations.telegram.handlers.base import BaseHandler
 from services.correspondence_dashboard import get_db_conn
+from ..utils.formatters import MessageFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -338,9 +339,10 @@ class CommandHandlers(BaseHandler):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        formatted_summary = MessageFormatter.markdown_to_telegram_html(summary)
         await update.message.reply_text(
-            summary, 
-            parse_mode="Markdown", 
+            formatted_summary, 
+            parse_mode="HTML", 
             disable_web_page_preview=True,
             reply_markup=reply_markup
         )
@@ -643,10 +645,12 @@ class CommandHandlers(BaseHandler):
                 
                 report += "\n\n💡 _Gunakan `/laporan puu`, `/laporan pending`, atau `/laporan dispo` untuk detail spesifik._"
 
-            await msg.edit_text(report, parse_mode="Markdown")
+            formatted_report = MessageFormatter.markdown_to_telegram_html(report)
+            await msg.edit_text(formatted_report, parse_mode="HTML")
         except Exception as e:
             logger.error(f"Error in laporan_command: {e}")
-            await msg.edit_text(f"❌ Gagal menyusun laporan: `{str(e)}`", parse_mode="Markdown")
+            formatted_err = MessageFormatter.markdown_to_telegram_html(f"❌ Gagal menyusun laporan: `{str(e)}`")
+            await msg.edit_text(formatted_err, parse_mode="HTML")
     async def notif_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /notif command - show control center for notification services."""
         user = update.effective_user

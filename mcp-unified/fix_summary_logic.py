@@ -3,8 +3,8 @@ import re
 import json
 from pathlib import Path
 
-scan_dir = Path("/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/")
-output_dir = Path("/home/aseps/MCP/xlsx-gdrive-workflow/arsip-extracted/")
+scan_dir = Path("/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/")
+output_dir = Path("/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-extracted/")
 output_md = output_dir / "arsip_summary.md"
 output_json = output_dir / "arsip_summary.json"
 
