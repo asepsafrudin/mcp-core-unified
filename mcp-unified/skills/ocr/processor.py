@@ -34,7 +34,7 @@ except ImportError:
     YOLO_AVAILABLE = False
 
 # Default model path — can be overridden via constructor
-DEFAULT_YOLO_MODEL_PATH = "/home/aseps/MCP/mcp-data/models/yolo11/best.pt"
+DEFAULT_YOLO_MODEL_PATH = "/home/aseps/MCP/storage/models/yolo11/best.pt"
 
 
 class OCRProcessor:

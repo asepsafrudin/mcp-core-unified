@@ -11,8 +11,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 os.environ.setdefault("PYTHONPATH", str(project_root))
 
-SAMPLE_IMAGE = "/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.png"
-OUTPUT_FILE = "/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.md"
+SAMPLE_IMAGE = "/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.png"
+OUTPUT_FILE = "/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.md"
 
 from services.ocr.service import OCREngine
 

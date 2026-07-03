@@ -43,7 +43,7 @@ Teks OCR:
 
 def run_fix():
     files = ["arsip20260402_08404789.png", "arsip20260402_08494294.png", "arsip20260402_08540119.png", "arsip20260402_08552548.png"]
-    base_path = Path("/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/")
+    base_path = Path("/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/")
     engine = OCREngine.get_instance()
     
     for filename in files:

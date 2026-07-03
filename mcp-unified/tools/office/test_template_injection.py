@@ -61,7 +61,7 @@ def sample_template(temp_dir):
 
 class TestPathValidation:
     def test_allow_valid_workspace_path(self):
-        valid_path = "/home/aseps/MCP/korespondensi-server/templates_doc/template_disposisi.docx"
+        valid_path = "/home/aseps/MCP/workspace/korespondensi-server/templates_doc/template_disposisi.docx"
         p = validate_path(valid_path)
         assert p.is_absolute()
         assert str(p) == valid_path

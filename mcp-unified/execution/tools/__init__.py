@@ -62,6 +62,19 @@ from execution.tools.shell_tools import (
     run_shell,
 )
 
+# Operational tools (promoted from scripts)
+from execution.tools.ops_tools import (
+    mcp_health_check,
+    memory_status_report,
+    data_audit_report,
+    workspace_hygiene_check,
+    arsip_pending_status,
+    puu_posisi_analysis,
+    backup_knowledge_db,
+    whatsapp_gateway_status,
+    system_recovery_check,
+)
+
 __all__ = [
     # Base Vision
     "analyze_image",
@@ -93,4 +106,15 @@ __all__ = [
     
     # Shell Tools
     "run_shell",
+    
+    # Operational Tools
+    "mcp_health_check",
+    "memory_status_report",
+    "data_audit_report",
+    "workspace_hygiene_check",
+    "arsip_pending_status",
+    "puu_posisi_analysis",
+    "backup_knowledge_db",
+    "whatsapp_gateway_status",
+    "system_recovery_check",
 ]

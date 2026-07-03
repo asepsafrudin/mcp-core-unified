@@ -147,7 +147,7 @@ async def smart_sync(spreadsheet_id: str, range_name: str, namespace: str):
 
 async def main():
     # Load targets from config file
-    config_path = os.path.join(PROJECT_ROOT, "knowledge/sync_targets.json")
+    config_path = "/home/aseps/MCP/storage/admin_data/knowledge_sync/sync_targets.json"
     if not os.path.exists(config_path):
         logger.error(f"Sync targets config not found at {config_path}")
         return

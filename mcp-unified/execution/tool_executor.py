@@ -1358,7 +1358,7 @@ class ToolExecutor:
         import subprocess
         try:
             # Script ini sudah terbukti berhasil melakukan pengayaan data dari JSON ke DB
-            script_path = "/home/aseps/MCP/korespondensi-server/src/scripts/sync_json_to_db.py"
+            script_path = "/home/aseps/MCP/workspace/korespondensi-server/src/scripts/sync_json_to_db.py"
             result = subprocess.run(
                 ["python3", script_path],
                 capture_output=True,

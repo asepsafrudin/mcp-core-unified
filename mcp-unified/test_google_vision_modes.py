@@ -11,7 +11,7 @@ os.environ.setdefault("PYTHONPATH", str(project_root))
 
 from services.ocr.service import OCREngine
 
-SAMPLE_IMAGE = "/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.png"
+SAMPLE_IMAGE = "/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.png"
 
 async def test_mode(mode_name):
     print(f"\n>>> TESTING MODE: {mode_name.upper()} <<<")

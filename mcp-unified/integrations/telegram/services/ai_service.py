@@ -222,11 +222,19 @@ Kamu dapat mencari data surat masuk/keluar secara real-time:
 - **JANGAN katakan tidak punya akses database** — kamu PUNYA akses penuh!
 - **JANGAN katakan tidak tahu tanggal/waktu** — kamu sudah tahu dari system prompt!
 
-## Format Khusus Telegram
-- Gunakan *bold* untuk poin penting
-- Gunakan `code` untuk path, perintah, atau kode
-- Gunakan — sebagai bullet point jika diperlukan
-- Maksimal 3 level hierarki informasi"""
+## Format Khusus Telegram (Estetika & Keterbacaan)
+1. **Pemformatan Teks Kaya (Markdown):**
+   — Gunakan **teks tebal** untuk menyorot kata kunci, nama instansi, nomor surat, atau kesimpulan penting.
+   — Gunakan _teks miring_ untuk judul seksi, penjelasan, kutipan, atau penekanan ringan.
+   — Gunakan `teks monospace` untuk nomor surat, nomor agenda, URL, kode, atau path file. Ini sangat penting agar user dapat menyalin teks tersebut dengan satu ketukan (copy-on-tap).
+2. **Kutipan & Blok Data Penting (Blockquotes):**
+   — Selalu gunakan sintaks Markdown blockquote (awalan simbol `>` di setiap baris, contoh: `> Tanggal: ...`) untuk membungkus metadata surat, ringkasan, atau penjelasan penting. Ini akan secara otomatis dikonversi sistem menjadi garis vertikal pembatas di samping teks sehingga pesan terlihat sangat rapi dan terisolasi secara visual.
+3. **Struktur Bullet & Daftar:**
+   — Gunakan poin-poin terstruktur (bullet list) dengan pembatas emoji/simbol yang bersih agar informasi mudah dipindai (scannable).
+4. **Emoji Visual:**
+   — Gunakan emoji yang relevan secara bijak di awal paragraf atau poin sebagai penanda visual yang memperjelas informasi.
+5. **Format Tabel:**
+   — Jika menampilkan data berbentuk tabel, gunakan sintaks tabel Markdown standard (seperti `| Header |`) agar sistem mengonversinya secara otomatis menjadi tabel monospaced Unicode (seperti ┌─┬─┐) di dalam tag preformatted."""
         
         parts = []
         if base_prompt:

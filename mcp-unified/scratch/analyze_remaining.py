@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-json_path = Path("/home/aseps/MCP/src/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_lampiran.json")
+json_path = Path("/home/aseps/MCP/workspace/Bangda_PUU/data/workspace/lampiran_UU_23/processed/UU_23_2014_lampiran.json")
 txt_path = Path("/home/aseps/MCP/core/mcp-unified/scratch/combined_uu23_full_ocr_output.txt")
 
 with open(json_path, 'r', encoding='utf-8') as f:

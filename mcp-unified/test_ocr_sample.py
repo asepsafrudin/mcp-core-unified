@@ -16,8 +16,8 @@ from services.ocr.tools import register_tools
 from execution.registry import registry
 
 # Test configuration
-SAMPLE_IMAGE = "/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.png"
-OUTPUT_DIR = "/home/aseps/MCP/xlsx-gdrive-workflow/arsip-2025/scan"
+SAMPLE_IMAGE = "/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan/arsip20260402_08370635.png"
+OUTPUT_DIR = "/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-2025/scan"
 
 
 async def main():

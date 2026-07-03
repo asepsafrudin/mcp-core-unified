@@ -42,8 +42,8 @@ class DoctrUniversalAdapter:
                     logger.info(f"Initializing docTR predictor on {device}")
                 
                 # Initialize the model once. assume_straight_pages=False helps with skewed documents.
-                det_model_path = "/home/aseps/MCP/mcp-data/models/doctr/detection/db_resnet50.pt"
-                reco_model_path = "/home/aseps/MCP/mcp-data/models/doctr/recognition/crnn_vgg16_bn.pt"
+                det_model_path = "/home/aseps/MCP/storage/models/doctr/detection/db_resnet50.pt"
+                reco_model_path = "/home/aseps/MCP/storage/models/doctr/recognition/crnn_vgg16_bn.pt"
 
                 if os.path.exists(det_model_path) and os.path.exists(reco_model_path):
                     try:

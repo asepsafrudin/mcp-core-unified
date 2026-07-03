@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 def run_audit():
-    json_path = Path("/home/aseps/MCP/xlsx-gdrive-workflow/arsip-extracted/arsip_summary.json")
+    json_path = Path("/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-extracted/arsip_summary.json")
     if not json_path.exists():
         print("Error: JSON not found.")
         return

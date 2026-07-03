@@ -12,7 +12,7 @@ from integrations.google_workspace.client import get_google_client
 
 def upload_merged_to_sheets():
     # 1. Load Data
-    json_path = Path("/home/aseps/MCP/xlsx-gdrive-workflow/arsip-extracted/arsip_summary.json")
+    json_path = Path("/home/aseps/MCP/services/xlsx-gdrive-workflow/arsip-extracted/arsip_summary.json")
     with open(json_path, "r") as f:
         data = json.load(f)
     
