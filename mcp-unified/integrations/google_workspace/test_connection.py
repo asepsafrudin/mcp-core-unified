@@ -1,1 +1,1 @@
-/home/aseps/MCP/connectors/services/google/test_connection.py
+/home/aseps/MCP/deployments/services/google/test_connection.py
