@@ -1343,7 +1343,7 @@ class AIServiceManager:
                 self._current_provider = requested
             else:
                 # Fallback priority: groq -> gemini -> openai -> ollama
-                priority = ["groq", "gemini", "openai", "ollama"]
+                priority = ["openai", "gemini", "groq", "ollama"]
                 for p in priority:
                     if p in self._providers:
                         self._current_provider = p
