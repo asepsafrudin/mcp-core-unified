@@ -14,6 +14,11 @@ async def query_db(query: Union[str, sql.Composable], params: Optional[List[Any]
     """
     if params is None:
         params = []
+        
+    # Escape '%' characters if there are no parameters and query is a string.
+    # This prevents psycopg from interpreting '%p' as an invalid placeholder.
+    if not params and isinstance(query, str):
+        query = query.replace("%", "%%")
     
     query_str = str(query) if not isinstance(query, sql.Composable) else "composed query"
     logger.info("sql_query_executed", query_preview=query_str[:100], namespace=namespace)
