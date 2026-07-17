@@ -73,7 +73,7 @@ class DDFSPipeline:
         db_updated = False
         try:
             # Gunakan DATABASE_URL dari env (fallback ke standar local dev)
-            db_url = os.environ.get("DATABASE_URL", "postgresql://mcp_user:mcp_password_2024@localhost:5433/mcp_knowledge")
+            db_url = os.environ.get("DATABASE_URL", f"postgresql://mcp_user:{os.getenv('PG_PASSWORD') or os.getenv('POSTGRES_PASSWORD')}@localhost:5433/mcp_knowledge")
             conn = await asyncpg.connect(db_url)
             
             # Update field berdasarkan namespace

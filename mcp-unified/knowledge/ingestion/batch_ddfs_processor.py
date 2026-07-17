@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 async def run_batch():
     logger.info("=== MEMULAI BATCH PEMROSESAN DDFS (Tahun 2025) ===")
     
-    db_url = os.environ.get("DATABASE_URL", "postgresql://mcp_user:mcp_password_2024@localhost:5433/mcp_knowledge")
+    db_url = os.environ.get("DATABASE_URL", f"postgresql://mcp_user:{os.getenv('PG_PASSWORD') or os.getenv('POSTGRES_PASSWORD')}@localhost:5433/mcp_knowledge")
     conn = await asyncpg.connect(db_url)
     
     # Ambil arsip surat masuk tahun 2025 dari tabel arsip.surat_masuk yang belum memiliki ringkasan
