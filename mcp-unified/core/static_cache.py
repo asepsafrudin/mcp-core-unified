@@ -117,7 +117,7 @@ class StaticDataCache:
             port=int(os.getenv("PG_PORT", "5433")),
             dbname=os.getenv("PG_DATABASE", "mcp_knowledge"),
             user=os.getenv("PG_USER", "mcp_user"),
-            password=os.getenv("PG_PASSWORD", "mcp_password_2024"),
+            password=os.getenv("PG_PASSWORD") or os.getenv("POSTGRES_PASSWORD"),
         )
 
     # ── Warm-up ──────────────────────────────────────────────────────────

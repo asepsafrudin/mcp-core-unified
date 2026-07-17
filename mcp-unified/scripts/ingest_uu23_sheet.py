@@ -22,7 +22,7 @@ DB_PARAMS = {
     "port": 5433,
     "database": "mcp_knowledge",
     "user": "mcp_user",
-    "password": "mcp_password_2024"
+    "password": (os.getenv("PG_PASSWORD") or os.getenv("POSTGRES_PASSWORD"))
 }
 
 SPREADSHEET_ID = "1ugCMpcQ2pjY0oscTqjp4-a5tiGetYDwgCY2lUj0jHlY"

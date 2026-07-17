@@ -16,7 +16,7 @@ if env_path.exists():
             db_url = line.split("=", 1)[1].strip().strip('"').strip("'")
 
 if not db_url:
-    db_url = "postgresql://mcp_user:mcp_password_2024@localhost:5433/mcp_knowledge"
+    db_url = f"postgresql://mcp_user:{os.getenv('PG_PASSWORD') or os.getenv('POSTGRES_PASSWORD')}@localhost:5433/mcp_knowledge"
 
 def main():
     print(f"Loading data from {json_path.name}...")
