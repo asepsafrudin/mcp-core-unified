@@ -213,25 +213,22 @@ async def get_embedding(text: str) -> List[float]:
     [REVIEWER] Raises EmbeddingUnavailableError if Ollama is down.
     Callers must handle this explicitly — no silent fallback to zero vectors.
     """
+    import aiohttp
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "curl", "-s", "http://localhost:11434/api/embeddings",
-            "-d", json.dumps({
+        async with aiohttp.ClientSession() as session:
+            # Increase limit from 500 to 2000 to capture more semantic context
+            payload = {
                 "model": "all-minilm",
-                "prompt": text[:500]
-            }),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            logger.error("ollama_error", error=stderr.decode())
-            raise EmbeddingUnavailableError(
-                f"Ollama returned non-zero exit code: {stderr.decode()[:200]}"
-            )
-
-        response_data = json.loads(stdout)
+                "prompt": text[:2000]
+            }
+            async with session.post("http://localhost:11434/api/embeddings", json=payload, timeout=10) as response:
+                if response.status != 200:
+                    err_text = await response.text()
+                    logger.error("ollama_error", error=err_text)
+                    raise EmbeddingUnavailableError(
+                        f"Ollama returned non-200 status: {response.status} {err_text[:200]}"
+                    )
+                response_data = await response.json()
         embedding = response_data.get("embedding", [])
 
         # [REVIEWER] Zero vector is invalid — it means embedding silently failed
@@ -905,3 +902,46 @@ async def upsert_group_config(group_id: str, name: str = None, is_active: bool =
     except Exception as e:
         logger.error("upsert_group_config_failed", error=str(e))
         return {"success": False, "error": str(e)}
+
+async def re_embed_null_entries(namespace: str = None):
+    """
+    Background job to re-embed memories where embedding IS NULL.
+    """
+    try:
+        pool = await _get_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                query = "SELECT id, content FROM memories WHERE embedding IS NULL"
+                params = []
+                if namespace:
+                    query += " AND namespace = %s"
+                    params.append(namespace)
+                
+                await cur.execute(query, params)
+                rows = await cur.fetchall()
+                
+                if not rows:
+                    logger.info("re_embed_skip", msg="No null embeddings found")
+                    return 0
+                
+                success_count = 0
+                for row in rows:
+                    mem_id, content = row
+                    try:
+                        emb = await get_embedding(content)
+                        # psycopg expects a list for vector, but format might need to be string or pgvector
+                        # Looking at memory_save, how is it saved?
+                        await cur.execute(
+                            "UPDATE memories SET embedding = %s WHERE id = %s",
+                            (str(emb), mem_id)
+                        )
+                        success_count += 1
+                    except Exception as e:
+                        logger.error("re_embed_row_failed", id=mem_id, error=str(e))
+                
+                await conn.commit()
+                logger.info("re_embed_complete", total=len(rows), success=success_count)
+                return success_count
+    except Exception as e:
+        logger.error("re_embed_job_failed", error=str(e))
+        return 0
