@@ -908,7 +908,7 @@ async def re_embed_null_entries(namespace: str = None):
     Background job to re-embed memories where embedding IS NULL.
     """
     try:
-        pool = await _get_pool()
+        await ensure_pool_open()
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 query = "SELECT id, content FROM memories WHERE embedding IS NULL"
