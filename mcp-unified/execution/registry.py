@@ -10,7 +10,7 @@ import re
 # [REVIEWER] Strip reviewer annotations from tool descriptions before they are
 # exposed through MCP schemas. These annotations are implementation notes for
 # developers and must not be leaked to external clients.
-_REVIEWER_LINE_RE = re.compile(r'^#\s*\[REVIEWER\].*$\n?', flags=re.MULTILINE)
+_REVIEWER_LINE_RE = re.compile(r'^#?\s*\[REVIEWER\].*$\n?', flags=re.MULTILINE)
 
 
 def _sanitize_docstring(doc: Optional[str]) -> str:

@@ -199,10 +199,10 @@ async def get_embedding(text: str) -> List[float]:
     import aiohttp
     try:
         async with aiohttp.ClientSession() as session:
-            # Increase limit from 500 to 2000 to capture more semantic context
+            # Limit to 500 characters to safely fit semantic context
             payload = {
                 "model": "all-minilm",
-                "prompt": text[:2000]
+                "prompt": text[:500]
             }
             async with session.post("http://localhost:11434/api/embeddings", json=payload, timeout=10) as response:
                 if response.status != 200:
