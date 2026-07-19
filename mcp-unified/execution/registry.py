@@ -22,6 +22,20 @@ def _sanitize_docstring(doc: Optional[str]) -> str:
 
 T = TypeVar("T", bound=Callable[..., Any])
 
+ALLOWED_CATEGORIES = [
+    # Database SQL Tools
+    "query_db", "list_tables", "describe_table", "count_rows",
+    # RAG / Knowledge Base Tools
+    "knowledge_", 
+    # Filesystem & Shell (Produktivitas & Temp Scripts)
+    "read_file", "write_file", "create_text_file", "list_dir", 
+    "execute_shell_command", "run_shell",
+    # Scheduler / Automations
+    "scheduler_",
+    # LTM (Memory System)
+    "memory_"
+]
+
 class ToolRegistry:
     def __init__(self):
         self._tools: Dict[str, Callable] = {}
@@ -31,12 +45,12 @@ class ToolRegistry:
     def register(self, func_or_name: T) -> T: ...
     
     @overload
-    def register(self, func_or_name: T, name: Optional[str] = None) -> T: ...
+    def register(self, func_or_name: T, name: Optional[str] = None, description_short: Optional[str] = None, category: Optional[str] = None) -> T: ...
     
     @overload
-    def register(self, func_or_name: Optional[str] = None, name: Optional[str] = None) -> Callable[[T], T]: ...
+    def register(self, func_or_name: Optional[str] = None, name: Optional[str] = None, description_short: Optional[str] = None, category: Optional[str] = None) -> Callable[[T], T]: ...
 
-    def register(self, func_or_name: Union[Callable[..., Any], str, None] = None, name: Optional[str] = None):
+    def register(self, func_or_name: Union[Callable[..., Any], str, None] = None, name: Optional[str] = None, description_short: Optional[str] = None, category: Optional[str] = None):
         """
         Register a tool function. Can be used as a decorator or direct call.
         
@@ -44,7 +58,7 @@ class ToolRegistry:
             @registry.register
             def foo(): ...
             
-            @registry.register(name="bar")
+            @registry.register(name="bar", category="misc")
             def foo(): ...
             
             registry.register(some_func, name="manual")
@@ -53,7 +67,19 @@ class ToolRegistry:
             nonlocal name
             tool_name = name or func.__name__
             self._tools[tool_name] = func
-            self._descriptions[tool_name] = _sanitize_docstring(func.__doc__)
+            full_desc = _sanitize_docstring(func.__doc__)
+            
+            # Auto-generate description_short if not provided (take first sentence or up to 200 chars)
+            short_desc = description_short
+            if not short_desc:
+                first_sentence = full_desc.split('.')[0]
+                short_desc = first_sentence if len(first_sentence) <= 200 else full_desc[:197] + "..."
+                
+            self._descriptions[tool_name] = {
+                "description": full_desc,
+                "description_short": short_desc,
+                "category": category or "uncategorized"
+            }
             return func
         
         if callable(func_or_name):
@@ -67,11 +93,21 @@ class ToolRegistry:
     def get_tool(self, name: str) -> Optional[Callable[..., Any]]:
         return self._tools.get(name)
         
-    def list_tools(self) -> List[Dict[str, str]]:
-        return [
-            {"name": name, "description": desc}
-            for name, desc in self._descriptions.items()
-        ]
+    def list_tools(self, slim: bool = False) -> List[Dict[str, str]]:
+        tools_list = []
+        for name, meta in self._descriptions.items():
+            if slim:
+                tools_list.append({
+                    "name": name,
+                    "description_short": meta["description_short"],
+                    "category": meta["category"]
+                })
+            else:
+                tools_list.append({
+                    "name": name,
+                    "description": meta["description"]
+                })
+        return tools_list
         
     async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
@@ -170,6 +206,12 @@ async def discover_remote_tools():
         
         for rt in remote_tools:
             tool_name = rt["name"]
+            
+            # 106-D: Filter remote tools by ALLOWED_CATEGORIES
+            if not any(tool_name.startswith(p) for p in ALLOWED_CATEGORIES):
+                logger.debug("skipping_remote_tool_not_in_whitelist", tool=tool_name)
+                continue
+                
             description = rt.get("description", "Remote MCP tool")
             
             final_name = tool_name

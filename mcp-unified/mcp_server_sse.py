@@ -19,6 +19,8 @@ import asyncio
 import json
 import logging
 import contextlib
+import contextvars
+from urllib.parse import parse_qs
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -60,6 +62,9 @@ PORT = int(os.getenv("MCP_TEST_PORT", "8000"))
 
 # MCP Server instance
 mcp_server = Server("mcp-unified")
+
+# Context var for slim mode
+is_slim_mode = contextvars.ContextVar("is_slim_mode", default=False)
 
 # The bootstrap now handles all registrations in initialize_components()
 
@@ -186,10 +191,22 @@ async def initialize_components_background():
 async def handle_list_tools() -> list[Tool]:
     """List semua tools yang tersedia dari registry."""
     import inspect
+    slim = is_slim_mode.get()
     tools = []
-    for tool_info in registry.list_tools():
+    
+    # We always ask registry for slim mode if requested, but we map it back to Tool object
+    # which only has name, description, and inputSchema.
+    for tool_info in registry.list_tools(slim=slim):
         tool_name = tool_info["name"]
-        tool_desc = tool_info.get("description", "No description")
+        
+        if slim:
+            # Di mode ringkas, masukkan description_short dan category ke dalam field description
+            desc_short = tool_info.get("description_short", "No description")
+            category = tool_info.get("category", "uncategorized")
+            tool_desc = f"[{category}] {desc_short}"
+        else:
+            tool_desc = tool_info.get("description", "No description")
+            
         tool_func = registry.get_tool(tool_name)
 
         if tool_func:
@@ -336,11 +353,22 @@ def create_starlette_app() -> Starlette:
         )
     ]
 
+    async def handle_messages(request):
+        # Extract slim parameter from POST request to /messages/
+        query_string = request.scope.get("query_string", b"").decode("utf-8")
+        query_params = parse_qs(query_string)
+        slim = query_params.get("slim", ["false"])[0].lower() == "true"
+        is_slim_mode.set(slim)
+        
+        # Call the underlying ASGI app
+        await sse_transport.handle_post_message(request.scope, request.receive, request._send)
+        return Response()
+
     return Starlette(
         routes=[
             Route("/health", health_check, methods=["GET"]),
             Route("/sse", handle_sse),
-            Mount("/messages/", app=sse_transport.handle_post_message),
+            Route("/messages/", handle_messages, methods=["POST"]),
             Route("/services/{service_name}/{path:path}", reverse_proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]),
         ],
         middleware=middleware,
