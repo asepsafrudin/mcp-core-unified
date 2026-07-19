@@ -5,6 +5,7 @@ import sys
 sys.path = [p for p in sys.path if not (p.rstrip('/') == '/home/aseps/MCP/mcp-unified' or '/home/aseps/MCP/mcp-unified/' in p)]
 
 import asyncio
+import json
 from pathlib import Path
 from observability.logger import logger
 
@@ -37,18 +38,32 @@ def discover_plugins(plugin_dir: str):
     for root, dirs, files in os.walk(plugin_path):
         for file in files:
             file_path = Path(root) / file
+            manifest_path = file_path.with_suffix(".tool.json")
+            manifest = None
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r') as f:
+                        manifest = json.load(f)
+                except Exception as e:
+                    logger.error(f"Failed to parse manifest {manifest_path}: {e}")
             
             # 1. Python Plugin (.py)
             if file.endswith(".py") and not file.startswith("__"):
+                if not manifest:
+                    logger.warning(f"Deprecation Warning: Python plugin {file} auto-discovered without manifest. Please add {manifest_path.name}.")
                 plugin_count += self_register_python(file_path, plugin_path)
             
             # 2. Shell Script (.sh) -> Auto Tool
             elif file.endswith(".sh"):
-                plugin_count += self_register_shell(file_path, plugin_path)
+                if not manifest:
+                    logger.warning(f"Deprecation Warning: Shell script {file} auto-discovered without manifest. Please add {manifest_path.name}.")
+                plugin_count += self_register_shell(file_path, plugin_path, manifest)
 
             # 3. JavaScript (.js) -> Auto Tool (if node is available)
             elif file.endswith(".js"):
-                plugin_count += self_register_js(file_path, plugin_path)
+                if not manifest:
+                    logger.warning(f"Deprecation Warning: JavaScript script {file} auto-discovered without manifest. Please add {manifest_path.name}.")
+                plugin_count += self_register_js(file_path, plugin_path, manifest)
                     
     logger.info(f"Discovery completed: {plugin_count} plugins loaded from {plugin_dir}")
     return plugin_count
@@ -71,10 +86,16 @@ def self_register_python(file_path: Path, plugin_path: Path):
         logger.error(traceback.format_exc())
     return 0
 
-def self_register_shell(file_path: Path, plugin_path: Path):
+def self_register_shell(file_path: Path, plugin_path: Path, manifest: dict = None):
     """Register a .sh file as a tool."""
     from execution import registry
     tool_name = file_path.stem
+    desc_short = None
+    category = None
+    if manifest:
+        tool_name = manifest.get("name", tool_name)
+        desc_short = manifest.get("description_short")
+        category = manifest.get("category")
     
     async def shell_tool_wrapper(**kwargs):
         import subprocess
@@ -95,14 +116,20 @@ def self_register_shell(file_path: Path, plugin_path: Path):
             return f"Error: {stderr.decode()}"
         return stdout.decode()
 
-    shell_tool_wrapper.__doc__ = f"Shell tool discovered at {file_path.name}. Arguments passed as --key value."
-    registry.register(shell_tool_wrapper, name=tool_name)
+    shell_tool_wrapper.__doc__ = manifest.get("description", f"Shell tool discovered at {file_path.name}. Arguments passed as --key value.") if manifest else f"Shell tool discovered at {file_path.name}. Arguments passed as --key value."
+    registry.register(shell_tool_wrapper, name=tool_name, description_short=desc_short, category=category)
     return 1
 
-def self_register_js(file_path: Path, plugin_path: Path):
+def self_register_js(file_path: Path, plugin_path: Path, manifest: dict = None):
     """Register a .js file as a tool (requires node)."""
     from execution import registry
     tool_name = file_path.stem
+    desc_short = None
+    category = None
+    if manifest:
+        tool_name = manifest.get("name", tool_name)
+        desc_short = manifest.get("description_short")
+        category = manifest.get("category")
     
     async def js_tool_wrapper(**kwargs):
         import subprocess
@@ -121,8 +148,8 @@ def self_register_js(file_path: Path, plugin_path: Path):
             return f"Error: {stderr.decode()}"
         return stdout.decode()
 
-    js_tool_wrapper.__doc__ = f"Node.js tool discovered at {file_path.name}. Arguments passed as JSON string."
-    registry.register(js_tool_wrapper, name=tool_name)
+    js_tool_wrapper.__doc__ = manifest.get("description", f"Node.js tool discovered at {file_path.name}. Arguments passed as JSON string.") if manifest else f"Node.js tool discovered at {file_path.name}. Arguments passed as JSON string."
+    registry.register(js_tool_wrapper, name=tool_name, description_short=desc_short, category=category)
     return 1
 
 def discover_all_standard_locations():
