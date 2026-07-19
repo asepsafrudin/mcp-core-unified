@@ -5,6 +5,20 @@ from observability.logger import logger
 import asyncio
 import functools
 import inspect
+import re
+
+# [REVIEWER] Strip reviewer annotations from tool descriptions before they are
+# exposed through MCP schemas. These annotations are implementation notes for
+# developers and must not be leaked to external clients.
+_REVIEWER_LINE_RE = re.compile(r'^#\s*\[REVIEWER\].*$\n?', flags=re.MULTILINE)
+
+
+def _sanitize_docstring(doc: Optional[str]) -> str:
+    if not doc:
+        return "No description provided."
+    cleaned = _REVIEWER_LINE_RE.sub("", doc)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
 
 T = TypeVar("T", bound=Callable[..., Any])
 
@@ -39,7 +53,7 @@ class ToolRegistry:
             nonlocal name
             tool_name = name or func.__name__
             self._tools[tool_name] = func
-            self._descriptions[tool_name] = func.__doc__ or "No description provided."
+            self._descriptions[tool_name] = _sanitize_docstring(func.__doc__)
             return func
         
         if callable(func_or_name):
