@@ -11,13 +11,11 @@ from execution import registry
 
 
 class EmbeddingUnavailableError(Exception):
-    """
-    Raised when embedding service (Ollama) is unavailable or returns invalid data.
-    
-    [REVIEWER] Do NOT catch this silently. Let it propagate so callers can
-    decide how to handle: retry, fallback to keyword-only, or fail loudly.
-    """
+    """Raised when embedding service (Ollama) is unavailable or returns invalid data."""
     pass
+
+# [REVIEWER] Do NOT catch this silently. Let it propagate so callers can
+# decide how to handle: retry, fallback to keyword-only, or fail loudly.
 
 
 # Async Connection Pool
@@ -34,12 +32,7 @@ pool = psycopg_pool.AsyncConnectionPool(min_size=2, max_size=10, kwargs=DB_PARAM
 
 
 async def ensure_pool_open():
-    """
-    Ensure the database connection pool is open before use.
-    
-    [REVIEWER] This is a safety mechanism to handle cases where
-    the pool might not be initialized properly during startup.
-    """
+    """Ensure the database connection pool is open before use."""
     if not pool._opened:
         try:
             await pool.open()
@@ -50,12 +43,7 @@ async def ensure_pool_open():
 
 
 async def initialize_db():
-    """
-    Initialize database schema with namespace support.
-    
-    [REVIEWER] Pool is properly closed on failure to prevent connection leaks.
-    Schema includes namespace field for project isolation.
-    """
+    """Initialize database schema with namespace support."""
     pool_opened = False
     try:
         await pool.open()
@@ -207,12 +195,7 @@ async def initialize_db():
 
 
 async def get_embedding(text: str) -> List[float]:
-    """
-    Get embedding via Ollama.
-    
-    [REVIEWER] Raises EmbeddingUnavailableError if Ollama is down.
-    Callers must handle this explicitly — no silent fallback to zero vectors.
-    """
+    """Get embedding via Ollama."""
     import aiohttp
     try:
         async with aiohttp.ClientSession() as session:
@@ -253,21 +236,7 @@ async def memory_save(
     metadata: Dict = None, 
     namespace: str = "default"
 ) -> Dict[str, Any]:
-    """
-    Save memory to PostgreSQL with namespace isolation.
-    
-    [REVIEWER] Namespace isolation prevents cross-project memory contamination.
-    Always specify namespace when saving project-specific memories.
-    
-    Args:
-        key: Unique identifier for the memory
-        content: The content to store
-        metadata: Optional JSON metadata
-        namespace: Project/tenant namespace (default: "default")
-    
-    Returns:
-        Dict with success status and memory_id
-    """
+    """Save memory to PostgreSQL with namespace isolation."""
     if metadata is None:
         metadata = {}
     
@@ -322,21 +291,7 @@ async def memory_search(
     limit: int = 3, 
     strategy: str = "hybrid"
 ) -> Dict[str, Any]:
-    """
-    Search memories within a specific namespace.
-    
-    [REVIEWER] Search is filtered by namespace to prevent cross-contamination.
-    Only memories from the specified namespace are returned.
-    
-    Args:
-        query: Search query string
-        namespace: Project/tenant namespace to search within (default: "default")
-        limit: Maximum number of results (max 10)
-        strategy: Search strategy - "semantic", "keyword", or "hybrid"
-    
-    Returns:
-        Dict with success status and list of matching memories
-    """
+    """Search memories within a specific namespace."""
     try:
         # Ensure pool is open before using
         await ensure_pool_open()
@@ -421,20 +376,7 @@ async def memory_list(
     limit: int = 10, 
     offset: int = 0
 ) -> Dict[str, Any]:
-    """
-    List memories within a specific namespace.
-    
-    [REVIEWER] Listing is scoped to namespace. Memories from other namespaces
-    are not visible unless explicitly requested.
-    
-    Args:
-        namespace: Project/tenant namespace to list (default: "default")
-        limit: Maximum number of results (max 50)
-        offset: Pagination offset
-    
-    Returns:
-        Dict with success status, list of memories, and total count
-    """
+    """List memories within a specific namespace."""
     try:
         # Ensure pool is open before using
         await ensure_pool_open()
@@ -496,20 +438,7 @@ async def memory_delete(
     memory_id: str = None,
     namespace: str = "default"
 ) -> Dict[str, Any]:
-    """
-    Delete memory by key or ID within a namespace.
-    
-    [REVIEWER] Delete is scoped to namespace to prevent accidental deletion
-    of memories from other projects.
-    
-    Args:
-        key: Memory key to delete (alternative to memory_id)
-        memory_id: Memory UUID to delete (alternative to key)
-        namespace: Project/tenant namespace (default: "default")
-    
-    Returns:
-        Dict with success status and deletion count
-    """
+    """Delete memory by key or ID within a namespace."""
     if not key and not memory_id:
         return {
             "success": False, 
@@ -611,15 +540,7 @@ async def memory_get(
 
 
 async def memory_list_namespaces() -> Dict[str, Any]:
-    """
-    List all available namespaces.
-    
-    [REVIEWER] This is an admin/debugging function. In production with
-    multi-tenant setup, this should be restricted to authorized users.
-    
-    Returns:
-        Dict with success status and list of namespaces
-    """
+    """List all available namespaces."""
     try:
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
@@ -903,6 +824,7 @@ async def upsert_group_config(group_id: str, name: str = None, is_active: bool =
         logger.error("upsert_group_config_failed", error=str(e))
         return {"success": False, "error": str(e)}
 
+@registry.register
 async def re_embed_null_entries(namespace: str = None):
     """
     Background job to re-embed memories where embedding IS NULL.
