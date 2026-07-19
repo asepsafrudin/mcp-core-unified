@@ -17,6 +17,7 @@ from execution.tool_executor import (  # noqa: F401
     TOOL_DEFINITIONS,
     TELEGRAM_CHAT_TOOL_DEFINITIONS,
     TELEGRAM_CHAT_TOOL_NAMES,
+    select_tool_definitions,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "TOOL_DEFINITIONS",
     "TELEGRAM_CHAT_TOOL_DEFINITIONS",
     "TELEGRAM_CHAT_TOOL_NAMES",
+    "select_tool_definitions",
 ]
