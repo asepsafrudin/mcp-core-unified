@@ -65,6 +65,8 @@ mcp_server = Server("mcp-unified")
 
 # Context var for slim mode
 is_slim_mode = contextvars.ContextVar("is_slim_mode", default=False)
+# Context var for meta mode
+is_meta_mode = contextvars.ContextVar("is_meta_mode", default=False)
 
 # The bootstrap now handles all registrations in initialize_components()
 
@@ -191,6 +193,43 @@ async def initialize_components_background():
 async def handle_list_tools() -> list[Tool]:
     """List semua tools yang tersedia dari registry."""
     import inspect
+    
+    if is_meta_mode.get():
+        return [
+            Tool(
+                name="search_tools",
+                description="[Meta] Cari tool berdasarkan keyword/query. Gunakan ini dulu jika Anda tidak tahu nama tool yang tepat. Return berupa daftar kandidat tool.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Kata kunci pencarian (misal: 'sql', 'file', 'read')"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            ),
+            Tool(
+                name="call_tool",
+                description="[Meta] Panggil tool sesungguhnya dengan argumen yang tervalidasi. Pastikan Anda tahu nama tool dan argumennya (dari search_tools).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Nama tool yang akan dipanggil (contoh: 'read_file')"
+                        },
+                        "arguments": {
+                            "type": "object",
+                            "description": "Argumen untuk tool tersebut dalam bentuk JSON object (dict)."
+                        }
+                    },
+                    "required": ["name", "arguments"]
+                }
+            )
+        ]
+        
     slim = is_slim_mode.get()
     tools = []
     
@@ -243,6 +282,63 @@ async def handle_list_tools() -> list[Tool]:
 async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Execute tool dari registry."""
     try:
+        if is_meta_mode.get():
+            if name == "search_tools":
+                query = arguments.get("query", "").lower()
+                all_tools = registry.list_tools(slim=True)
+                candidates = []
+                for t in all_tools:
+                    search_text = f"{t['name']} {t.get('description_short', '')} {t.get('category', '')}".lower()
+                    if query in search_text:
+                        candidates.append(t)
+                
+                if not candidates:
+                    return [TextContent(type="text", text=f"Pencarian untuk '{query}' tidak menemukan hasil. Coba gunakan keyword lain (misal: 'sql', 'read', 'write', 'knowledge').")]
+                
+                return [TextContent(type="text", text=json.dumps(candidates, indent=2))]
+                
+            elif name == "call_tool":
+                target_name = arguments.get("name")
+                target_args = arguments.get("arguments", {})
+                
+                if not target_name:
+                    return [TextContent(type="text", text="Error: Argumen 'name' wajib diisi untuk call_tool.")]
+                
+                tool_func = registry.get_tool(target_name)
+                if not tool_func:
+                    return [TextContent(type="text", text=f"Error: Tool '{target_name}' tidak ditemukan di registry. Gunakan search_tools untuk mencari nama yang benar.")]
+                
+                import inspect
+                from pydantic import create_model, ValidationError
+                
+                sig = inspect.signature(tool_func)
+                fields = {}
+                for param_name, param in sig.parameters.items():
+                    if param_name == "self":
+                        continue
+                    param_type = param.annotation if param.annotation != inspect.Parameter.empty else str
+                    default_value = param.default if param.default != inspect.Parameter.empty else ...
+                    fields[param_name] = (param_type, default_value)
+                
+                try:
+                    DynamicModel = create_model(f"{target_name}_schema", **fields)
+                    model_instance = DynamicModel(**target_args)
+                    target_args = getattr(model_instance, "model_dump", model_instance.dict)()
+                except ValidationError as e:
+                    error_details = []
+                    for err in e.errors():
+                        loc = ".".join(map(str, err.get("loc", [])))
+                        error_details.append(f"- {loc}: {err.get('msg', '')}")
+                    error_msg = f"Error validasi argumen untuk '{target_name}':\n" + "\n".join(error_details)
+                    return [TextContent(type="text", text=error_msg)]
+                except Exception as e:
+                    return [TextContent(type="text", text=f"Error validasi skema: {str(e)}")]
+                
+                name = target_name
+                arguments = target_args
+            else:
+                return [TextContent(type="text", text=f"Error: Dalam mode meta, Anda hanya bisa memanggil 'search_tools' atau 'call_tool'. Untuk memanggil '{name}', gunakan 'call_tool' dengan argumen 'name' dan 'arguments'.")]
+
         result = await registry.execute(name, arguments)
         if isinstance(result, (dict, list)):
             result_text = json.dumps(result, indent=2)
@@ -354,11 +450,13 @@ def create_starlette_app() -> Starlette:
     ]
 
     async def handle_messages(request):
-        # Extract slim parameter from POST request to /messages/
+        # Extract slim and meta parameters from POST request to /messages/
         query_string = request.scope.get("query_string", b"").decode("utf-8")
         query_params = parse_qs(query_string)
         slim = query_params.get("slim", ["false"])[0].lower() == "true"
+        meta = query_params.get("meta", ["false"])[0].lower() == "true"
         is_slim_mode.set(slim)
+        is_meta_mode.set(meta)
         
         # Call the underlying ASGI app
         await sse_transport.handle_post_message(request.scope, request.receive, request._send)
