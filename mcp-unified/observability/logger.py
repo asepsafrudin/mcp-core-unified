@@ -38,7 +38,7 @@ def configure_logger():
 
     structlog.configure(
         processors=processors,
-        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+        logger_factory=structlog.WriteLoggerFactory(file=sys.stderr),
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
         cache_logger_on_first_use=True,
     )

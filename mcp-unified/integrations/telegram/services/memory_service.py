@@ -62,6 +62,13 @@ class MemoryService:
             "user": os.getenv("POSTGRES_USER") or "",
             "password": os.getenv("POSTGRES_PASSWORD") or "",
         }
+
+    @staticmethod
+    def _truncate_text(text: str, max_chars: int) -> str:
+        """Potong text panjang agar context tidak membengkak."""
+        if not text or len(text) <= max_chars:
+            return text
+        return text[:max_chars].rstrip() + "\n...[truncated]"
     
     def _find_ltm_path(self) -> Optional[str]:
         """Find LTM file path."""
@@ -406,20 +413,27 @@ class MemoryService:
         # Get MCP context
         mcp_context = await self.get_relevant_context(message, user_id=user_id)
         if mcp_context:
-            parts.append(f"📚 Recent Conversations:\n{mcp_context}")
+            parts.append(
+                f"📚 Recent Conversations:\n{self._truncate_text(mcp_context, 1200)}"
+            )
         
         # Get LTM context
         ltm_context = await self.get_ltm_context(message)
         if ltm_context:
-            parts.append(f"🧠 Long-term Memory:\n{ltm_context}")
+            parts.append(
+                f"🧠 Long-term Memory:\n{self._truncate_text(ltm_context, 1500)}"
+            )
         
         # Get Knowledge context
         kb_context = await self.get_knowledge_context(message)
         if kb_context:
-            parts.append(f"📖 Knowledge Base:\n{kb_context}")
+            parts.append(
+                f"📖 Knowledge Base:\n{self._truncate_text(kb_context, 1500)}"
+            )
         
         if parts:
-            return "\n\n---\n\n".join(parts)
+            combined = "\n\n---\n\n".join(parts)
+            return self._truncate_text(combined, 3200)
         
         return ""
     
