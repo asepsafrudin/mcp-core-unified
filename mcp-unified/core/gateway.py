@@ -1,10 +1,13 @@
 import httpx
 import logging
+from fastapi import APIRouter
 from starlette.responses import StreamingResponse, JSONResponse
 from starlette.exceptions import HTTPException
 
 # Configure basic logging for the gateway
 logger = logging.getLogger("gateway")
+
+router = APIRouter(prefix="/gateway", tags=["gateway"])
 
 # Map of internal services to their local ports/URLs
 SERVICE_MAP = {
@@ -62,3 +65,13 @@ async def reverse_proxy_gateway(request):
         # Note: In a real app, we should reuse the client
         # but for simplicity we close it here.
         await client.aclose()
+
+
+@router.api_route("/{service_name}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def gateway_proxy(request):
+    return await reverse_proxy_gateway(request)
+
+
+@router.api_route("/{service_name}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def gateway_proxy_root(request):
+    return await reverse_proxy_gateway(request)

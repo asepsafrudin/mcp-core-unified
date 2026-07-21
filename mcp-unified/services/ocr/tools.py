@@ -1,11 +1,11 @@
 # tools.py
 """
 MCP Tools untuk DocTR 3.x service.
-Namespace: ocr/
+Namespace: ocr
 
 Tools:
-  - ocr/extract_text    : ekstraksi teks dari gambar (PP-OCRv5)
-  - ocr/parse_document  : parsing struktur dokumen ke Markdown (PP-StructureV3)
+  - ocr_extract_text    : ekstraksi teks dari gambar (PP-OCRv5)
+  - ocr_parse_document  : parsing struktur dokumen ke Markdown (PP-StructureV3)
                           mendukung gambar DAN PDF
 """
 from execution.registry import registry
@@ -35,7 +35,7 @@ def register_tools(server=None) -> None:
     """
     engine = OCREngine.get_instance()
 
-    @registry.register(name="ocr/extract_text")
+    @registry.register(name="ocr_extract_text")
     async def extract_text(
         image_path: str = None,
         image_base64: str = None,
@@ -74,7 +74,7 @@ def register_tools(server=None) -> None:
             if tmp:
                 cleanup_tempfile(tmp)
 
-    @registry.register(name="ocr/parse_document")
+    @registry.register(name="ocr_parse_document")
     async def parse_document(
         file_path: str = None,
         image_base64: str = None,
@@ -107,7 +107,7 @@ def register_tools(server=None) -> None:
             if tmp:
                 cleanup_tempfile(tmp)
 
-    @registry.register(name="ocr/prepare_training_data")
+    @registry.register(name="ocr_prepare_training_data")
     async def prepare_training_data(dataset_dir: str = None) -> dict:
         """
         Menyiapkan data yang memiliki tingkat kepercayaan (confidence) rendah 
@@ -123,7 +123,7 @@ def register_tools(server=None) -> None:
         """
         return export_samples_to_label(dataset_dir)
 
-    @registry.register(name="ocr/visualize_dataset")
+    @registry.register(name="ocr_visualize_dataset")
     async def visualize_dataset(dataset_dir: str, limit: int = 5) -> dict:
         """
         Menghasilkan gambar visualisasi (bbox + teks) dari Label.txt 
@@ -142,7 +142,7 @@ def register_tools(server=None) -> None:
             "visualized_files": files
         }
 
-    @registry.register(name="ocr/export_yolo")
+    @registry.register(name="ocr_export_yolo")
     async def export_yolo(dataset_dir: str) -> dict:
         """
         Mengonversi dataset DocTR ke format YOLO (.txt per gambar).
@@ -150,7 +150,7 @@ def register_tools(server=None) -> None:
         path = convert_to_yolo(dataset_dir)
         return {"status": "success", "yolo_label_dir": path}
 
-    @registry.register(name="ocr/export_coco")
+    @registry.register(name="ocr_export_coco")
     async def export_coco(dataset_dir: str) -> dict:
         """
         Mengonversi dataset DocTR ke format COCO JSON tunggal.
@@ -158,7 +158,7 @@ def register_tools(server=None) -> None:
         path = convert_to_coco(dataset_dir)
         return {"status": "success", "coco_json_path": path}
 
-    @registry.register(name="ocr/augment_data")
+    @registry.register(name="ocr_augment_data")
     async def augment_data(dataset_dir: str, factor: int = 3) -> dict:
         """
         Melakukan augmentasi dataset (Image + Labels) secara masal.
@@ -173,7 +173,7 @@ def register_tools(server=None) -> None:
         """
         return augment_dataset(dataset_dir, factor)
 
-    @registry.register(name="ocr/preview_augmentation")
+    @registry.register(name="ocr_preview_augmentation")
     async def preview_augmentation(image_path: str, factor: int = 4) -> dict:
         """
         Menghasilkan gambar pratinjau montage untuk melihat efek augmentasi.
@@ -189,7 +189,7 @@ def register_tools(server=None) -> None:
         path = visualize_augmentation_montage(image_path, factor)
         return {"status": "success", "montage_path": path}
 
-    @registry.register(name="ocr/split_dataset")
+    @registry.register(name="ocr_split_dataset")
     async def split_data(dataset_dir: str, train: float = 0.7, 
                          val: float = 0.15, test: float = 0.15) -> dict:
         """

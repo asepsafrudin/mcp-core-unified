@@ -37,11 +37,12 @@ async def chat_endpoint(request: ChatRequest, deps: DependencyContainer = Depend
     # If pure agentic
     if request.agentic:
         try:
+            selected_tools = deps.get_tool_definitions_for_message(request.message)
             # We use Qwen logic (generate_with_tools) from the provider
             response_text = await provider.generate_with_tools(
                 user_id=request.user_id,
                 message=request.message,
-                tools=deps.tool_definitions,
+                tools=selected_tools,
                 tool_executor=deps.tool_executor,
                 system_prompt=request.system_prompt
             )
@@ -118,10 +119,11 @@ async def chat_stream_endpoint(request: ChatRequest, deps: DependencyContainer =
         # Actually it's better to just stream the final response word by word
         async def mock_agentic_stream():
             try:
+                selected_tools = deps.get_tool_definitions_for_message(request.message)
                 response = await provider.generate_with_tools(
                     user_id=request.user_id,
                     message=request.message,
-                    tools=deps.tool_definitions,
+                    tools=selected_tools,
                     tool_executor=deps.tool_executor,
                     system_prompt=request.system_prompt
                 )

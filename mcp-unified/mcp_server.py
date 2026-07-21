@@ -227,15 +227,19 @@ async def handle_get_prompt(name: str, arguments: Optional[Dict[str, str]] = Non
 async def main():
     """Main MCP server entry point."""
     logger.info("Starting mcp-unified MCP server")
+    logger.info("MCP stdio bootstrap starting; waiting for client initialization handshake")
     
     # [REVIEWER] Initialize all components before accepting requests
     await initialize_components()
+    logger.info("MCP components initialized successfully; stdio transport ready")
     
     # Revert streams for MCP protocol
     sys.stdout = _original_stdout
     sys.stdin = _original_stdin
+    logger.info("MCP stdio streams restored; entering MCP run loop")
     
     async with stdio_server() as (read_stream, write_stream):
+        logger.info("MCP stdio transport established; client may now complete initialize/tools handshake")
         await mcp_server.run(
             read_stream,
             write_stream,

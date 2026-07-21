@@ -99,7 +99,7 @@ start_openhands() {
 }
 
 run_stdio() {
-    echo "✅ Starting MCP stdio server..."
+    >&2 echo "✅ Starting MCP stdio server..."
     exec python3 "${SCRIPT_DIR}/mcp_server.py" --stdio
 }
 
@@ -379,8 +379,8 @@ case "${MODE}" in
         exit 0
         ;;
     start-stdio)
-        setup_runtime
-        cleanup_stale_pid_files
+        setup_runtime >&2
+        cleanup_stale_pid_files >&2
         run_stdio
         exit 0
         ;;

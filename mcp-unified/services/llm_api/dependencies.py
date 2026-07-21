@@ -14,7 +14,7 @@ from integrations.telegram.core.client import MCPClientWrapper
 from integrations.telegram.services import AIServiceManager, MemoryService
 from integrations.telegram.services.knowledge_service import KnowledgeService
 from integrations.telegram.services.text_to_sql_service import TextToSQLService
-from integrations.telegram.services.tool_executor import ToolExecutor, TOOL_DEFINITIONS
+from integrations.telegram.services.tool_executor import ToolExecutor, TOOL_DEFINITIONS, select_tool_definitions
 from services.correspondence_dashboard import CorrespondenceDashboard
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,10 @@ class DependencyContainer:
         self.tool_definitions = TOOL_DEFINITIONS
         
         self.initialized = False
+
+    def get_tool_definitions_for_message(self, message: str):
+        """Return a reduced tool set tailored to the incoming message."""
+        return select_tool_definitions(message, self.tool_definitions)
 
     async def initialize_all(self):
         if self.initialized:

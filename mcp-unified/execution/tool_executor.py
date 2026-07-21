@@ -595,6 +595,63 @@ TELEGRAM_CHAT_TOOL_DEFINITIONS = [
     if isinstance(tool, dict) and tool.get("function", {}).get("name") in TELEGRAM_CHAT_TOOL_NAMES
 ]
 
+CORE_MINIMAL_TOOL_NAMES = {
+    "get_datetime",
+    "search_letters",
+    "count_letters",
+}
+
+TOOL_INTENT_GROUPS = {
+    "database": {"query_database", "list_db_tables", "describe_db_table"},
+    "knowledge": {"search_knowledge"},
+    "position": {"search_by_position"},
+    "raw_pool": {"search_raw_pool"},
+    "pending": {"get_agenda_pending", "check_anomalies"},
+    "disposisi": {"get_disposisi_chain"},
+    "surat_keluar": {"get_surat_keluar"},
+    "surat_luar": {"get_surat_luar_bangda"},
+    "arsip": {"get_arsip_surat_masuk_2025", "search_documents", "get_file_index"},
+    "staff": {"get_staff_workload", "get_staff_details", "sync_personnel_data"},
+}
+
+
+def select_tool_definitions(message: str, tool_definitions: List[Dict]) -> List[Dict]:
+    """Pilih subset tools yang relevan berdasarkan intent sederhana dari message."""
+    message_lower = (message or "").lower()
+    selected_names = set(CORE_MINIMAL_TOOL_NAMES)
+
+    keyword_map = {
+        "database": ["database", "sql", "tabel", "kolom", "schema", "skema", "postgres"],
+        "knowledge": ["knowledge", "dokumen", "regulasi", "uu", "peraturan", "referensi"],
+        "position": ["posisi", "unit", "meja", "kode klasifikasi"],
+        "raw_pool": ["raw pool", "lintas substansi", "semua substansi", "sekretariat", "supd", "peipd"],
+        "pending": ["pending", "tunggakan", "backlog", "anomali", "belum selesai"],
+        "disposisi": ["disposisi", "nomor disposisi", "rantai disposisi", "tracking disposisi"],
+        "surat_keluar": ["surat keluar", "nd keluar", "produksi surat"],
+        "surat_luar": ["instansi eksternal", "surat luar", "bangda", "kemenko", "sekjen"],
+        "arsip": ["arsip", "2025", "ocr", "isi dokumen", "pdf", "file", "onedrive"],
+        "staff": ["staf", "pegawai", "nip", "beban kerja", "personnel", "personel"],
+    }
+
+    if any(keyword in message_lower for keyword in ["ringkasan", "terbaru", "terkini", "overview", "summary"]):
+        selected_names.add("get_correspondence")
+
+    if any(keyword in message_lower for keyword in [
+        "minggu ini", "bulan ini", "tahun ini", "rekap", "statistik", "trend", "database", "sql", "tabel", "kolom", "schema", "skema", "postgres"
+    ]):
+        selected_names.add("query_database")
+
+    for group, keywords in keyword_map.items():
+        if any(keyword in message_lower for keyword in keywords):
+            selected_names.update(TOOL_INTENT_GROUPS[group])
+
+    filtered = [
+        tool for tool in tool_definitions
+        if isinstance(tool, dict) and tool.get("function", {}).get("name") in selected_names
+    ]
+
+    return filtered or tool_definitions[:8]
+
 
 # =============================================================================
 # TOOL EXECUTOR

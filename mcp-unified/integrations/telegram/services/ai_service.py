@@ -22,6 +22,15 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+AGENTIC_SYSTEM_PROMPT_COMPACT = """Kamu adalah Aria, asisten AI proyek MCP. Jawab ringkas, akurat, dan profesional dalam Bahasa Indonesia. Gunakan tool hanya saat benar-benar perlu data eksternal/real-time. Jika pertanyaan bisa dijawab tanpa tool, jangan panggil tool. Jika memakai tool, gunakan hasilnya secara singkat dan langsung ke inti. Hindari mengulang pertanyaan user, hindari basa-basi, dan prioritaskan jawaban pendek yang dapat ditindaklanjuti."""
+
+
+def _approx_token_count(text: Optional[str]) -> int:
+    """Approx kasar token count untuk observability ringan."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
 
 @dataclass
 class AIResponse:
@@ -250,6 +259,27 @@ Kamu dapat mencari data surat masuk/keluar secara real-time:
         
         return "\n\n".join(parts)
 
+    def build_agentic_system_prompt(
+        self,
+        base_prompt: Optional[str] = None,
+        context: Optional[str] = None
+    ) -> str:
+        """Versi compact untuk function calling agar hemat token."""
+        current_datetime = self.get_current_datetime_wib()
+        prompt = (
+            f"Waktu saat ini: {current_datetime}.\n"
+            f"{AGENTIC_SYSTEM_PROMPT_COMPACT}"
+        )
+
+        if base_prompt:
+            prompt += f"\n\nInstruksi tambahan:\n{base_prompt}"
+        if context:
+            compact_context = context[:1800].rstrip()
+            if len(context) > 1800:
+                compact_context += "\n...[truncated]"
+            prompt += f"\n\nKonteks relevan:\n{compact_context}"
+        return prompt
+
 
 # ==============================================================================
 # GROQ AI (Provider 1 - AKTIF)
@@ -422,11 +452,33 @@ class GroqAI(AIService):
             raise RuntimeError("Groq not available")
 
         history = self.get_chat_history(user_id)
+        compact_history = history[-6:]
         messages = [
-            {"role": "system", "content": self.build_system_prompt(system_prompt, context)}
+            {"role": "system", "content": self.build_agentic_system_prompt(system_prompt, context)}
         ]
-        messages.extend(history)
+        messages.extend(compact_history)
         messages.append({"role": "user", "content": message})
+
+        system_text = messages[0]["content"]
+        history_chars = sum(len((m.get("content") or "")) for m in compact_history)
+        tool_chars = len(json.dumps(tools, ensure_ascii=False)) if tools else 0
+        logger.info(
+            "agentic_request_budget",
+            provider="openai",
+            model=self.model,
+            tool_count=len(tools or []),
+            system_chars=len(system_text),
+            system_tokens_approx=_approx_token_count(system_text),
+            context_chars=len(context or ""),
+            context_tokens_approx=_approx_token_count(context),
+            history_messages=len(compact_history),
+            history_chars=history_chars,
+            history_tokens_approx=max(1, history_chars // 4) if history_chars else 0,
+            user_message_chars=len(message or ""),
+            user_message_tokens_approx=_approx_token_count(message),
+            tool_schema_chars=tool_chars,
+            tool_schema_tokens_approx=max(1, tool_chars // 4) if tool_chars else 0,
+        )
 
         final_response = ""
         # Hitung berapa kali tool gagal berturut untuk deteksi stuck
@@ -1008,10 +1060,11 @@ class OpenAIService(AIService):
 
         import json
         history = self.get_chat_history(user_id)
+        compact_history = history[-6:]
         messages = [
-            {"role": "system", "content": self.build_system_prompt(system_prompt, context)}
+            {"role": "system", "content": self.build_agentic_system_prompt(system_prompt, context)}
         ]
-        messages.extend(history)
+        messages.extend(compact_history)
         messages.append({"role": "user", "content": message})
 
         final_response = ""
