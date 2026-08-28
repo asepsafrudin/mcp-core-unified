@@ -12,7 +12,7 @@ router = APIRouter(prefix="/gateway", tags=["gateway"])
 # Map of internal services to their local ports/URLs
 SERVICE_MAP = {
     "korespondensi": "http://localhost:8082",
-    "vane": "http://localhost:3001",
+    "vane": "http://localhost:3002",
     "waha": "http://localhost:3000",
 }
 

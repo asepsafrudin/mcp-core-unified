@@ -1,0 +1,9 @@
+# Document AI Service Dependencies
+# Dual-runtime: digunakan di Colab (prototyping) dan MCP server (otomasi)
+#
+# Output format: .md (Markdown) + .jsonl (JSON Lines)
+# Tidak butuh openpyxl/pandas lagi (sesuai kebijakan format file output)
+
+google-cloud-documentai>=2.20.0
+google-cloud-storage>=2.10.0
+pypdf>=4.0.0

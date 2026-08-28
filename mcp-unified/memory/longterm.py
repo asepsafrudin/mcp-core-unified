@@ -194,17 +194,60 @@ async def initialize_db():
         raise  # Re-raise so caller knows initialization failed
 
 
+def _get_embedding_sync(text: str) -> List[float]:
+    """Synchronous embedding fetcher using requests (fallback when aiohttp is unavailable)."""
+    import requests
+
+    payload = {
+        "model": "all-minilm",
+        "prompt": text[:1200],
+    }
+    response = requests.post(
+        "http://localhost:11434/api/embeddings",
+        json=payload,
+        timeout=10,
+    )
+    if response.status_code != 200:
+        logger.error("ollama_error", error=response.text)
+        raise EmbeddingUnavailableError(
+            f"Ollama returned non-200 status: {response.status_code} {response.text[:200]}"
+        )
+    response_data = response.json()
+    embedding = response_data.get("embedding", [])
+
+    if not embedding or all(v == 0.0 for v in embedding):
+        raise EmbeddingUnavailableError(
+            "Ollama returned empty or zero vector — model may not be loaded"
+        )
+    return embedding
+
+
 async def get_embedding(text: str) -> List[float]:
-    """Get embedding via Ollama."""
-    import aiohttp
+    """Get embedding via Ollama.
+
+    Uses aiohttp when available; falls back to synchronous requests in a thread
+    pool so that missing aiohttp dependency does not block memory_save.
+    """
+    try:
+        import aiohttp
+    except ImportError:
+        logger.warning(
+            "aiohttp_unavailable",
+            note="falling back to requests in thread pool for embedding",
+        )
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _get_embedding_sync, text)
+
     try:
         async with aiohttp.ClientSession() as session:
             # Limit to 1200 characters to safely fit semantic context
             payload = {
                 "model": "all-minilm",
-                "prompt": text[:1200]
+                "prompt": text[:1200],
             }
-            async with session.post("http://localhost:11434/api/embeddings", json=payload, timeout=10) as response:
+            async with session.post(
+                "http://localhost:11434/api/embeddings", json=payload, timeout=10
+            ) as response:
                 if response.status != 200:
                     err_text = await response.text()
                     logger.error("ollama_error", error=err_text)

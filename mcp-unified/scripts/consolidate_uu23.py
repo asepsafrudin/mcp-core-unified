@@ -1,8 +1,12 @@
 import json
 from pathlib import Path
 
-# Paths
-base_dir = Path("/home/aseps/MCP/workspace/Bangda_PUU/data/workspace/lampiran_UU_23/processed")
+# Dynamic Workspace Paths
+REPO_ROOT = Path(__file__).resolve().parents[3]
+base_dir = REPO_ROOT / "workspace" / "Bangda_PUU" / "data" / "workspace" / "lampiran_UU_23" / "processed"
+if not base_dir.exists():
+    base_dir = REPO_ROOT / "data" / "lampiran_UU_23" / "processed"
+
 body_path = base_dir / "UU_23_2014_PEMERINTAHAN_DAERAH_parsed.json"
 lampiran_path = base_dir / "UU_23_2014_lampiran.json"
 output_path = base_dir / "UU_23_2014_single_source_of_truth.json"

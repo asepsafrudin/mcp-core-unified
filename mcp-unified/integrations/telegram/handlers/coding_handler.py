@@ -153,8 +153,7 @@ class CodingTaskHandler(BaseHandler):
             status_msg = None
         
         try:
-            # Call MCP tool run_coding_task
-            from oh_integration.schemas import CodingTaskRequest
+            # Call MCP tool run_coding_task (dynamically discovered)
             
             # Submit task via orchestrator atau direct MCP call
             task_id = await self._submit_coding_task(

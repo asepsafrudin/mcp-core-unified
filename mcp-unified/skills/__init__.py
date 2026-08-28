@@ -115,3 +115,14 @@ __all__.extend([
     "SemanticConverterSkill",
     "TemplateInjectionSkill",
 ])
+
+# Import frontend developer skills (auto-registered via @register_skill)
+from .frontend import (
+    FrontendDevSkill,
+    frontend_developer,
+)
+
+__all__.extend([
+    "FrontendDevSkill",
+    "frontend_developer",
+])

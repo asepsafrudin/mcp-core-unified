@@ -14,8 +14,8 @@ Key Pattern:
   static:{table_name}:by_id:{id}  → JSON satu baris (dict)
   static:_meta                    → Info kapan terakhir warm_up
 
-TTL: None (tidak pernah expired secara otomatis).
-     Invalidasi hanya lewat `invalidate()` atau saat amandemen UU.
+TTL: Dikontrol oleh env `MCP_STATIC_CACHE_TTL` (detik, default 86400 = 1 hari).
+     Set ke 0 untuk tidak expired. Invalidasi juga bisa lewat `invalidate()`.
 """
 from __future__ import annotations
 
@@ -62,6 +62,18 @@ TABLE_PK: dict[str, str] = {
 
 KEY_PREFIX = os.getenv("STATIC_CACHE_PREFIX", "static:")
 _ENABLED = os.getenv("STATIC_CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
+
+# TTL in seconds; 0 means no expiration. Default 1 day to bound Redis memory growth.
+try:
+    _CACHE_TTL = int(os.getenv("MCP_STATIC_CACHE_TTL", "86400"))
+except ValueError:
+    _CACHE_TTL = 86400
+
+
+def _validate_table(table_name: str) -> None:
+    """Validate that table_name is in the allowed whitelist."""
+    if table_name not in STATIC_TABLES:
+        raise ValueError(f"'{table_name}' is not a managed static table. Allowed: {STATIC_TABLES}")
 
 
 class StaticDataCache:
@@ -137,6 +149,10 @@ class StaticDataCache:
         target_tables = tables or STATIC_TABLES
         result: dict[str, int] = {}
 
+        # Validate all table names against whitelist before touching the database.
+        for table in target_tables:
+            _validate_table(table)
+
         redis = await self._get_redis()
 
         try:
@@ -149,8 +165,12 @@ class StaticDataCache:
             with conn.cursor() as cur:
                 for table in target_tables:
                     try:
-                        # Query dari schema static (source of truth)
-                        cur.execute(f"SELECT * FROM static.{table};")
+                        # Use SQL literal for schema-qualified table name; table is already
+                        # validated against STATIC_TABLES whitelist above.
+                        from psycopg.sql import Identifier
+                        cur.execute(
+                            "SELECT * FROM {};".format(Identifier("static", table).as_string(cur))
+                        )
                         cols = [desc[0] for desc in cur.description]
                         rows = [dict(zip(cols, row)) for row in cur.fetchall()]
 
@@ -160,14 +180,14 @@ class StaticDataCache:
                         # Simpan ke Redis atau fallback
                         all_key = f"{KEY_PREFIX}{table}:all"
                         if redis:
-                            await redis.set(all_key, json.dumps(rows_json))
+                            await redis.set(all_key, json.dumps(rows_json), ex=_CACHE_TTL or None)
 
                             # Index by_id
                             pk = TABLE_PK.get(table, "id")
                             for row in rows_json:
                                 if pk in row and row[pk] is not None:
                                     id_key = f"{KEY_PREFIX}{table}:by_id:{row[pk]}"
-                                    await redis.set(id_key, json.dumps(row))
+                                    await redis.set(id_key, json.dumps(row), ex=_CACHE_TTL or None)
                         else:
                             self._local_fallback[table] = rows_json
 
@@ -184,7 +204,7 @@ class StaticDataCache:
                 "total_rows": sum(result.values()),
             }
             if redis:
-                await redis.set(f"{KEY_PREFIX}_meta", json.dumps(meta))
+                await redis.set(f"{KEY_PREFIX}_meta", json.dumps(meta), ex=_CACHE_TTL or None)
             else:
                 self._local_fallback["_meta"] = [meta]
 
@@ -202,8 +222,7 @@ class StaticDataCache:
         Ambil semua baris dari tabel statis (dari Redis cache).
         Jika cache miss, fallback ke in-memory, lalu ke PostgreSQL.
         """
-        if table_name not in STATIC_TABLES:
-            raise ValueError(f"'{table_name}' bukan tabel statis yang dikelola StaticDataCache")
+        _validate_table(table_name)
 
         redis = await self._get_redis()
         all_key = f"{KEY_PREFIX}{table_name}:all"
@@ -237,8 +256,7 @@ class StaticDataCache:
 
     async def get_by_id(self, table_name: str, row_id: Any) -> Optional[dict]:
         """Lookup satu baris berdasarkan primary key."""
-        if table_name not in STATIC_TABLES:
-            raise ValueError(f"'{table_name}' bukan tabel statis")
+        _validate_table(table_name)
 
         redis = await self._get_redis()
         id_key = f"{KEY_PREFIX}{table_name}:by_id:{row_id}"

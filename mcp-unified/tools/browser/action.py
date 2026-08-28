@@ -10,6 +10,7 @@ from tools.base import BaseTool, ToolDefinition, ToolParameter, register_tool
 from core.task import Task, TaskResult
 from core.browser.adapters.playwright_adapter import playwright_adapter
 from core.browser.adapters.agent_browser_adapter import agent_browser_adapter
+from core.browser.adapters.browser_use_adapter import browser_use_adapter
 from core.browser.output_formatter import format_error, log_tool_call
 from core.browser.router import route_engine
 from core.browser.fallback_handler import execute_with_fallback
@@ -62,8 +63,15 @@ class BrowserActionTool(BaseTool):
         async def agent_browser_action() -> Dict[str, Any]:
             return await agent_browser_adapter.perform_action(action, target, value)
             
+        async def browser_use_action() -> Dict[str, Any]:
+            return await browser_use_adapter.perform_action(action, target, value)
+            
         if primary_engine == "playwright":
             primary_fn = playwright_action
+            fallback_engine = "browser-use"
+            fallback_fn = browser_use_action
+        elif primary_engine == "browser-use":
+            primary_fn = browser_use_action
             fallback_engine = "agent-browser"
             fallback_fn = agent_browser_action
         else:

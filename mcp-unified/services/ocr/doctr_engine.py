@@ -1,15 +1,7 @@
 import os
-import cv2
-import torch
+import requests
 import logging
-import threading
-import sys
-from typing import Optional, List, Dict
-from pathlib import Path
-from doctr.io import DocumentFile
-from doctr.models import ocr_predictor, db_resnet50, crnn_vgg16_bn
 
-# Use structlog if available, fallback to logging
 try:
     import structlog
     logger = structlog.get_logger(__name__)
@@ -18,172 +10,110 @@ except ImportError:
 
 class DoctrUniversalAdapter:
     """
-    Universal Adapter for Mindee docTR.
-    Provides Thread-Safe Singleton access to the predictor to save memory,
-    and multiple modes for output (flat text, layout blocks, absolute geometry).
+    Universal Adapter for Mindee docTR via Global HTTP Service.
+    This offloads heavy PyTorch dependencies and models to the global service.
     """
     _instance = None
-    _lock = threading.Lock()
     
-    # Type hints for attributes
-    predictor: ocr_predictor
-    device: torch.device
-
     def __new__(cls):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super(DoctrUniversalAdapter, cls).__new__(cls)
-                
-                # GPU Detection
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                try:
-                    logger.info("initializing_doctr_predictor", device=str(device))
-                except TypeError:
-                    logger.info(f"Initializing docTR predictor on {device}")
-                
-                # Initialize the model once. assume_straight_pages=False helps with skewed documents.
-                det_model_path = "/home/aseps/MCP/storage/models/doctr/detection/db_resnet50.pt"
-                reco_model_path = "/home/aseps/MCP/storage/models/doctr/recognition/crnn_vgg16_bn.pt"
-
-                if os.path.exists(det_model_path) and os.path.exists(reco_model_path):
-                    try:
-                        logger.info("loading_custom_doctr_weights", detection=det_model_path, recognition=reco_model_path)
-                    except TypeError:
-                        logger.info("Loading custom docTR weights from local disk")
-                        
-                    det_model = db_resnet50(pretrained=False, pretrained_backbone=False)
-                    det_model.load_state_dict(torch.load(det_model_path, map_location=device, weights_only=True))
-                    
-                    reco_model = crnn_vgg16_bn(pretrained=False, pretrained_backbone=False)
-                    reco_model.load_state_dict(torch.load(reco_model_path, map_location=device, weights_only=True))
-                    
-                    cls._instance.predictor = ocr_predictor(
-                        det_arch=det_model,
-                        reco_arch=reco_model,
-                        assume_straight_pages=False
-                    )
-                else:
-                    try:
-                        logger.info("loading_pretrained_doctr_weights")
-                    except TypeError:
-                        logger.info("Loading default pretrained docTR weights")
-                        
-                    cls._instance.predictor = ocr_predictor(
-                        det_arch='db_resnet50', 
-                        reco_arch='crnn_vgg16_bn', 
-                        pretrained=True,
-                        assume_straight_pages=False
-                    )
-                
-                if torch.cuda.is_available():
-                    cls._instance.predictor.cuda()
-                
-                cls._instance.device = device
-                try:
-                    logger.info("doctr_predictor_ready")
-                except TypeError:
-                    logger.info("docTR predictor ready")
+        if cls._instance is None:
+            cls._instance = super(DoctrUniversalAdapter, cls).__new__(cls)
+            cls._instance.base_url = "http://127.0.0.1:8090"
         return cls._instance
 
-    def _get_export(self, file_path: str):
-        """
-        Internal method to get docTR export JSON.
-        Handles both images and PDFs natively.
-        """
-        path = Path(file_path)
-        if not path.exists():
+    def _call_api(self, file_path: str, mode: str) -> dict:
+        if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
-
-        ext = path.suffix.lower()
-        
-        try:
-            if ext == '.pdf':
-                # Use native PDF support (extracts text layer + OCRs images)
-                doc = DocumentFile.from_pdf(str(path))
-            else:
-                # Standard image support
-                doc = DocumentFile.from_images(str(path))
             
-            result = self.predictor(doc)
-            return result.export()
+        is_large_pdf = False
+        if file_path.lower().endswith('.pdf'):
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(file_path)
+                if len(reader.pages) > 5:
+                    is_large_pdf = True
+                    num_pages = len(reader.pages)
+            except Exception as e:
+                pass # fallback to normal
+                
+        if is_large_pdf:
+            import tempfile
+            from pdf2image import convert_from_path
+            
+            combined_result = None
+            for i in range(1, num_pages + 1):
+                try:
+                    logger.info(f"Processing chunked OCR page {i}/{num_pages} for {file_path}")
+                except Exception:
+                    print(f"Processing chunked OCR page {i}/{num_pages} for {file_path}")
+                    
+                # Extract single page as image
+                images = convert_from_path(file_path, first_page=i, last_page=i, dpi=200)
+                if not images:
+                    continue
+                    
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                    tmp_path = tmp.name
+                
+                images[0].save(tmp_path, "JPEG")
+                
+                try:
+                    res = self._call_api_single(tmp_path, mode)
+                    if combined_result is None:
+                        combined_result = res
+                    else:
+                        # Append logic based on return type
+                        if isinstance(combined_result, str):
+                            combined_result += "\n\n--- Page Break ---\n\n" + res
+                        elif isinstance(combined_result, list):
+                            combined_result.extend(res)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+            
+            return combined_result
+        else:
+            return self._call_api_single(file_path, mode)
+
+    def _call_api_single(self, file_path: str, mode: str):
+        try:
+            with open(file_path, "rb") as f:
+                files = {"file": (os.path.basename(file_path), f)}
+                data = {"mode": mode}
+                response = requests.post(f"{self.base_url}/extract", files=files, data=data)
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get("status") == "success":
+                return result.get("data")
+            else:
+                raise Exception(f"API returned error: {result}")
         except Exception as e:
             try:
-                logger.error("doctr_processing_failed", file=file_path, error=str(e))
+                logger.error("doctr_api_call_failed", file=file_path, mode=mode, error=str(e))
             except TypeError:
-                logger.error(f"docTR processing failed for {file_path}: {e}")
+                pass
             raise
 
     def extract_flat_text(self, file_path: str) -> str:
         """Mode A: Returns all text as a single string (useful for regex/indexing)."""
-        export = self._get_export(file_path)
-        return " ".join([
-            word['value'] 
-            for page in export.get('pages', [])
-            for block in page.get('blocks', [])
-            for line in block.get('lines', [])
-            for word in line.get('words', [])
-        ])
+        return self._call_api(file_path, "text")
 
     def extract_layout_blocks(self, file_path: str) -> str:
-        """Mode B: Reconstructs paragraphs using \n\n for blocks and \n for lines.
-        Replacement for DocTR's RecoveryToDoc.
-        """
-        export = self._get_export(file_path)
-        full_text = []
-        for page in export.get('pages', []):
-            page_text = []
-            for block in page.get('blocks', []):
-                block_text = []
-                for line in block.get('lines', []):
-                    line_text = " ".join(word['value'] for word in line.get('words', []))
-                    block_text.append(line_text)
-                page_text.append("\n".join(block_text))
-            full_text.append("\n\n".join(page_text))
-        
-        return "\n\n--- Page Break ---\n\n".join(full_text)
+        """Mode B: Reconstructs paragraphs using \\n\\n for blocks and \\n for lines."""
+        return self._call_api(file_path, "layout")
 
-    def extract_absolute_geometry(self, file_path: str, img_width: Optional[int] = None, img_height: Optional[int] = None) -> list:
+    def extract_absolute_geometry(self, file_path: str, img_width: int = None, img_height: int = None) -> list:
         """Mode C: Converts relative geometry to absolute pixel coordinates.
-        If width/height not provided, it tries to detect from file (if image).
+        (Note: the global service determines dimensions internally if not provided)
         """
-        export = self._get_export(file_path)
-        
-        # Fallback to detection if dimensions not provided
-        if img_width is None or img_height is None:
-            path = Path(file_path)
-            if path.suffix.lower() != '.pdf':
-                img = cv2.imread(str(path))
-                if img is not None:
-                    img_height, img_width = img.shape[:2]
-                else:
-                    img_width, img_height = 1000, 1000 # Default fallback
-            else:
-                img_width, img_height = 1000, 1000 # PDF relative
-                
-        items = []
-        for page_idx, page in enumerate(export.get('pages', [])):
-            # If PDF, each page might have different dimensions in export
-            p_width = page.get('dimensions', [img_height, img_width])[1]
-            p_height = page.get('dimensions', [img_height, img_width])[0]
-            
-            for block in page.get('blocks', []):
-                for line in block.get('lines', []):
-                    for word in line.get('words', []):
-                        geom = word['geometry'] # [[x_min, y_min], [x_max, y_max]]
-                        x_min = geom[0][0] * p_width
-                        y_min = geom[0][1] * p_height
-                        x_max = geom[1][0] * p_width
-                        y_max = geom[1][1] * p_height
-                        
-                        items.append({
-                            'text': word['value'],
-                            'confidence': word['confidence'],
-                            'page': page_idx + 1,
-                            'x': x_min,
-                            'y': y_min,
-                            'box': [[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]]
-                        })
-        
-        # Sort spatially: page, then top-to-bottom, then left-to-right
-        items.sort(key=lambda item: (item['page'], item['y'], item['x']))
-        return items
+        return self._call_api(file_path, "geometry")
+
+    def extract_layout_with_bbox(self, file_path: str) -> str:
+        """Mode D: Reconstructs paragraphs using \n\n for blocks and \n for lines, prefixing each line with [x_min, y_min, x_max, y_max]."""
+        return self._call_api(file_path, "layout_with_bbox")
+
+    def extract_layout_with_bbox_conf(self, file_path: str) -> str:
+        """Mode E: Reconstructs paragraphs using \n\n for blocks and \n for lines, prefixing each line with [x_min, y_min, x_max, y_max, conf]."""
+        return self._call_api(file_path, "layout_with_bbox_conf")

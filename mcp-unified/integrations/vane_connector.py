@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # KONFIGURASI DEFAULT
 # ============================================================
-SEARXNG_URL  = os.environ.get("SEARXNG_URL",  "http://localhost:8090")
+SEARXNG_URL  = os.environ.get("SEARXNG_URL",  "http://localhost:8091")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL   = os.environ.get("GROQ_MODEL",   "qwen/qwen3-32b")

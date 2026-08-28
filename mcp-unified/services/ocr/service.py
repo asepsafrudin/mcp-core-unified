@@ -4,6 +4,10 @@ import tempfile
 import os
 import sys
 import json
+import base64
+import time
+import urllib.request
+import urllib.error
 import subprocess
 import logging
 from pathlib import Path
@@ -55,12 +59,27 @@ class OCREngine:
     def run_ocr(self, image_path: str, mode: str = "standard") -> dict:
         """
         Public OCR Runner dengan pilihan Mode:
+        - vision    : Remote GPU VLM (MiniCPM-V 8B) - Akurasi tertinggi untuk dokumen & tulisan tangan.
+        - handwriting: Mode khusus membaca tulisan tangan via VLM.
         - fast      : Google Vision Only, No Pre-processing, No LLM. (Paling Hemat)
         - standard  : Pre-processing + Google Vision + Auto LLM if low confidence. (Default)
         - deep      : Pre-processing + Google Vision + Force LLM Refinement. (Akurasi Tinggi)
         - structured: Deep + Entity Extraction (JSON). (Terstruktur)
         """
-        from .config import GOOGLE_VISION_ENABLED, DOCTR_ENABLED
+        from .config import GOOGLE_VISION_ENABLED, DOCTR_ENABLED, VISION_VLM_ENABLED
+
+        # 0. VISION VLM (Remote GPU Colab / Ollama - Preferred for mode 'vision' or 'handwriting')
+        if mode in ["vision", "handwriting", "vlm"] and VISION_VLM_ENABLED:
+            try:
+                prompt = (
+                    "Tolong transkripsikan dan ekstrak seluruh teks yang ada dalam dokumen/gambar ini "
+                    "secara detail dan terstruktur (termasuk nomor surat, tanggal, perihal, isi, serta catatan tulisan tangan/disposisi jika ada)."
+                    if mode != "handwriting" else
+                    "Fokuslah membaca dan mentranskripsikan seluruh catatan bertulisan tangan, coretan, paraf, atau lembar disposisi pada dokumen ini secara akurat."
+                )
+                return self._execute_vlm_vision(image_path, prompt=prompt, mode=mode)
+            except Exception as e:
+                logger.error(f"Vision VLM failed, falling back to standard OCR: {e}")
 
         # 1. GOOGLE VISION (Preferred Cloud)
         if GOOGLE_VISION_ENABLED:
@@ -79,6 +98,80 @@ class OCREngine:
                     return self._run_via_worker(image_path, mode="ocr")
         
         return {"status": "error", "message": "No active OCR engine available."}
+
+    def run_vision_analysis(self, image_path: str, prompt: str, model: str = None) -> dict:
+        """
+        Visual QA & Reasoning via Remote VLM (e.g. MiniCPM-V 8B).
+        """
+        try:
+            return self._execute_vlm_vision(image_path, prompt=prompt, mode="vision_qa", model=model)
+        except Exception as e:
+            logger.error(f"Vision analysis failed: {e}")
+            return {
+                "status": "error",
+                "message": f"Vision VLM analysis failed: {str(e)}",
+                "engine": model or "vlm"
+            }
+
+    def _execute_vlm_vision(
+        self, image_path: str, prompt: str, mode: str = "vision", model: str = None
+    ) -> dict:
+        """
+        Execute visual OCR and reasoning using remote Ollama VLM (MiniCPM-V 8B).
+        """
+        from .config import VISION_VLM_MODEL, VISION_VLM_TIMEOUT, get_ollama_base_url
+        
+        target_model = model or VISION_VLM_MODEL
+        base_url = get_ollama_base_url()
+        endpoint = f"{base_url}/api/generate"
+        
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"File gambar tidak ditemukan: {image_path}")
+            
+        with open(image_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+            
+        payload = {
+            "model": target_model,
+            "prompt": prompt,
+            "images": [img_b64],
+            "stream": False,
+        }
+        
+        t0 = time.time()
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        
+        with urllib.request.urlopen(req, timeout=VISION_VLM_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            elapsed = round(time.time() - t0, 3)
+            response_text = data.get("response", "").strip()
+            
+            lines = [
+                {"text": l.strip(), "score": 0.99, "bbox": []}
+                for l in response_text.split("\n")
+                if l.strip()
+            ]
+            
+            return {
+                "status": "success",
+                "full_text": response_text,
+                "mode_requested": mode,
+                "engine": f"vlm_{target_model}",
+                "elapsed_seconds": elapsed,
+                "lines": lines,
+                "refined_data": {
+                    "vlm_raw_response": response_text
+                },
+                "nlp_quality": {
+                    "avg_confidence": 0.99,
+                    "corrected_lines": 0,
+                    "quality_score": 0.99
+                }
+            }
 
     def run_structure(self, file_path: str) -> dict:
         """
@@ -309,6 +402,7 @@ class OCREngine:
         quality_score = avg_conf * (1.0 - (corrected_count / max(len(lines), 1) * 0.2))
 
         return {
+            "status": "success",
             "full_text": all_text,
             "lines": lines,
             "nlp_quality": {

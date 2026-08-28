@@ -92,8 +92,6 @@ class GDriveClient:
             # Standard Config Directory (from current audit)
             ("/home/aseps/MCP/config/credentials/google", "mcp-gmail-482015-682b788ee191.json"),
             ("/home/aseps/MCP/config/credentials/google", "oval-fort-461712-c0-78646012bddb.json"),
-            # Legacy OneDrive path
-            ("/home/aseps/MCP/OneDrive_PUU/PUU_2026/MCP/credential/gdrive", "oval-fort-461712-c0-78646012bddb.json"),
         ]
 
         for c_dir, c_file in candidates:
