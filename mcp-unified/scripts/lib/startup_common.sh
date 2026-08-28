@@ -4,7 +4,7 @@
 
 STARTUP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MCP_UNIFIED_DIR="$(cd "${STARTUP_LIB_DIR}/../.." && pwd)"
-MCP_REPO_ROOT="$(cd "${MCP_UNIFIED_DIR}/.." && pwd)"
+MCP_REPO_ROOT="$(cd "${MCP_UNIFIED_DIR}/../.." && pwd)"
 MCP_ROOT_ENV="${MCP_SECRETS_FILE:-${MCP_REPO_ROOT}/.env}"
 
 log_info() {

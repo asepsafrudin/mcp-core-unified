@@ -59,6 +59,7 @@ mcp_server = Server("mcp-unified")
 
 # Import registries after setting up path
 from execution import registry, resource_registry, prompt_registry
+from execution.tool_dump import build_input_schema, filter_dumped_tools, get_dump_profile
 from execution.registry import discover_remote_tools
 from memory.longterm import initialize_db
 from memory.working import working_memory
@@ -71,6 +72,8 @@ from core.bootstrap import initialize_all_components
 # Semantic tools will be imported in initialize_components()
 
 
+_init_task: Optional[asyncio.Task] = None
+
 async def initialize_components():
     """
     Initialize all system components before server starts accepting requests.
@@ -79,64 +82,34 @@ async def initialize_components():
     await initialize_all_components()
 
 async def list_tools() -> list[Tool]:
-    """List all available tools from the registry."""
+    """List tools advertised to MCP clients (dump profile, not full registry)."""
+    profile = get_dump_profile()
+    all_tools = registry.list_tools()
+    dumped = filter_dumped_tools(all_tools)
+    logger.info(
+        "list_tools dump profile=%s advertised=%s registered=%s",
+        profile,
+        len(dumped),
+        len(all_tools),
+    )
+
     tools = []
-    for tool_info in registry.list_tools():
+    for tool_info in dumped:
         tool_name = tool_info["name"]
         tool_desc = tool_info.get("description", "No description")
-        
-        # Get the actual tool function to inspect its signature
         tool_func = registry.get_tool(tool_name)
         if tool_func:
-            import inspect
-            sig = inspect.signature(tool_func)
-            params = {}
-            required_params = []
-            for param_name, param in sig.parameters.items():
-                # Skip 'self' parameter
-                if param_name == "self":
-                    continue
-                    
-                param_type = "string"  # Default type
-                if param.annotation != inspect.Parameter.empty:
-                    if param.annotation == int:
-                        param_type = "number"
-                    elif param.annotation == bool:
-                        param_type = "boolean"
-                    elif param.annotation == list:
-                        param_type = "array"
-                    elif param.annotation == dict:
-                        param_type = "object"
-                
-                params[param_name] = {
-                    "type": param_type,
-                    "description": param_name.replace("_", " ").title()
-                }
-                
-                # Only add to required if no default value
-                if param.default == inspect.Parameter.empty:
-                    required_params.append(param_name)
-            
             tools.append(Tool(
                 name=tool_name,
                 description=tool_desc,
-                inputSchema={
-                    "type": "object",
-                    "properties": params,
-                    "required": required_params
-                }
+                inputSchema=build_input_schema(tool_func),
             ))
         else:
-            # Fallback for tools without function inspection
             tools.append(Tool(
                 name=tool_name,
                 description=tool_desc,
-                inputSchema={
-                    "type": "object",
-                    "properties": {}
-                }
+                inputSchema={"type": "object", "properties": {}},
             ))
-    
     return tools
 
 async def call_tool(name: str, arguments: dict) -> list[TextContent | ImageContent | EmbeddedResource]:
@@ -159,16 +132,25 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent | ImageConte
 
 @mcp_server.list_tools()
 async def handle_list_tools() -> list[Tool]:
+    if _init_task and not _init_task.done():
+        logger.info("list_tools waiting for initialization to complete...")
+        await _init_task
     return await list_tools()
 
 
 @mcp_server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> list[TextContent | ImageContent | EmbeddedResource]:
+    if _init_task and not _init_task.done():
+        logger.info("call_tool waiting for initialization to complete...")
+        await _init_task
     return await call_tool(name, arguments)
 
 
 @mcp_server.list_resources()
 async def handle_list_resources() -> list[Resource]:
+    if _init_task and not _init_task.done():
+        logger.info("list_resources waiting for initialization to complete...")
+        await _init_task
     resources = []
     for item in resource_registry.list_resources():
         resources.append(
@@ -185,11 +167,17 @@ async def handle_list_resources() -> list[Resource]:
 
 @mcp_server.read_resource()
 async def handle_read_resource(uri: AnyUrl) -> str | bytes:
+    if _init_task and not _init_task.done():
+        logger.info("read_resource waiting for initialization to complete...")
+        await _init_task
     return await resource_registry.read_resource(str(uri))
 
 
 @mcp_server.list_prompts()
 async def handle_list_prompts() -> list[Prompt]:
+    if _init_task and not _init_task.done():
+        logger.info("list_prompts waiting for initialization to complete...")
+        await _init_task
     prompts = []
     for item in prompt_registry.list_prompts():
         args = [
@@ -213,6 +201,9 @@ async def handle_list_prompts() -> list[Prompt]:
 
 @mcp_server.get_prompt()
 async def handle_get_prompt(name: str, arguments: Optional[Dict[str, str]] = None) -> GetPromptResult:
+    if _init_task and not _init_task.done():
+        logger.info("get_prompt waiting for initialization to complete...")
+        await _init_task
     prompt_text = prompt_registry.get_prompt(name, arguments or {})
     return GetPromptResult(
         description=f"Prompt template: {name}",
@@ -226,12 +217,13 @@ async def handle_get_prompt(name: str, arguments: Optional[Dict[str, str]] = Non
 
 async def main():
     """Main MCP server entry point."""
+    global _init_task
     logger.info("Starting mcp-unified MCP server")
     logger.info("MCP stdio bootstrap starting; waiting for client initialization handshake")
     
-    # [REVIEWER] Initialize all components before accepting requests
-    await initialize_components()
-    logger.info("MCP components initialized successfully; stdio transport ready")
+    # Start initialization in the background so it doesn't block client handshake
+    _init_task = asyncio.create_task(initialize_components())
+    logger.info("MCP initialization task started in background")
     
     # Revert streams for MCP protocol
     sys.stdout = _original_stdout

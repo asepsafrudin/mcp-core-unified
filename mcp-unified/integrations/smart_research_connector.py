@@ -23,7 +23,7 @@ BLOCKED_DOMAINS = [
 # ================================
 # CONFIG
 # ================================
-SEARXNG_URL = "http://localhost:8090"   # SearxNG dari dalam Vane (port 8090 di-expose)
+SEARXNG_URL = "http://localhost:8091"   # SearxNG dari dalam Vane (port 8091 di-expose)
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL   = os.environ.get("GROQ_MODEL", "qwen/qwen3-32b")  # model default

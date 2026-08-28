@@ -646,11 +646,7 @@ def register_local_tools_for_sse():
         logger.warning("sse_register_blackbox_tools_failed", error=str(e))
 
     # Monitoring tools (auto-registration)
-    try:
-        import core.monitoring.health_tools  # noqa: F401
-        logger.info("sse_registered_monitoring_tools")
-    except Exception as e:
-        logger.warning("sse_register_monitoring_tools_failed", error=str(e))
+    # Removed non-existent core.monitoring.health_tools as mcp_health_check is auto-discovered
 
     _tools_registered = True
 

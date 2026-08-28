@@ -10,9 +10,10 @@ import ast
 from pathlib import Path
 from collections import defaultdict
 
-# Project root
-PROJECT_ROOT = Path("/home/aseps/MCP/mcp-unified")
-OUTPUT_DIR = Path("/home/aseps/MCP/docs/04-operations")
+# Dynamic Project root
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = REPO_ROOT / "core" / "mcp-unified"
+OUTPUT_DIR = REPO_ROOT / "docs" / "04-operations"
 
 def find_python_files():
     """Find all Python files in the project."""

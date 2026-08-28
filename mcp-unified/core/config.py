@@ -1,11 +1,21 @@
+import logging
 import os
+import re
+import urllib.parse
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
 
 from core.secrets import load_runtime_secrets
 
 
 load_runtime_secrets()
+
+logger = logging.getLogger(__name__)
+
+
+# Hosts considered "local" where plaintext redis:// without password is acceptable.
+_LOCAL_REDIS_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 class Settings(BaseSettings):
@@ -43,6 +53,45 @@ class Settings(BaseSettings):
 
     class Config:
         extra = "ignore"
+
+    @field_validator("REDIS_URL", mode="after")
+    @classmethod
+    def _validate_redis_url(cls, value: str) -> str:
+        """
+        Validate Redis URL format and emit a security warning when plaintext
+        redis:// is used without a password against a non-local host.
+        """
+        if not value:
+            raise ValueError("REDIS_URL cannot be empty")
+
+        parsed = urllib.parse.urlparse(value)
+
+        if parsed.scheme not in {"redis", "rediss"}:
+            raise ValueError(
+                f"REDIS_URL must use scheme 'redis://' or 'rediss://', got '{parsed.scheme}://'"
+            )
+
+        host = parsed.hostname
+        if not host:
+            raise ValueError("REDIS_URL must include a host")
+
+        port = parsed.port
+        if port is not None and (port < 1 or port > 65535):
+            raise ValueError(f"REDIS_URL port must be between 1 and 65535, got {port}")
+
+        # Security warning: plaintext redis without password on non-local host.
+        has_password = parsed.password is not None and parsed.password != ""
+        if parsed.scheme == "redis" and not has_password and host not in _LOCAL_REDIS_HOSTS:
+            logger.warning(
+                "redis_url_security_warning: redis:// without password against non-localhost is insecure; "
+                "use REDIS_URL with password or rediss://",
+                extra={
+                    "redis_url": re.sub(r"://[^@]+@", "://***@", value),
+                    "host": host,
+                }
+            )
+
+        return value
 
 
 settings = Settings()

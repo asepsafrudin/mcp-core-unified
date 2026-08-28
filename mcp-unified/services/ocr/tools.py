@@ -44,7 +44,9 @@ def register_tools(server=None) -> None:
         """
         Ekstraksi teks dari gambar dokumen dengan pilihan mode pemrosesan.
         
-        Pilihan Mode (Dialog):
+        Pilihan Mode:
+          - vision    : Remote GPU VLM (MiniCPM-V 8B) - Akurasi tertinggi untuk dokumen, formulir & tulisan tangan.
+          - handwriting: Khusus membaca tulisan tangan, coretan disposisi, dan paraf via VLM.
           - fast      : Fokus kecepatan & hemat token. Tanpa pre-processing, tanpa LLM.
           - standard  : Standar pipeline. Pre-processing + Google Vision + Auto LLM (jika perlu).
           - deep      : Fokus akurasi. Pre-processing + Google Vision + LLM Refinement Wajib.
@@ -53,7 +55,7 @@ def register_tools(server=None) -> None:
         Args:
             image_path  : Path absolut ke file gambar lokal.
             image_base64: Gambar dalam format base64.
-            mode        : Pilihan strategi (fast | standard | deep | structured). Default: standard.
+            mode        : Pilihan strategi (vision | handwriting | fast | standard | deep | structured). Default: standard.
 
         Returns:
             { "full_text": str, "mode_requested": str, "refined_data": dict, ... }
@@ -70,6 +72,43 @@ def register_tools(server=None) -> None:
 
             validate_image_file(path)
             return engine.run_ocr(path, mode=mode)
+        finally:
+            if tmp:
+                cleanup_tempfile(tmp)
+
+    @registry.register(name="ocr_vision_analyze")
+    async def vision_analyze(
+        image_path: str = None,
+        image_base64: str = None,
+        prompt: str = "Jelaskan isi gambar ini dan transkripsikan semua informasi penting secara mendalam.",
+        model: str = None
+    ) -> dict:
+        """
+        Visual QA dan penalaran dokumen menggunakan Multimodal Vision Model (MiniCPM-V 8B).
+        Dapat digunakan untuk mengajukan pertanyaan khusus terhadap isi gambar, membaca grafik,
+        atau memverifikasi cap stempel/tanda tangan.
+
+        Args:
+            image_path  : Path absolut ke file gambar lokal.
+            image_base64: Gambar dalam format base64.
+            prompt      : Pertanyaan atau instruksi analisis visual yang diinginkan.
+            model       : Nama model VLM kustom (default: minicpm-v:8b).
+
+        Returns:
+            { "full_text": str, "status": "success", "engine": str, "elapsed_seconds": float }
+        """
+        tmp = None
+        try:
+            if image_base64:
+                tmp = decode_base64_to_tempfile(image_base64)
+                path = tmp
+            elif image_path:
+                path = image_path
+            else:
+                raise ValueError("Harus menyertakan image_path atau image_base64")
+
+            validate_image_file(path)
+            return engine.run_vision_analysis(path, prompt=prompt, model=model)
         finally:
             if tmp:
                 cleanup_tempfile(tmp)

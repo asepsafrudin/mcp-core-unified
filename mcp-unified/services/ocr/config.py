@@ -46,4 +46,30 @@ SEMANTIC_REFINER_CONFIG = {
     "min_confidence_threshold": float(os.getenv("OCR_LLM_THRESHOLD", "0.90")), 
     "force_refinement": os.getenv("OCR_LLM_FORCE", "false").lower() == "true"
 }
+
+# Vision VLM Configuration (Colab GPU Remote / Local Ollama)
+VISION_VLM_ENABLED = os.getenv("VISION_VLM_ENABLED", "true").lower() == "true"
+VISION_VLM_MODEL = os.getenv("VISION_VLM_MODEL", "minicpm-v:8b")
+VISION_VLM_TIMEOUT = int(os.getenv("VISION_VLM_TIMEOUT", "90"))
+
+def get_ollama_base_url() -> str:
+    """Retrieve dynamic Ollama Base URL from .env.ai or env"""
+    env_ai_file = Path("/home/aseps/MCP/config/env/.env.ai")
+    if env_ai_file.exists():
+        try:
+            with open(env_ai_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("OLLAMA_URL="):
+                        val = line.split("=", 1)[1].strip().strip('"').strip("'").rstrip("/")
+                        if val:
+                            return val
+        except Exception:
+            pass
+            
+    env_url = os.getenv("OLLAMA_URL")
+    if env_url:
+        return env_url.rstrip("/")
+    return "http://localhost:11434"
+
 SUPPORTED_DOC_TYPES   = SUPPORTED_IMAGE_TYPES | {".pdf"}

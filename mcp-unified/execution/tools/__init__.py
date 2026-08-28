@@ -57,6 +57,14 @@ from execution.tools.file_tools import (
     write_file,
 )
 
+# Filesystem index manager
+from execution.tools.filesystem_index_manager import (
+    filesystem_index_build,
+    filesystem_index_search,
+    filesystem_index_refresh,
+    filesystem_index_status,
+)
+
 # Shell tools
 from execution.tools.shell_tools import (
     run_shell,
@@ -73,6 +81,11 @@ from execution.tools.ops_tools import (
     backup_knowledge_db,
     whatsapp_gateway_status,
     system_recovery_check,
+    port_registry_audit,
+    cron_registry_audit,
+    network_status_report,
+    check_ssh_access,
+    ssh_connection_manager,
 )
 
 __all__ = [
@@ -104,6 +117,12 @@ __all__ = [
     "read_file",
     "write_file",
     
+    # Filesystem Index Tools
+    "filesystem_index_build",
+    "filesystem_index_search",
+    "filesystem_index_refresh",
+    "filesystem_index_status",
+    
     # Shell Tools
     "run_shell",
     
@@ -117,4 +136,10 @@ __all__ = [
     "backup_knowledge_db",
     "whatsapp_gateway_status",
     "system_recovery_check",
+    "port_registry_audit",
+    "cron_registry_audit",
+    "network_status_report",
+    "check_ssh_access",
+    "ssh_connection_manager",
 ]
+

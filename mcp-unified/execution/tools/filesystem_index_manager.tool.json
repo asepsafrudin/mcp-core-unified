@@ -1,0 +1,6 @@
+{
+  "name": "filesystem_index_manager",
+  "description": "Builds and queries a SQLite index of files to complement rust-mcp-filesystem with fast file discovery.",
+  "description_short": "Filesystem index manager for fast search",
+  "category": "filesystem_index"
+}

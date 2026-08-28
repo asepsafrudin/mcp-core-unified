@@ -60,4 +60,44 @@ Backup: scheduler_create_job('backup_full')
 
 **OLD RULES PRESERVED**: Referensi AGENT_RULES.md untuk namespace isolation & OpenHands.
 
+## 🧠 IDE HYBRID ROUTER (Second-Brain)
+
+For multi-step tasks, complex coding, RAG/memory/web queries, or ambiguous requests, **delegate first to `run_ide_agent`** (LangGraph Hybrid Router).
+
+### Trigger Conditions
+- Task requires >3 sequential steps.
+- Needs knowledge/RAG, long-term memory, web search, contacts, or external integrations (WhatsApp/Gmail/GDrive).
+- Complex coding: refactor, scaffolding, multi-file changes.
+- Task is ambiguous and needs classification before execution.
+
+### Tool Call Pattern
+```python
+run_ide_agent(
+    task="<full user request with all relevant details>",
+    context="<active file, error log, code snippet, brief history>",
+    user_id="ide-agent",
+    conversation_id="<session-uuid>"
+)
+```
+
+### Response Handling
+Response follows `IDEResponse` schema:
+```json
+{
+  "status": "ok",
+  "mode": "local_tools | orchestrator | general_chat | error",
+  "answer": "<final answer>",
+  "tool_calls": [...],
+  "request_id": "<uuid>",
+  "error": ""
+}
+```
+
+- If `status == "ok"` → deliver `answer` to user. Avoid double delegation.
+- If `status == "error"` → report error and ask user whether to retry or execute manually.
+- If `mode == "local_tools"` → router already ran local MCP tools; answer is final.
+- If `mode == "orchestrator"` → router already delegated to `services/ai-orchestrator`; answer is final.
+
+> Full guide: `docs/00-meta/14-ide-second-brain-prompt.md`
+
 **Apply:** cp .cursorrules.updated .cursorrules && restart VSCode

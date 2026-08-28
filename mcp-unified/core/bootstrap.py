@@ -135,6 +135,14 @@ async def initialize_all_components():
     except Exception as e:
         logger.warning(f"Failed to register Semantic Analysis tools: {e}")
 
+    # 5f2. Register Browser tools (Playwright & agent-browser) via bridge
+    try:
+        from tools.browser.registry_bridge import register_browser_tools
+        n_browser = register_browser_tools(registry)
+        logger.info(f"Registered {n_browser} Browser tools (Playwright/agent-browser)")
+    except Exception as e:
+        logger.warning(f"Failed to register Browser tools: {e}")
+
     # 5g. Register Blackbox tools
     try:
         import integrations.blackbox.tools  # Trigger auto-registration via @register_tool
@@ -143,11 +151,7 @@ async def initialize_all_components():
         logger.warning(f"Failed to register Blackbox tools: {e}")
 
     # 5h. Register Monitoring tools
-    try:
-        import core.monitoring.health_tools  # Trigger auto-registration via @register_tool
-        logger.info("Registered Monitoring tools")
-    except Exception as e:
-        logger.warning(f"Failed to register Monitoring tools: {e}")
+    # Removed non-existent core.monitoring.health_tools as mcp_health_check is auto-discovered
 
     # 5i. Register Default Resources
     try:
@@ -175,6 +179,16 @@ async def initialize_all_components():
     except Exception as e:
         logger.warning(f"Failed to register OCR tools: {e}")
 
+    # 5k2. Register Document AI tools (Optional)
+    try:
+        from services.documentai.tools import register_tools as register_docai_tools
+        register_docai_tools()
+        logger.info("Registered Document AI tools (docai/extract_tables)")
+    except ImportError:
+        logger.warning("Document AI dependencies missing. Skipping Document AI registration.")
+    except Exception as e:
+        logger.warning(f"Failed to register Document AI tools: {e}")
+
     # 5l. Register SQL MCP Tools (native)
     try:
         from services.sql.sql_tools import query_db, list_tables, describe_table, count_rows
@@ -183,6 +197,57 @@ async def initialize_all_components():
         logger.warning("SQL tools dependencies missing. Skipping SQL registration.")
     except Exception as e:
         logger.warning(f"Failed to register SQL MCP tools: {e}")
+
+    # 5m. Register AI Orchestrator bridge (TASK-120)
+    try:
+        from tools.orchestrator_bridge import call_ai_orchestrator_sync
+        registry.register(
+            call_ai_orchestrator_sync,
+            name="call_ai_orchestrator_sync",
+            description_short="Delegasi task IDE ke AI Orchestrator via endpoint sync.",
+            category="orchestrator",
+        )
+        logger.info("Registered AI Orchestrator bridge (call_ai_orchestrator_sync)")
+    except Exception as e:
+        logger.warning(f"Failed to register AI Orchestrator bridge: {e}")
+
+    # 5n. Register IDE Hybrid Router tool (TASK-120)
+    try:
+        from intelligence.ide_router import run_ide_agent
+        registry.register(
+            run_ide_agent,
+            name="run_ide_agent",
+            description_short="Jalankan IDE Hybrid Router (LangGraph) untuk task coding/multi-step.",
+            category="orchestrator",
+        )
+        logger.info("Registered IDE Hybrid Router tool (run_ide_agent)")
+    except Exception as e:
+        logger.warning(f"Failed to register IDE Hybrid Router tool: {e}")
+
+    # 5o. Register Graph Memory & Hybrid GraphRAG tools (TASK-122)
+    try:
+        from memory.graph.tools import register_tools as register_graph_tools
+        register_graph_tools()
+        logger.info("Registered Graph Memory tools (graph_add_triple, graph_extract_and_ingest, graph_get_neighbors, graph_find_relation, graph_hybrid_search)")
+    except Exception as e:
+        logger.warning(f"Failed to register Graph Memory tools: {e}")
+
+    # 5p. Register Code Symbol Indexer tools (TASK-123)
+    try:
+        from memory.symbol_indexer.tools import register_tools as register_symbol_tools
+        register_symbol_tools()
+        logger.info("Registered Symbol Indexer tools (symbol_search, symbol_get_definition, symbol_index_library)")
+    except Exception as e:
+        logger.warning(f"Failed to register Symbol Indexer tools: {e}")
+
+    # 5q. Register OpenHands Antigravity Bridge tools (TASK-124)
+    try:
+        from integrations.openhands.tools import get_openhands_tools
+        for tool_func in get_openhands_tools():
+            registry.register(tool_func)
+        logger.info("Registered OpenHands Antigravity tools (openhands_run_task, openhands_get_artifact, openhands_list_runs)")
+    except Exception as e:
+        logger.warning(f"Failed to register OpenHands Antigravity tools: {e}")
 
     # 6. Discover remote tools
     try:
@@ -197,3 +262,11 @@ async def initialize_all_components():
         logger.info("Local plugins discovery completed")
     except Exception as e:
         logger.error(f"Failed to discover local plugins: {e}")
+
+    # 8. Load skills (auto-registered via @register_skill decorator)
+    try:
+        import skills  # noqa: F401 - triggers skill registration
+        from skills import skill_registry
+        logger.info(f"Loaded {len(skill_registry.list_skills())} skills: {', '.join(skill_registry.list_skills())}")
+    except Exception as e:
+        logger.warning(f"Failed to load skills: {e}")

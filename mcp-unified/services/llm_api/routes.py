@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from sse_starlette.sse import EventSourceResponse
 
-from .models import ChatRequest, ChatResponse, HealthResponse
+from .models import AgentRequest, AgentResponse, ChatRequest, ChatResponse, HealthResponse
 from .dependencies import get_deps, DependencyContainer
 
 router = APIRouter(prefix="/api/v1", tags=["LLM"])
@@ -188,3 +188,24 @@ async def chat_stream_endpoint(request: ChatRequest, deps: DependencyContainer =
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.post("/agent", response_model=AgentResponse)
+async def agent_endpoint(request: AgentRequest):
+    """
+    TASK-120: IDE Hybrid Router entrypoint.
+    Menerima task dari Agentic IDE (Cline/Kimi), mengklasifikasikannya,
+    dan mengeksekusinya via local tools, ai-orchestrator delegation, atau general chat.
+    """
+    try:
+        from intelligence.ide_router import run_ide_agent
+        result = await run_ide_agent(
+            task=request.task,
+            context=request.context or "",
+            user_id=request.user_id,
+            conversation_id=request.conversation_id or "",
+        )
+        return AgentResponse(**result.to_dict())
+    except Exception as e:
+        logger.error(f"IDE agent error: {e}")
+        raise HTTPException(status_code=500, detail=f"IDE agent error: {str(e)}")

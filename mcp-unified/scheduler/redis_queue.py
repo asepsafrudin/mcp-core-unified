@@ -23,19 +23,24 @@ class SchedulerQueue:
     
     Redis Keys:
     - mcp:scheduler:pending -> Sorted Set (score: priority_timestamp, member: job_json)
+    - mcp:scheduler:pending_by_id -> Hash (field: job_id, value: job_json) for O(1) lookups/removals
     - mcp:scheduler:running -> Hash (field: execution_id, value: job_json)
     - mcp:scheduler:locks:{job_type} -> String (value: execution_id, TTL)
-    - mcp:scheduler:heartbeat -> String (value: timestamp)
+    - mcp:scheduler:heartbeat -> String (value: timestamp) with TTL
     - mcp:scheduler:stats -> Hash (various counters)
     """
     
     # Redis key prefixes
     KEY_PENDING = "mcp:scheduler:pending"
+    KEY_PENDING_BY_ID = "mcp:scheduler:pending_by_id"
     KEY_RUNNING = "mcp:scheduler:running"
     KEY_LOCK_PREFIX = "mcp:scheduler:locks:"
     KEY_HEARTBEAT = "mcp:scheduler:heartbeat"
     KEY_STATS = "mcp:scheduler:stats"
     KEY_SCHEDULED = "mcp:scheduler:scheduled"  # For event-based triggers
+    
+    # TTL for heartbeat (seconds). Should be a multiple of the scheduler heartbeat interval.
+    HEARTBEAT_TTL_SECONDS = 120
     
     def __init__(self):
         self._redis: Optional[redis.Redis] = None
@@ -100,10 +105,14 @@ class SchedulerQueue:
                 **extra_data
             }
             
+            job_json = json.dumps(job_data)
             await self._redis.zadd(
                 self.KEY_PENDING,
-                {json.dumps(job_data): score}
+                {job_json: score}
             )
+            
+            # Maintain O(1) index for job removal/lookup by job_id
+            await self._redis.hset(self.KEY_PENDING_BY_ID, job_id, job_json)
             
             logger.info("job_enqueued",
                        job_id=job_id,
@@ -130,6 +139,9 @@ class SchedulerQueue:
             if result:
                 job_json, score = result[0]
                 job_data = json.loads(job_json)
+                
+                # Remove from O(1) index as well (best-effort)
+                await self._redis.hdel(self.KEY_PENDING_BY_ID, job_data["job_id"])
                 
                 logger.info("job_dequeued",
                            job_id=job_data["job_id"],
@@ -159,20 +171,19 @@ class SchedulerQueue:
             return []
     
     async def remove_from_pending(self, job_id: str) -> bool:
-        """Remove specific job dari pending queue."""
+        """Remove specific job dari pending queue in O(1) using the by_id index."""
         try:
-            # Find dan remove by job_id
-            # This is O(N) tapi acceptable untuk small-medium queues
-            jobs = await self._redis.zrange(self.KEY_PENDING, 0, -1)
+            job_json = await self._redis.hget(self.KEY_PENDING_BY_ID, job_id)
+            if not job_json:
+                logger.debug("job_not_found_in_pending_index", job_id=job_id)
+                return False
             
-            for job_json in jobs:
-                job_data = json.loads(job_json)
-                if job_data["job_id"] == job_id:
-                    await self._redis.zrem(self.KEY_PENDING, job_json)
-                    logger.info("job_removed_from_pending", job_id=job_id)
-                    return True
+            # Remove from both sorted set and index in an optimistic manner.
+            await self._redis.zrem(self.KEY_PENDING, job_json)
+            await self._redis.hdel(self.KEY_PENDING_BY_ID, job_id)
             
-            return False
+            logger.info("job_removed_from_pending", job_id=job_id)
+            return True
             
         except Exception as e:
             logger.error("remove_pending_failed", error=str(e), job_id=job_id)
@@ -354,7 +365,7 @@ class SchedulerQueue:
     # ═══════════════════════════════════════════════════════════════════════
     
     async def update_heartbeat(self, node_id: str = "scheduler-main"):
-        """Update scheduler heartbeat."""
+        """Update scheduler heartbeat with TTL so stale heartbeats auto-expire."""
         try:
             heartbeat_data = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -362,7 +373,8 @@ class SchedulerQueue:
             }
             await self._redis.set(
                 self.KEY_HEARTBEAT,
-                json.dumps(heartbeat_data)
+                json.dumps(heartbeat_data),
+                ex=self.HEARTBEAT_TTL_SECONDS
             )
         except Exception as e:
             logger.error("heartbeat_update_failed", error=str(e))
@@ -454,6 +466,7 @@ class SchedulerQueue:
         try:
             keys_to_delete = [
                 self.KEY_PENDING,
+                self.KEY_PENDING_BY_ID,
                 self.KEY_RUNNING,
                 self.KEY_HEARTBEAT,
                 self.KEY_STATS

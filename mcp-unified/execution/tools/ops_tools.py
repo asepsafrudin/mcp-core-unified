@@ -188,3 +188,101 @@ async def system_recovery_check(auto_recover: bool = False) -> Dict[str, Any]:
         "status_report": status_res["stdout"],
         "errors": status_res["stderr"]
     }
+
+@registry.register
+async def port_registry_audit() -> Dict[str, Any]:
+    """
+    Audit active listening ports against the port registry config to find conflicts or unregistered services.
+    """
+    script_path = os.path.join(SCRIPTS_DIR, "port_registry_audit.py")
+    res = await _run_script_async(["python3", script_path])
+    return {
+        "success": res["success"],
+        "report": res["stdout"],
+        "errors": res["stderr"]
+    }
+
+@registry.register
+async def cron_registry_audit() -> Dict[str, Any]:
+    """
+    Audit active system crontab entries against the cron registry config to find conflicts or unregistered jobs.
+    """
+    script_path = os.path.join(SCRIPTS_DIR, "cron_registry_audit.py")
+    res = await _run_script_async(["python3", script_path])
+    return {
+        "success": res["success"],
+        "report": res["stdout"],
+        "errors": res["stderr"]
+    }
+
+
+@registry.register
+async def network_status_report() -> Dict[str, Any]:
+    """
+    Generate a detailed report of WSL network interfaces, Tailscale VPN, Cloudflare tunnels, and listening SSH services.
+    """
+    script_path = os.path.join(SCRIPTS_DIR, "network_manager.py")
+    res = await _run_script_async(["python3", script_path])
+    return {
+        "success": res["success"],
+        "report": res["stdout"],
+        "errors": res["stderr"]
+    }
+
+
+@registry.register
+async def check_ssh_access() -> Dict[str, Any]:
+    """
+    Check if the registered remote SSH port (8022) is active and listening.
+    """
+    script_path = os.path.join(SCRIPTS_DIR, "network_manager.py")
+    res = await _run_script_async(["python3", script_path, "json"])
+    try:
+        import json
+        data = json.loads(res["stdout"])
+        ssh_active = data["ssh_services"]["port_8022_antigravity"]["active"]
+        return {
+            "success": res["success"],
+            "ssh_port_8022_active": ssh_active,
+            "report": f"Port 8022 (Antigravity SSH) is {'ACTIVE (LISTEN)' if ssh_active else 'INACTIVE (DOWN)'}",
+            "details": data["ssh_services"]
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to parse network manager output: {str(e)}",
+            "raw_output": res["stdout"],
+            "errors": res["stderr"]
+        }
+
+
+@registry.register
+async def ssh_connection_manager(action: str, key_string: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Manage SSH daemon connections, active status, systemd overrides, and troubleshoot remote access.
+    
+    Args:
+        action: One of 'status', 'activate-port-8022', 'deactivate-port-8022', 'troubleshoot', 'authorize-key'.
+        key_string: The public key string to authorize (only used with 'authorize-key' action).
+    """
+    script_path = os.path.join(SCRIPTS_DIR, "ssh_connection_manager.py")
+    cmd = ["python3", script_path, action, "--json"]
+    if action == "authorize-key" and key_string:
+        cmd += ["--key", key_string]
+        
+    res = await _run_script_async(cmd)
+    try:
+        import json
+        data = json.loads(res["stdout"])
+        return data
+    except Exception as e:
+        return {
+            "success": res["success"],
+            "error": f"Failed to parse output as JSON: {str(e)}",
+            "raw_output": res["stdout"],
+            "errors": res["stderr"]
+        }
+
+
+
+

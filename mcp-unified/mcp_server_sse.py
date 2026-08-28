@@ -47,6 +47,7 @@ from starlette.responses import JSONResponse, Response
 
 from core.bootstrap import initialize_all_components
 from execution.registry import registry
+from execution.tool_dump import build_input_schema, filter_dumped_tools, get_dump_profile
 from core.gateway import reverse_proxy_gateway
 
 # Configure logging
@@ -191,9 +192,7 @@ async def initialize_components_background():
 
 @mcp_server.list_tools()
 async def handle_list_tools() -> list[Tool]:
-    """List semua tools yang tersedia dari registry."""
-    import inspect
-    
+    """Advertise tools according to MCP_TOOL_DUMP_PROFILE (default: ide-core)."""
     if is_meta_mode.get():
         return [
             Tool(
@@ -232,14 +231,18 @@ async def handle_list_tools() -> list[Tool]:
         
     slim = is_slim_mode.get()
     tools = []
-    
-    # We always ask registry for slim mode if requested, but we map it back to Tool object
-    # which only has name, description, and inputSchema.
-    for tool_info in registry.list_tools(slim=slim):
+    dumped = filter_dumped_tools(registry.list_tools(slim=slim))
+    logger.info(
+        "list_tools dump profile=%s advertised=%s slim=%s",
+        get_dump_profile(),
+        len(dumped),
+        slim,
+    )
+
+    for tool_info in dumped:
         tool_name = tool_info["name"]
         
         if slim:
-            # Di mode ringkas, masukkan description_short dan category ke dalam field description
             desc_short = tool_info.get("description_short", "No description")
             category = tool_info.get("category", "uncategorized")
             tool_desc = f"[{category}] {desc_short}"
@@ -249,31 +252,10 @@ async def handle_list_tools() -> list[Tool]:
         tool_func = registry.get_tool(tool_name)
 
         if tool_func:
-            sig = inspect.signature(tool_func)
-            params = {}
-            required_params = []
-            for param_name, param in sig.parameters.items():
-                if param_name == "self":
-                    continue
-                param_type = "string"
-                if param.annotation != inspect.Parameter.empty:
-                    type_map = {int: "number", bool: "boolean", list: "array", dict: "object"}
-                    param_type = type_map.get(param.annotation, "string")
-                params[param_name] = {
-                    "type": param_type,
-                    "description": param_name.replace("_", " ").title()
-                }
-                if param.default == inspect.Parameter.empty:
-                    required_params.append(param_name)
-
             tools.append(Tool(
                 name=tool_name,
                 description=tool_desc,
-                inputSchema={
-                    "type": "object",
-                    "properties": params,
-                    "required": required_params
-                }
+                inputSchema=build_input_schema(tool_func),
             ))
     return tools
 
@@ -462,11 +444,33 @@ def create_starlette_app() -> Starlette:
         await sse_transport.handle_post_message(request.scope, request.receive, request._send)
         return Response()
 
+    async def handle_agent(request):
+        """TASK-120: IDE Hybrid Router endpoint untuk Agentic IDE."""
+        from starlette.requests import Request
+        from intelligence.ide_router import run_ide_agent
+        try:
+            body = await request.json()
+            task = body.get("task", "")
+            context = body.get("context", "")
+            user_id = body.get("user_id", "ide-agent")
+            conversation_id = body.get("conversation_id", "")
+            result = await run_ide_agent(
+                task=task,
+                context=context,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+            return JSONResponse(result.to_dict())
+        except Exception as e:
+            logger.exception("handle_agent error")
+            return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
     return Starlette(
         routes=[
             Route("/health", health_check, methods=["GET"]),
             Route("/sse", handle_sse),
             Route("/messages/", handle_messages, methods=["POST"]),
+            Route("/api/v1/agent", handle_agent, methods=["POST"]),
             Route("/services/{service_name}/{path:path}", reverse_proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]),
         ],
         middleware=middleware,

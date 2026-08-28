@@ -33,8 +33,51 @@ ALLOWED_CATEGORIES = [
     # Scheduler / Automations
     "scheduler_",
     # LTM (Memory System)
-    "memory_"
+    "memory_",
+    # OpenHands Tools (Remote Discovery)
+    "run_coding_task", "get_task_status", "list_active_agents", "cancel_coding_task"
 ]
+
+# Parameter names that this low-level MCP Server treats as MCP-injected context.
+# These are hidden from the public input schema, so they MUST be auto-injected
+# at execution time or the tool call fails with a missing-argument TypeError.
+_CONTEXT_PARAM_NAMES = frozenset({"self", "ctx", "context"})
+
+
+def _inject_context_params(tool: Callable[..., Any], arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Return `arguments` with safe placeholders injected for MCP-context parameters.
+
+    The low-level MCP Server (mcp_server_sse.py) does NOT auto-inject FastMCP
+    `Context`. Tools that declare `ctx`/`context`/`self` therefore need a
+    placeholder injected here so they can be called without those args being
+    supplied by the client.
+    """
+    resolved = dict(arguments)
+    try:
+        sig = inspect.signature(tool)
+    except (TypeError, ValueError):
+        return resolved
+
+    for param_name, param in sig.parameters.items():
+        if param_name not in _CONTEXT_PARAM_NAMES:
+            continue
+        if param_name in resolved:
+            continue
+        # A lightweight, attribute-tolerant context stand-in.
+        resolved[param_name] = _ContextProxy()
+    return resolved
+
+
+class _ContextProxy:
+    """Minimal stand-in for FastMCP Context injected at execution time.
+
+    Provides permissive attribute access so tools can read ctx.request_id,
+    ctx.read_resource, etc. without a real FastMCP request context.
+    """
+
+    def __getattr__(self, item: str) -> Any:
+        return None
+
 
 class ToolRegistry:
     def __init__(self):
@@ -157,10 +200,16 @@ class ToolRegistry:
                     arguments
                 )
 
+            # [REVIEWER] This low-level Server does NOT auto-inject FastMCP Context.
+            # Inject a safe `ctx`/`context`/`self` placeholder for any tool that
+            # declares one, so ctx-only tools (e.g. whatsapp_get_status(ctx))
+            # resolve correctly instead of raising `missing positional argument`.
+            resolved_arguments = _inject_context_params(tool, arguments)
+
             if inspect.iscoroutinefunction(tool):
-                return await tool(**arguments)
+                return await tool(**resolved_arguments)
             else:
-                return tool(**arguments)
+                return tool(**resolved_arguments)
 
         return await self_healing.execute_with_healing(_run_tool)
 

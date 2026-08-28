@@ -70,3 +70,4 @@ networkx>=3.0
 python-doctr[torch]>=0.8.0
 tf2onnx>=1.15.0
 opencv-python-headless
+opendataloader-pdf
