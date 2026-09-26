@@ -24,11 +24,18 @@ class BrowserUseAdapter:
         if self._llm is not None:
             return self._llm
 
+        if not os.getenv("OPENAI_API_KEY") and not os.getenv("GROQ_API_KEY"):
+            try:
+                from core.secrets import load_runtime_secrets
+                load_runtime_secrets()
+            except Exception:
+                pass
+
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
             try:
-                from langchain_openai import ChatOpenAI
-                self._llm = ChatOpenAI(model="gpt-4o", temperature=0)
+                from browser_use.llm.openai.chat import ChatOpenAI
+                self._llm = ChatOpenAI(model="gpt-4o")
                 logger.info("BrowserUse: OpenAI gpt-4o")
                 return self._llm
             except ImportError:
@@ -37,16 +44,16 @@ class BrowserUseAdapter:
         api_key = os.getenv("GROQ_API_KEY")
         if api_key:
             try:
-                from langchain_groq import ChatGroq
-                self._llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+                from browser_use.llm.groq.chat import ChatGroq
+                self._llm = ChatGroq(model="llama-3.3-70b-versatile")
                 logger.info("BrowserUse: Groq llama-3.3-70b")
                 return self._llm
             except ImportError:
                 pass
 
         try:
-            from langchain_ollama import ChatOllama
-            self._llm = ChatOllama(model="llama3.1", temperature=0)
+            from browser_use.llm.ollama.chat import ChatOllama
+            self._llm = ChatOllama(model="llama3.1")
             logger.info("BrowserUse: Ollama llama3.1")
             return self._llm
         except ImportError:
@@ -176,9 +183,14 @@ class BrowserUseAdapter:
         """Tutup browser session."""
         if self._browser:
             try:
-                await self._browser.close()
+                if hasattr(self._browser, "stop"):
+                    await self._browser.stop()
+                elif hasattr(self._browser, "close"):
+                    await self._browser.close()
+                elif hasattr(self._browser, "reset"):
+                    await self._browser.reset()
             except Exception as e:
-                logger.warning(f"BrowserUse stop error: {e}")
+                logger.debug(f"BrowserUse stop notice: {e}")
             self._browser = None
             self._agent = None
 

@@ -1,9 +1,158 @@
+import json
 import logging
-from typing import Dict, Any, List
+import os
+import time
+import urllib.request
+import urllib.error
+from pathlib import Path
+from typing import Dict, Any, List, Optional
 
 from .base import register_tool
 
 logger = logging.getLogger(__name__)
+
+# ─── Helper: baca OLLAMA_URL dari env / .env.ai ────────────────────────────────
+
+_ENV_AI_FILE = Path(__file__).resolve().parents[2] / "config" / "env" / ".env.ai"
+
+
+def _get_ollama_url() -> str:
+    val = os.environ.get("OLLAMA_URL", "")
+    if val:
+        return val.rstrip("/")
+    if _ENV_AI_FILE.exists():
+        for line in _ENV_AI_FILE.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("OLLAMA_URL="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'").rstrip("/")
+    return "http://localhost:11434"
+
+
+def _is_colab_backend(url: str) -> bool:
+    return "localhost" not in url and "127.0.0.1" not in url
+
+
+# ─── Tools baru: Inference Backend & Colab LLM ────────────────────────────────
+
+@register_tool
+def get_inference_backend() -> Dict[str, Any]:
+    """
+    Mengembalikan informasi backend inferensi LLM yang sedang aktif.
+
+    Returns:
+        dict dengan keys: backend ('colab_ollama'|'local_ollama'|'openai'|'none'),
+        url, recommended_model, available_models, latency_ms.
+    """
+    ollama_url = _get_ollama_url()
+    is_colab   = _is_colab_backend(ollama_url)
+
+    start = time.time()
+    try:
+        req = urllib.request.Request(
+            f"{ollama_url}/api/tags",
+            headers={"User-Agent": "MCP-HybridRouter/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            latency_ms  = round((time.time() - start) * 1000, 1)
+            data        = json.loads(r.read())
+            model_names = [m.get("name") for m in data.get("models", [])]
+            preferred   = next(
+                (m for m in ["qwen2.5-coder:7b", "qwen2.5-coder:14b", "codellama:13b"]
+                 if m in model_names),
+                model_names[0] if model_names else "qwen2.5-coder:7b",
+            )
+            return {
+                "backend":           "colab_ollama" if is_colab else "local_ollama",
+                "url":               ollama_url,
+                "recommended_model": preferred,
+                "available_models":  model_names,
+                "latency_ms":        latency_ms,
+            }
+    except Exception as e:
+        pass
+
+    # Fallback ke OpenAI
+    if os.environ.get("OPENAI_API_KEY"):
+        return {
+            "backend":           "openai",
+            "url":               "https://api.openai.com/v1",
+            "recommended_model": "gpt-4o",
+            "available_models":  ["gpt-4o", "gpt-4o-mini"],
+            "latency_ms":        0,
+        }
+
+    return {
+        "backend": "none", "url": "", "recommended_model": "",
+        "available_models": [], "latency_ms": 0,
+        "error": "Tidak ada backend inferensi yang tersedia",
+    }
+
+
+@register_tool
+def colab_llm_chat(
+    prompt: str,
+    model: str = "qwen2.5-coder:7b",
+    system_prompt: str = "Kamu adalah coding assistant yang membantu.",
+    temperature: float = 0.1,
+    max_tokens: int = 2048,
+) -> Dict[str, Any]:
+    """
+    Mengirim prompt langsung ke Ollama di Colab GPU dan mengembalikan respons.
+
+    Args:
+        prompt:        Pesan/pertanyaan untuk LLM.
+        model:         Model Ollama yang digunakan (default: qwen2.5-coder:7b).
+        system_prompt: System prompt untuk mengatur perilaku LLM.
+        temperature:   Kreativitas respons (0.0 = deterministik, 1.0 = kreatif).
+        max_tokens:    Maksimal token respons.
+
+    Returns:
+        dict dengan keys: ok, response, model, latency_ms, error.
+    """
+    ollama_url = _get_ollama_url()
+    api_url    = f"{ollama_url}/api/chat"
+
+    payload = json.dumps({
+        "model":   model,
+        "stream":  False,
+        "options": {"temperature": temperature, "num_predict": max_tokens},
+        "messages": [
+            {"role": "system",  "content": system_prompt},
+            {"role": "user",    "content": prompt},
+        ],
+    }).encode("utf-8")
+
+    start = time.time()
+    try:
+        req = urllib.request.Request(
+            api_url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent":   "MCP-HybridRouter/1.0",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=120) as r:
+            latency_ms = round((time.time() - start) * 1000, 1)
+            data       = json.loads(r.read())
+            content    = data.get("message", {}).get("content", "")
+            return {
+                "ok":         True,
+                "response":   content,
+                "model":      model,
+                "latency_ms": latency_ms,
+                "backend":    "colab_ollama" if _is_colab_backend(ollama_url) else "local_ollama",
+            }
+    except Exception as e:
+        return {
+            "ok":    False,
+            "error": str(e),
+            "model": model,
+            "latency_ms": round((time.time() - start) * 1000, 1),
+        }
+
+
 
 @register_tool
 def browser_route(

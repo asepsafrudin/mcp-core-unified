@@ -284,5 +284,27 @@ async def ssh_connection_manager(action: str, key_string: Optional[str] = None) 
         }
 
 
-
-
+@registry.register
+async def cloudflare_tunnel_status() -> Dict[str, Any]:
+    """
+    Check the connectivity status of Cloudflare Tunnels (puu.supd2.net, dashtu, colab ollama/serena) and local systemd services.
+    """
+    script_path = os.path.join(SCRIPTS_DIR, "cloudflare_tunnel_monitor.py")
+    res = await _run_script_async(["python3", script_path, "--json"])
+    try:
+        import json
+        data = json.loads(res["stdout"])
+        return {
+            "success": res["success"],
+            "overall_status": data.get("overall_status", "UNKNOWN"),
+            "endpoints": data.get("endpoints", []),
+            "systemd_user_services": data.get("systemd_user_services", {}),
+            "active_processes": data.get("active_processes", []),
+        }
+    except Exception as e:
+        return {
+            "success": res["success"],
+            "error": f"Failed to parse monitor output: {str(e)}",
+            "raw_output": res["stdout"],
+            "errors": res["stderr"]
+        }

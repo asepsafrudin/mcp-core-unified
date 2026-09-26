@@ -1,0 +1,307 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mcp.local/schemas/legal_doc.json",
+  "title": "LegalDocument",
+  "description": "Skema standar dokumen peraturan perundang-undangan Indonesia (UU/PP/Perpres/Permen/Perda/Perkada). Mendukung Taksonomi 7 Pilar DIM v2.0.",
+  "type": "object",
+  "required": ["doc_id", "instrument_type", "level_hierarki", "title", "body", "metadata"],
+  "properties": {
+    "doc_id": {
+      "type": "string",
+      "description": "UUID atau kode unik dokumen (e.g., 'UU-12-2011', 'PERDA-PURBALINGGA-1-2026-ADD')"
+    },
+    "instrument_type": {
+      "type": "string",
+      "description": "Jenis instrumen hukum",
+      "enum": [
+        "UUD_1945", "TAP_MPR", "UU", "PERPU", "PP", "PERPRES", "PERDA_PROVINSI",
+        "PERMEN", "PERKA", "PERDA_KABKOTA", "PERBUP", "PERWALI",
+        "SE", "JUKNIS", "JUKLAK", "PEDOMAN", "SOP", "SKB", "KEPUTUSAN", "INSTRUKSI"
+      ]
+    },
+    "instrument_category": {
+      "type": "string",
+      "description": "Kategori pilar 3: peraturan atau kebijakan non-statutory",
+      "enum": ["STATUTORY", "NON_STATUTORY_BELEIDSREGELS"]
+    },
+    "level_hierarki": {
+      "type": "integer",
+      "description": "Level dalam hierarki UU 12/2011: 1=UUD, 2=TAP MPR, 3=UU/PERPU, 4=PP, 5=PERPRES, 6=PERDA PROVINSI, 7=PERDA KAB/KOTA, 8=Non-Statutory",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "title": {
+      "type": "string",
+      "description": "Judul resmi dokumen peraturan (e.g., 'Undang-Undang Nomor 12 Tahun 2011 tentang Pembentukan Peraturan Perundang-undangan')"
+    },
+    "number": {
+      "type": "string",
+      "description": "Nomor regulasi (e.g., '12')"
+    },
+    "year": {
+      "type": "integer",
+      "description": "Tahun penetapan"
+    },
+    "issuer": {
+      "type": "string",
+      "description": "Lembaga penerbit (e.g., 'DPR RI', 'Presiden RI', 'Bupati Purbalingga')"
+    },
+    "promulgation_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Tanggal pengundangan (YYYY-MM-DD)"
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Tanggal berlaku efektif (YYYY-MM-DD)"
+    },
+    "sunset_date": {
+      "type": ["string", "null"],
+      "format": "date",
+      "description": "Tanggal kadaluarsa / sunset clause (YYYY-MM-DD), null jika tidak ada"
+    },
+    "status": {
+      "type": "string",
+      "description": "Status pemberlakuan saat ini",
+      "enum": ["BERLAKU", "DICABUT", "SEBAGIAN_DICABUT", "DIUBAH", "BELUM_BERLAKU"]
+    },
+    "superseded_by": {
+      "type": ["string", "null"],
+      "description": "doc_id regulasi yang menggantikan (jika status DICABUT/DIUBAH)"
+    },
+    "amends": {
+      "type": ["array"],
+      "description": "Daftar doc_id regulasi yang diubah oleh dokumen ini",
+      "items": {"type": "string"}
+    },
+    "parent_delegation": {
+      "type": ["string", "null"],
+      "description": "doc_id regulasi induk yang mendelegasikan kewenangan pembentukan dokumen ini"
+    },
+    "subject_area": {
+      "type": "array",
+      "description": "Bidang hukum yang diatur (e.g., ['pemerintahan_daerah', 'keuangan_daerah', 'pembangunan_daerah'])",
+      "items": {"type": "string"}
+    },
+    "ministry_domain": {
+      "type": "array",
+      "description": "Kementerian/Lembaga yang memiliki portofolio kewenangan atas substansi ini (Pilar 4)",
+      "items": {"type": "string"}
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Metadata teknis parsing dan evaluasi",
+      "properties": {
+        "parsed_at": {"type": "string", "format": "date-time"},
+        "parser_version": {"type": "string"},
+        "source_format": {"type": "string", "enum": ["PDF_DIGITAL", "PDF_OCR_DOCTR", "PDF_OCR_TESSERACT", "DOCX", "MARKDOWN", "TEXT"]},
+        "source_path": {"type": "string"},
+        "total_bab": {"type": "integer"},
+        "total_pasal": {"type": "integer"},
+        "total_ayat": {"type": "integer"},
+        "has_ketentuan_umum": {"type": "boolean"},
+        "has_ketentuan_peralihan": {"type": "boolean"},
+        "has_ketentuan_penutup": {"type": "boolean"},
+        "evaluation_6d_status": {
+          "type": "string",
+          "enum": ["PENDING", "EVALUATED", "FLAGGED_RED", "CLEARED"]
+        },
+        "dim_disposition_status": {
+          "type": "string",
+          "description": "Status Disposisi Pilar 6",
+          "enum": ["APPROVED", "PARKING_LOT", "ENCLAVE", "ALTERNATIVE_VEHICLE", "OUT_OF_SCOPE", "FUTURE_AGENDA", "PENDING_REVIEW"]
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "description": "Struktur hierarki lengkap isi dokumen",
+      "required": ["preamble", "chapters"],
+      "properties": {
+        "preamble": {
+          "type": "object",
+          "description": "Bagian pembukaan (konsiderans, dasar hukum, memutuskan)",
+          "properties": {
+            "menimbang": {"type": "array", "items": {"type": "string"}},
+            "mengingat": {
+              "type": "array",
+              "description": "Daftar dasar hukum yang dirujuk",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "doc_ref": {"type": "string"},
+                  "text": {"type": "string"}
+                }
+              }
+            },
+            "memperhatikan": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "chapters": {
+          "type": "array",
+          "description": "Daftar Bab/Bagian/Paragraf",
+          "items": {"$ref": "#/definitions/Chapter"}
+        },
+        "attachments": {
+          "type": "array",
+          "description": "Lampiran-lampiran",
+          "items": {
+            "type": "object",
+            "properties": {
+              "attachment_id": {"type": "string"},
+              "title": {"type": "string"},
+              "content": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "cross_references": {
+      "type": "array",
+      "description": "DAG rujukan silang antar-pasal (dihasilkan oleh CrossReferenceGraph)",
+      "items": {"$ref": "#/definitions/CrossReference"}
+    },
+    "dim_matrix": {
+      "type": "array",
+      "description": "Tabel DIM per pasal (Pilar 6: Disposisi Kebijakan)",
+      "items": {"$ref": "#/definitions/DIMEntry"}
+    }
+  },
+  "definitions": {
+    "Chapter": {
+      "type": "object",
+      "description": "Bab dalam dokumen regulasi",
+      "properties": {
+        "chapter_id": {"type": "string", "description": "e.g., 'BAB_I'"},
+        "roman_number": {"type": "string", "description": "e.g., 'I', 'II', 'III'"},
+        "title": {"type": "string", "description": "e.g., 'KETENTUAN UMUM'"},
+        "chapter_type": {
+          "type": "string",
+          "enum": ["KETENTUAN_UMUM", "SUBSTANSI", "KEWENANGAN", "HAK_KEWAJIBAN", "PENDANAAN", "KETENTUAN_PERALIHAN", "KETENTUAN_PENUTUP", "LAIN"]
+        },
+        "sections": {
+          "type": "array",
+          "description": "Bagian dalam bab (opsional)",
+          "items": {"$ref": "#/definitions/Section"}
+        },
+        "articles": {
+          "type": "array",
+          "description": "Pasal-pasal yang langsung berada di bab ini (tanpa bagian)",
+          "items": {"$ref": "#/definitions/Article"}
+        }
+      }
+    },
+    "Section": {
+      "type": "object",
+      "description": "Bagian (sub-bab) dan Paragraf",
+      "properties": {
+        "section_id": {"type": "string", "description": "e.g., 'BAGIAN_1', 'PARAGRAF_2'"},
+        "title": {"type": "string"},
+        "section_type": {"type": "string", "enum": ["BAGIAN", "PARAGRAF"]},
+        "articles": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/Article"}
+        }
+      }
+    },
+    "Article": {
+      "type": "object",
+      "description": "Pasal sebagai unit norma fundamental",
+      "required": ["article_id", "number", "raw_text"],
+      "properties": {
+        "article_id": {"type": "string", "description": "e.g., 'PASAL_7'"},
+        "number": {"type": "integer", "description": "Nomor pasal dalam angka"},
+        "number_label": {"type": "string", "description": "e.g., 'Pasal 7'"},
+        "raw_text": {"type": "string", "description": "Teks mentah lengkap pasal"},
+        "clauses": {
+          "type": "array",
+          "description": "Daftar ayat dalam pasal",
+          "items": {"$ref": "#/definitions/Clause"}
+        },
+        "norm_type": {
+          "type": "string",
+          "description": "Jenis norma yang dikandung (Pilar 1)",
+          "enum": ["DEFINISI", "ASAS", "TUJUAN", "KEWENANGAN", "HAK", "KEWAJIBAN", "LARANGAN", "SANKSI", "PERALIHAN", "PENUTUP", "LAIN"]
+        },
+        "dim_action": {
+          "type": "string",
+          "description": "Aksi DIM (Pilar 1 & 2)",
+          "enum": ["AS_IS", "UBAH_SEBAGIAN", "HAPUS", "SUBSTITUSI", "NORMA_BARU", "PECAH", "GABUNG", "RELOKASI", "REDAKSIONAL"]
+        },
+        "dim_disposition": {
+          "type": "string",
+          "description": "Disposisi kebijakan DIM (Pilar 6)",
+          "enum": ["APPROVED", "PARKING_LOT", "ENCLAVE", "ALTERNATIVE_VEHICLE", "OUT_OF_SCOPE", "FUTURE_AGENDA"]
+        },
+        "dim_justification": {"type": "string", "description": "Argumentasi yuridis disposisi"},
+        "references_to": {
+          "type": "array",
+          "description": "Pasal-pasal yang dirujuk oleh pasal ini",
+          "items": {"type": "string"}
+        },
+        "referenced_by": {
+          "type": "array",
+          "description": "Pasal-pasal yang merujuk ke pasal ini (diisi oleh CrossReferenceGraph)",
+          "items": {"type": "string"}
+        },
+        "blast_radius": {
+          "type": "string",
+          "description": "Dampak amandemen pasal ini terhadap pasal lain",
+          "enum": ["HIGH", "MEDIUM", "LOW", "NONE"]
+        }
+      }
+    },
+    "Clause": {
+      "type": "object",
+      "description": "Ayat dalam pasal",
+      "required": ["clause_id", "number"],
+      "properties": {
+        "clause_id": {"type": "string", "description": "e.g., 'PASAL_7_AYAT_2'"},
+        "number": {"type": "string", "description": "e.g., '(1)', '(2)'"},
+        "raw_text": {"type": "string"},
+        "sub_items": {
+          "type": "array",
+          "description": "Butir huruf (a, b, c...) atau angka (1°, 2°...) dalam ayat",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item_id": {"type": "string"},
+              "marker": {"type": "string", "description": "e.g., 'a', 'b', '1', '2'"},
+              "text": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "CrossReference": {
+      "type": "object",
+      "description": "Relasi rujukan silang antar-pasal",
+      "properties": {
+        "source_article": {"type": "string", "description": "Pasal yang merujuk"},
+        "target_article": {"type": "string", "description": "Pasal yang dirujuk"},
+        "ref_type": {
+          "type": "string",
+          "enum": ["NORMATIVE_SUBORDINATION", "DELEGATION", "EXCEPTION", "DEFINITION_USE", "GENERAL_REFERENCE"]
+        },
+        "context_snippet": {"type": "string"}
+      }
+    },
+    "DIMEntry": {
+      "type": "object",
+      "description": "Entri tabel DIM (Daftar Inventarisasi Masalah) per pasal",
+      "properties": {
+        "article_id": {"type": "string"},
+        "article_label": {"type": "string"},
+        "dim_action": {"type": "string"},
+        "disposition": {"type": "string"},
+        "issue_summary": {"type": "string"},
+        "legal_basis": {"type": "string"},
+        "justification": {"type": "string"},
+        "proposed_text": {"type": "string"},
+        "reviewer": {"type": "string"},
+        "review_date": {"type": "string", "format": "date"}
+      }
+    }
+  }
+}

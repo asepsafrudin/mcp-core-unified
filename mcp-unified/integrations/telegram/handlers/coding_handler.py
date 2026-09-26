@@ -193,9 +193,23 @@ class CodingTaskHandler(BaseHandler):
         task_description: str,
         requested_by: str = "telegram_bot",
     ) -> Optional[str]:
-        """Submit coding task ke OpenHands via MCP tools."""
+        """Submit coding task ke MAF Engine (dengan legacy fallback)."""
+        # 1. Primary: MAF Safe Code Agent
         try:
-            # Coba via registry dulu (jika tersedia)
+            from core.agent_framework.code_agent import MAFCodeAgent
+            code_agent = MAFCodeAgent()
+            task_id = code_agent.submit_task(
+                prompt=task_description,
+                title=f"Telegram Task from {requested_by}",
+            )
+            if task_id:
+                logger.info(f"Coding task submitted to MAF Engine: {task_id}")
+                return task_id
+        except Exception as e:
+            logger.warning(f"MAF Code Agent submit failed, attempting fallback: {e}")
+
+        # 2. Fallback via execution registry jika tersedia
+        try:
             from execution.registry import registry
             
             result = await registry.execute("run_coding_task", {
@@ -287,7 +301,23 @@ class CodingTaskHandler(BaseHandler):
                 pass
     
     async def _get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get task status via MCP tool."""
+        """Get task status via MAF Code Agent (with legacy fallback)."""
+        # 1. Try MAF Code Agent first
+        try:
+            from core.agent_framework.code_agent import MAFCodeAgent
+            code_agent = MAFCodeAgent()
+            status = code_agent.get_task_status(task_id)
+            if status:
+                st = status.get("status", "unknown")
+                return {
+                    "status": "success" if st == "COMPLETED" else ("failed" if st == "FAILED" else st.lower()),
+                    "summary": status.get("result", "") or status.get("error", "") or "In progress...",
+                    "completed_at": f"{status.get('duration', 0):.1f}s" if status.get("duration") else None,
+                }
+        except Exception:
+            pass
+
+        # 2. Fallback via execution registry
         try:
             from execution.registry import registry
             

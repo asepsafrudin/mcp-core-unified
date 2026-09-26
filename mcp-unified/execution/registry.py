@@ -35,7 +35,9 @@ ALLOWED_CATEGORIES = [
     # LTM (Memory System)
     "memory_",
     # OpenHands Tools (Remote Discovery)
-    "run_coding_task", "get_task_status", "list_active_agents", "cancel_coding_task"
+    "run_coding_task", "get_task_status", "list_active_agents", "cancel_coding_task",
+    # Autonomous Coder & Output Engine (TASK-134)
+    "code_agent_", "report_agent_", "script_pipeline_"
 ]
 
 # Parameter names that this low-level MCP Server treats as MCP-injected context.

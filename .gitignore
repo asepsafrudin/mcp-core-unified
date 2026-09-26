@@ -47,3 +47,10 @@ htmlcov/
 .env
 .env.local
 .env.*.local
+
+# Storage & Local Symlinks
+storage/
+mcp_unified
+agent_framework
+*.sqlite
+*.db

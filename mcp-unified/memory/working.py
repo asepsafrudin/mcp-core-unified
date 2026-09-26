@@ -77,8 +77,19 @@ class RedisManager:
             logger.error("redis_delete_failed", key=key, namespace=self.namespace, error=str(e))
 
     async def close(self):
+        """Close redis connection pool and reset client."""
         if self.client:
-            await self.client.close()
+            try:
+                await self.client.aclose()
+            except AttributeError:
+                await self.client.close()
+            finally:
+                self.client = None
+
+    async def disconnect(self):
+        """Alias for close() to maintain lifecycle consistency."""
+        await self.close()
+
 
     async def list_keys(self) -> list:
         """List all keys in this namespace. For debugging only."""

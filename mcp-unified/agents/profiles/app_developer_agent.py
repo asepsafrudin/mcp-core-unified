@@ -147,10 +147,10 @@ class AppDeveloperAgent(BaseAgent):
         Execute app development task.
         
         Workflow:
-        1. Analisis task dan buat plan
-        2. Delegate implementation ke OpenHands
-        3. Monitor progress
-        4. Return hasil
+        1. Analisis task dan buat plan (intelligence.planner)
+        2. Jika mode local / force_local, jalankan local scaffolding engine
+        3. Jika tidak, submit ke OpenHands; jika gagal, graceful fallback ke local scaffolding
+        4. Simpan plan experience ke LTM
         """
         task_type = task.type.lower()
         payload = task.payload
@@ -159,6 +159,7 @@ class AppDeveloperAgent(BaseAgent):
         task_description = self._extract_task_description(payload)
         expected_output = payload.get("expected_output", "Working application dengan struktur lengkap")
         context = payload.get("context", "")
+        force_local = payload.get("local", False) or payload.get("force_local", False) or "local" in task_type
         
         try:
             # Step 1: Analisis task dan buat plan (Local Reasoning/Planning)
@@ -169,6 +170,10 @@ class AppDeveloperAgent(BaseAgent):
             
             # Formatting plan untuk context
             plan_str = "\n".join([f"- Step {s['step']}: {s['description']}" for s in generated_plan])
+
+            # If user explicitly requested local scaffolding:
+            if force_local:
+                return await self._handle_local_scaffold(task_description, payload, generated_plan, task.id)
             
             # Step 2: Submit ke OpenHands dengan context plan
             from execution.registry import registry
@@ -179,23 +184,24 @@ class AppDeveloperAgent(BaseAgent):
                 f"Task Type: {task_type}"
             )
             
-            result = await registry.execute("run_coding_task", {
-                "task_description": task_description,
-                "expected_output": expected_output,
-                "context": enhanced_context,
-                "requested_by": f"app_developer_agent:{task.id}",
-                "priority": payload.get("priority", "medium"),
-                "timeout_minutes": payload.get("timeout_minutes", 60),
-            })
-            
-            task_id = result.get("task_id")
-            
+            task_id = None
+            try:
+                result = await registry.execute("run_coding_task", {
+                    "task_description": task_description,
+                    "expected_output": expected_output,
+                    "context": enhanced_context,
+                    "requested_by": f"app_developer_agent:{task.id}",
+                    "priority": payload.get("priority", "medium"),
+                    "timeout_minutes": payload.get("timeout_minutes", 60),
+                })
+                task_id = result.get("task_id") if isinstance(result, dict) else None
+            except Exception as e:
+                logger.warning(f"[AppDeveloperAgent] OpenHands submission failed: {e}. Falling back to local scaffold.")
+
+            # If submission failed, fallback to local scaffolding engine
             if not task_id:
-                return TaskResult.failure_result(
-                    task_id=task.id,
-                    error="Gagal submit task ke OpenHands",
-                    error_code="SUBMISSION_FAILED",
-                )
+                logger.info("[AppDeveloperAgent] Falling back to local scaffold engine.")
+                return await self._handle_local_scaffold(task_description, payload, generated_plan, task.id, fallback_reason="OpenHands submission unavailable")
             
             # Step 3: Polling sampai selesai (dengan timeout)
             timeout_minutes = payload.get("timeout_minutes", 60)
@@ -263,6 +269,174 @@ class AppDeveloperAgent(BaseAgent):
                 error_code="APP_DEVELOPER_ERROR",
             )
     
+    async def _handle_local_scaffold(
+        self,
+        task_description: str,
+        payload: dict,
+        plan: list,
+        task_id: str,
+        fallback_reason: str = None
+    ) -> TaskResult:
+        """
+        Local scaffolding engine: Generate app structure and boilerplate files directly.
+        """
+        from pathlib import Path
+        from intelligence.planner import save_plan_experience
+        import re
+
+        # Determine app name
+        app_name = payload.get("app_name") or payload.get("project_name")
+        if not app_name:
+            match = re.search(r'(?:aplikasi|proyek|project|app)\s+([a-zA-Z0-9_\-]+)', task_description, re.IGNORECASE)
+            app_name = match.group(1).lower() if match else "my_app"
+        app_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', app_name)
+
+        # Target directory
+        base_dir = Path(payload.get("target_dir") or f"/home/aseps/MCP/workspace/{app_name}")
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        desc_lower = task_description.lower()
+        created_files = []
+
+        # Detect stack
+        is_fastapi = "fastapi" in desc_lower or "api" in desc_lower or "python" in desc_lower
+        is_express = "express" in desc_lower or "node" in desc_lower or "javascript" in desc_lower
+        is_nextjs = "next" in desc_lower or "react" in desc_lower or "frontend" in desc_lower
+
+        if is_fastapi:
+            # FastAPI Scaffold
+            app_dir = base_dir / "app"
+            app_dir.mkdir(exist_ok=True)
+            (app_dir / "routers").mkdir(exist_ok=True)
+            (app_dir / "models").mkdir(exist_ok=True)
+
+            # main.py
+            main_content = (
+                '"""\n'
+                f'{app_name} — FastAPI Application\n'
+                '"""\n\n'
+                'from fastapi import FastAPI\n'
+                'from fastapi.middleware.cors import CORSMiddleware\n\n'
+                f'app = FastAPI(title="{app_name}", version="1.0.0")\n\n'
+                'app.add_middleware(\n'
+                '    CORSMiddleware,\n'
+                '    allow_origins=["*"],\n'
+                '    allow_credentials=True,\n'
+                '    allow_methods=["*"],\n'
+                '    allow_headers=["*"],\n'
+                ')\n\n'
+                '@app.get("/health")\n'
+                'async def health_check():\n'
+                '    return {"status": "ok", "app": "' + app_name + '"}\n\n'
+                '@app.get("/")\n'
+                'async def root():\n'
+                '    return {"message": "Welcome to ' + app_name + '"}\n'
+            )
+            (app_dir / "main.py").write_text(main_content)
+            created_files.append(str(app_dir / "main.py"))
+
+            # requirements.txt
+            reqs = "fastapi>=0.100.0\nuvicorn[standard]>=0.23.0\npydantic>=2.0.0\npython-dotenv>=1.0.0\n"
+            (base_dir / "requirements.txt").write_text(reqs)
+            created_files.append(str(base_dir / "requirements.txt"))
+
+        elif is_express:
+            # Express.js Scaffold
+            src_dir = base_dir / "src"
+            src_dir.mkdir(exist_ok=True)
+            (src_dir / "routes").mkdir(exist_ok=True)
+
+            # index.js
+            index_content = (
+                'const express = require("express");\n'
+                'const cors = require("cors");\n'
+                'const app = express();\n'
+                'const PORT = process.env.PORT || 3000;\n\n'
+                'app.use(cors());\n'
+                'app.use(express.json());\n\n'
+                'app.get("/health", (req, res) => res.json({ status: "ok" }));\n'
+                'app.get("/", (req, res) => res.json({ message: "Welcome to ' + app_name + '" }));\n\n'
+                'app.listen(PORT, () => console.log(`Server running on port ${PORT}`));\n'
+            )
+            (src_dir / "index.js").write_text(index_content)
+            created_files.append(str(src_dir / "index.js"))
+
+            # package.json
+            pkg = (
+                '{\n'
+                f'  "name": "{app_name}",\n'
+                '  "version": "1.0.0",\n'
+                '  "main": "src/index.js",\n'
+                '  "scripts": { "start": "node src/index.js", "dev": "nodemon src/index.js" },\n'
+                '  "dependencies": { "express": "^4.18.2", "cors": "^2.8.5" }\n'
+                '}\n'
+            )
+            (base_dir / "package.json").write_text(pkg)
+            created_files.append(str(base_dir / "package.json"))
+
+        else:
+            # Vanilla HTML/JS Scaffold
+            html_content = (
+                '<!DOCTYPE html>\n'
+                '<html lang="id">\n'
+                '<head>\n'
+                '  <meta charset="UTF-8">\n'
+                '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+                f'  <title>{app_name}</title>\n'
+                '  <style>body { font-family: sans-serif; margin: 2rem; background: #f9fafb; color: #111827; }</style>\n'
+                '</head>\n'
+                '<body>\n'
+                f'  <h1>{app_name}</h1>\n'
+                f'  <p>{task_description}</p>\n'
+                '</body>\n'
+                '</html>\n'
+            )
+            (base_dir / "index.html").write_text(html_content)
+            created_files.append(str(base_dir / "index.html"))
+
+        # Common README & .env.example
+        readme_content = (
+            f'# {app_name}\n\n'
+            f'> Generated by AppDeveloperAgent (Local Scaffold Engine)\n\n'
+            f'**Task Description:** {task_description}\n\n'
+            '## Execution Plan\n'
+            + '\n'.join([f"- Step {s.get('step', i+1)}: {s.get('description', '')}" for i, s in enumerate(plan)]) + '\n\n'
+            '## Getting Started\n'
+            '1. Review generated boilerplate\n'
+            '2. Install dependencies\n'
+            '3. Run application\n'
+        )
+        (base_dir / "README.md").write_text(readme_content)
+        created_files.append(str(base_dir / "README.md"))
+
+        (base_dir / ".env.example").write_text(f"# {app_name} Environment Variables\nPORT=8000\nENV=development\n")
+        created_files.append(str(base_dir / ".env.example"))
+
+        # Save experience into LTM
+        try:
+            await save_plan_experience(
+                request=task_description,
+                plan=plan,
+                namespace="app_development"
+            )
+        except Exception:
+            pass
+
+        return TaskResult.success_result(
+            task_id=task_id,
+            data={
+                "status": "success",
+                "engine": "local_scaffold_fallback",
+                "app_name": app_name,
+                "target_directory": str(base_dir),
+                "files_created": created_files,
+                "summary": f"Scaffolded {len(created_files)} files in {base_dir}",
+                "plan": plan,
+                "fallback_reason": fallback_reason,
+            },
+            context={"agent": self.name, "action": "local_scaffold"}
+        )
+
     def _extract_task_description(self, payload: dict) -> str:
         """Extract task description dari payload."""
         # Coba berbagai kemungkinan field

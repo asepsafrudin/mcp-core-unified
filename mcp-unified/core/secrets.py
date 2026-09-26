@@ -30,6 +30,13 @@ MCP_UNIFIED_ROOT = Path(__file__).resolve().parents[1]
 def get_default_secret_files() -> list[Path]:
     """Return secret files in load order without duplicates."""
     candidates = [
+        PROJECT_ROOT / "config" / "env" / ".env.core",
+        PROJECT_ROOT / "config" / "env" / ".env.ai",
+        PROJECT_ROOT / "config" / "env" / ".env.workspace",
+        PROJECT_ROOT / "config" / "env" / ".env.cloud",
+        PROJECT_ROOT / "config" / "env" / ".env.messaging",
+        PROJECT_ROOT / "config" / "env" / ".env.integrations",
+        PROJECT_ROOT / "config" / "env" / ".env.openhands",
         os.getenv("MCP_SECRETS_FILE"),
         PROJECT_ROOT / ".env",
         MCP_UNIFIED_ROOT / ".env",
