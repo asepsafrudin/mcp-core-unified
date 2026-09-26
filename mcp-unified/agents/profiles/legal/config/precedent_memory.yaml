@@ -1,0 +1,412 @@
+# precedent_memory.yaml
+# Structured case memory — untuk analogical reasoning, bukan RAG teks penuh.
+# Field faktor_kunci & distinguishing_note WAJIB diisi agar bisa dipakai matching,
+# bukan hanya kemiripan topik.
+
+precedent_memory:
+
+  - case_id: apemindo_v_uu_minerba_2014
+    nama_kasus: "Apemindo v. Pasal 102 & 103 UU No.4/2009 tentang Minerba"
+    forum: "Mahkamah Konstitusi"
+    tahun: 2014
+    isu: "cakupan_delegasi_larangan_ekspor_bijih_mineral_mentah"
+    dalil_pemohon: >
+      Regulasi turunan (PP 23/2010, Permen ESDM 7/2012 & 20/2013, PP 1/2014,
+      Permen ESDM 1/2014) melampaui bunyi UU induk karena larangan ekspor
+      tidak dinyatakan tegas di level UU.
+    hasil: ditolak
+    ratio_decidendi: >
+      Pasal 102-103 UU Minerba memuat perintah substantif eksplisit —
+      pemegang IUP "wajib" meningkatkan nilai tambah dan wajib mengolah/
+      memurnikan di dalam negeri. Regulasi turunan dinilai sebagai
+      penjabaran teknis yang sah dari perintah yang sudah tegas ada di UU,
+      bukan penciptaan norma baru.
+    faktor_kunci:
+      UU_induk_memuat_perintah_substantif_eksplisit: true
+      regulasi_turunan_hanya_menjabarkan_teknis: true
+      delegasi_bersifat_umum_tanpa_perintah_spesifik: false
+    relevan_untuk_dimension: konstitusional
+    distinguishing_note: >
+      Beda dengan kasus di mana UU induk hanya memberi kewenangan umum
+      (mis. "berwenang menetapkan kebijakan dan pengendalian X") tanpa
+      perintah substantif spesifik yang mencakup mekanisme yang dibentuk
+      regulasi turunan. Pada kasus delegasi umum seperti itu, argumen
+      ultra vires yang sama (seperti dalil Apemindo) justru berpotensi
+      lebih kuat karena regulasi turunan tidak punya jangkar tekstual
+      setegas Pasal 102-103 UU Minerba.
+    contoh_kasus_beda_pola: "uji_materi_PP_24_2026 (lihat working memory / area analisis-produk-hukum)"
+
+  - case_id: mk_137_2015_dan_56_2016_kewenangan_pembatalan_perda
+    nama_kasus: "Putusan MK No. 137/PUU-XIII/2015 & 56/PUU-XIV/2016"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: "2015-2016"
+    isu: "kewenangan_lembaga_menguji_dan_membatalkan_perda"
+    dalil_pemohon: >
+      Kewenangan Menteri Dalam Negeri/Gubernur membatalkan Perda lewat
+      mekanisme executive review (Pasal 251 UU 23/2014 Pemda) bertentangan
+      dengan UUD 1945.
+    hasil: dikabulkan
+    ratio_decidendi: >
+      Pasal 24A ayat (1) UUD 1945 secara tegas memberi kewenangan menguji
+      peraturan perundang-undangan di bawah UU kepada Mahkamah Agung
+      (judicial review) — bukan kepada Menteri/Gubernur (executive review).
+      Kewenangan pembatalan Perda oleh Mendagri/Gubernur dinyatakan
+      inkonstitusional; kewenangan pindah sepenuhnya ke MA.
+    faktor_kunci:
+      kewenangan_diberikan_UUD_secara_eksplisit_ke_lembaga_tertentu: true
+      lembaga_lain_mengambil_alih_fungsi_tanpa_dasar_konstitusional: true
+    relevan_untuk_dimension: konstitusional
+    relevan_untuk_dimension_sekunder: institusional_evaluatif
+    distinguishing_note: >
+      Beda dari kasus Apemindo (soal cakupan MATERI delegasi UU ke PP/Permen).
+      Kasus ini soal kewenangan LEMBAGA — siapa yang berhak menguji, bukan
+      soal apakah isi regulasi turunan melampaui delegasi.
+    implikasi_praktis_untuk_agent: >
+      Jika kasus yang dianalisis menyoal SIAPA yang berwenang menguji/membatalkan
+      suatu Perda/Perbup, agent harus arahkan ke MA (bukan Mendagri/Gubernur)
+      sebagai forum yang konstitusional sejak putusan ini.
+
+  - case_id: ombudsman_keterlambatan_perbup_pembagian_dana_desa
+    nama_kasus: "Temuan Ombudsman RI — Potensi Maladministrasi Pengelolaan Dana Desa"
+    forum: "Ombudsman Republik Indonesia"
+    jenis_sumber: temuan_kelembagaan_bukan_putusan_pengadilan
+    isu: "keterlambatan_regulasi_teknis_menghambat_penyaluran_dana_desa"
+    temuan_inti: >
+      Penundaan berlarut penyaluran dana desa tahap I di banyak daerah
+      disebabkan keterlambatan Bupati/Walikota menerbitkan Peraturan Bupati/
+      Walikota tentang pembagian dana desa — bukan karena cacat pada UU/PP
+      induknya (UU Desa, PP 60/2014), melainkan kegagalan pada level
+      regulasi teknis turunan (Perbup) dan pelaksanaan administratifnya.
+    faktor_kunci:
+      norma_di_level_UU_PP_sudah_jelas_dan_tidak_bermasalah: true
+      kegagalan_terjadi_di_level_pelaksanaan_teknis_daerah: true
+      faktor_penyebab_kelembagaan_bukan_normatif: true
+    relevan_untuk_dimension: sosiologis
+    relevan_untuk_dimension_sekunder: institusional_evaluatif
+    distinguishing_note: >
+      Contoh regulasi yang secara normatif BENAR (lulus uji formil & materiil)
+      tapi berpotensi GAGAL secara sosiologis jika Perbup terlambat terbit atau
+      siklus administratifnya tidak dijalankan tepat waktu. PENTING: precedent
+      ini soal KETERLAMBATAN PENERBITAN Perbup — bukan soal ketatnya siklus
+      verifikasi bulanan pada Perbup yang SUDAH terbit tepat waktu. Jangan
+      dipaksakan cocok kalau Perbup yang diuji terbit tepat waktu (mis. awal
+      tahun anggaran) — pada kasus begitu, precedent ini TIDAK relevan
+      meski dimensi sosiologis sama-sama LEMAH karena sebab lain.
+    relevansi_domain: >
+      Relevan untuk SIP-DADES-BAKEUDA jika suatu saat menguji Perbup yang
+      terbit terlambat dari jadwal tahun anggaran — bukan pola umum untuk
+      semua Perbup dana desa.
+
+  - case_id: ombudsman_lemahnya_pengawasan_bpd_terhadap_apbdes
+    nama_kasus: "Temuan Ombudsman RI — Lemahnya Fungsi Pengawasan BPD atas APBDes"
+    forum: "Ombudsman Republik Indonesia"
+    jenis_sumber: temuan_kelembagaan_bukan_putusan_pengadilan
+    isu: "kesenjangan_antara_norma_pengawasan_dan_praktik_pengawasan_riil"
+    temuan_inti: >
+      Meski kewajiban BPD mengawasi pelaksanaan APBDes sudah diatur jelas,
+      praktiknya pengawasan tidak berjalan optimal — salah satu sebab:
+      kapasitas SDM BPD yang tidak merata dan volume dana yang dikelola
+      tidak sebanding dengan kapasitas pengawasan di level desa.
+    faktor_kunci:
+      norma_pengawasan_sudah_eksplisit_dan_jelas: true
+      kegagalan_di_faktor_kapasitas_SDM_pelaksana: true
+      kegagalan_di_faktor_sarana_pendukung_pengawasan: true
+    relevan_untuk_dimension: sosiologis
+    distinguishing_note: >
+      Berbeda titik gagal dari entri Perbup di atas: bukan di level regulasi
+      teknis kabupaten, tapi di level kapasitas lembaga desa (BPD) sendiri.
+      Untuk Perbup ADD No.1/2026: relevan diperiksa apakah struktur
+      Pembinaan-Pengawasan (Bab VIII) melibatkan BPD secara independen atau
+      hanya Tim Pembina Kecamatan/Fasilitasi Kabupaten — jika BPD absen dari
+      struktur pengawasan formal, precedent ini COCOK; jika BPD terlibat
+      eksplisit, precedent ini TIDAK cocok dipaksakan.
+    relevansi_domain: >
+      Relevan untuk fitur RBAC/pengawasan di SIP-DADES-BAKEUDA — sistem yang
+      memberi BPD akses transparansi APBDes secara digital berpotensi
+      langsung menjawab faktor kegagalan ini.
+
+  - case_id: mk_128_puu_xiii_2015_dan_transfer_fiskal_desa
+    nama_kasus: "Putusan Mahkamah Konstitusi No. 128/PUU-XIII/2015 & Transfer Fiskal Desa"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2015
+    isu: "hak_konstitusional_pendapatan_desa_dan_syarat_penyaluran_dana_perimbangan"
+    ratio_decidendi: >
+      Dana Desa dan Bagi Hasil Pajak/Retribusi Daerah (BHPR) merupakan hak
+      keuangan desa yang dijamin undang-undang (Pasal 72 UU Desa & UU HKPD)
+      untuk mendanai kewenangan otonom desa. Pengaturan teknis oleh Pemerintah
+      Daerah (seperti insentif pungutan PBB-P2 dan kewajiban administrasi)
+      adalah sah sebagai diskresi operasional, namun sanksi penundaan atau
+      pemotongan transfer bagi hasil tidak boleh diberlakukan secara eksesif
+      yang mengakibatkan terhentinya pelayanan dasar masyarakat desa.
+    faktor_kunci:
+      norma_transfer_fiskal_desa_memiliki_mandat_UU: true
+      diskresi_daerah_mengatur_insentif_fiskal_adalah_sah: true
+      sanksi_penundaan_transfer_harus_proporsional: true
+    relevan_untuk_dimension: institusional_evaluatif
+    relevan_untuk_dimension_sekunder: sosiologis
+    distinguishing_note: >
+      Relevan untuk pengujian instrumen fiskal bagi hasil pajak & retribusi (BHPR)
+      seperti Perbup No. 5/2026. Menilai apakah klausul kewajiban alokasi 20%
+      anggaran intensifikasi pajak dan sanksi penundaan penyaluran BHPR (Pasal 7 ayat 4-5)
+      memiliki keseimbangan proporsional antara hak transfer desa vs kewajiban
+      pemungutan pajak daerah.
+    relevansi_domain: >
+      Relevan untuk sistem pengelolaan pajak daerah & modul bagi hasil di SIP-DADES-BAKEUDA.
+
+  - case_id: mk_171_puu_xxiv_2026_transfer_ke_daerah_hkpd
+    nama_kasus: "Perkara MK No. 171/PUU-XXIV/2026 — Uji Materiil Transfer ke Daerah UU No. 1/2022 (HKPD)"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2026
+    isu: "batasan_otonomi_fiskal_daerah_dan_formula_alokasi_tkd"
+    norma_diuji: "Pasal 107 ayat (2), ayat (4), Pasal 109, dan Pasal 146 UU No. 1 Tahun 2022"
+    dalil_pemohon: >
+      Ketentuan formula Transfer ke Daerah (TKD) dan pembatasan kaku pagu belanja pegawai
+      daerah dinilai membatasi ruang fiskal daerah secara berlebihan serta berpotensi
+      menggerus otonomi daerah yang dijamin Pasal 18A ayat (2) UUD 1945.
+    ratio_decidendi: >
+      Desentralisasi fiskal dan hubungan keuangan pusat-daerah mewajibkan transfer ke daerah
+      menjaga proporsionalitas fiskal. Pengaturan formula transfer dan belanja mandatory
+      daerah tidak boleh menghilangkan diskresi esensial pemerintah daerah dalam mengelola
+      prioritas pembangunan lokal dan pelayanan dasar masyarakat.
+    faktor_kunci:
+      keseimbangan_fiskal_pusat_daerah_berbasis_otonomi: true
+      pembatasan_belanja_daerah_harus_proporsional: true
+      sanksi_fiskal_tidak_boleh_melumpuhkan_pelayanan_publik: true
+    relevan_untuk_dimension: konstitusional
+    relevan_untuk_dimension_sekunder: ekonomi_kebijakan
+    distinguishing_note: >
+      Relevan untuk evaluasi draf Perda APBD, Perbup Penjabaran APBD, serta regulasi
+      belanja daerah. Digunakan saat menguji apakah pembatasan alokasi belanja pegawai
+      (maksimal 30%) atau mandatory spending daerah bertentangan dengan kapasitas fiskal riil daerah.
+    relevansi_domain: >
+      Relevan untuk SIP-DADES dan perencanaan anggaran BAKEUDAS/BAPPEDA.
+
+  - case_id: mk_19_31_32_2024_pbjt_pajak_daerah
+    nama_kasus: "Putusan MK Perkara No. 19, 31, & 32/PUU-XXII/2024 — Uji Materiil PBJT Jasa Hiburan Khusus UU HKPD"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2024
+    isu: "proporsionalitas_tarif_pajak_daerah_dan_klasifikasi_jasa_hiburan_vs_kesehatan"
+    norma_diuji: "Pasal 58 ayat (2) UU No. 1 Tahun 2022 (HKPD)"
+    ratio_decidendi: >
+      Penetapan batas bawah tarif PBJT (minimal 40% dan maksimal 75%) untuk hiburan khusus
+      harus berlandaskan asas kepastian hukum, non-diskriminasi, dan keadilan fiskal.
+      Jasa mandi uap/spa memiliki kualifikasi sebagai bagian dari layanan kesehatan dan kebugaran
+      tradisional, sehingga daerah dalam Perda Pajak Daerah tidak boleh memperlakukan
+      secara diskriminatif terhadap usaha kebugaran vs hiburan malam eksklusif.
+    faktor_kunci:
+      tarif_pajak_daerah_tidak_boleh_diskriminatif: true
+      klasifikasi_objek_pajak_harus_tepat_nomenklatur: true
+      kebijakan_fiskal_daerah_mempertimbangkan_iklim_usaha: true
+    relevan_untuk_dimension: normatif_akademik
+    relevan_untuk_dimension_sekunder: ekonomi_kebijakan
+    distinguishing_note: >
+      Kunci dalam menguji Perda Pajak & Retribusi Daerah (PDRD). Menilai apakah pasal
+      tarif PBJT daerah memisahkan secara tepat antara spa kesehatan vs kelab malam,
+      serta memastikan tarif tidak mematikan iklim usaha mikro/kecil di daerah.
+    relevansi_domain: >
+      Relevan untuk verifikasi Perda PDRD dan modul Policy-as-Code kalkulasi retribusi daerah.
+
+  - case_id: mk_92_107_puu_xxii_2024_masa_jabatan_kades
+    nama_kasus: "Putusan MK No. 92/PUU-XXII/2024 & 107/PUU-XXII/2024 — Masa Jabatan & Ketentuan Peralihan UU Desa No. 3/2024"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2024
+    isu: "kepastian_hukum_masa_transisi_perpanjangan_masa_jabatan_kepala_desa"
+    norma_diuji: "Pasal 39 ayat (1) dan Pasal 118 UU No. 3 Tahun 2024 tentang Desa"
+    ratio_decidendi: >
+      Perpanjangan masa jabatan Kepala Desa dari 6 (enam) tahun menjadi 8 (delapan) tahun
+      berdasarkan UU No. 3 Tahun 2024 berlaku mengikat seketika (*ipso jure*) bagi
+      Kepala Desa yang masa jabatannya berakhir pada periode transisi pemberlakuan undang-undang.
+      Pemerintah Daerah (Bupati/Walikota) wajib menerbitkan Keputusan Perpanjangan tanpa
+      menambah syarat administrasi yang bertentangan dengan norma undang-undang.
+    faktor_kunci:
+      pasal_peralihan_berlaku_seketika_bagi_pejabat_aktif: true
+      kepastian_hukum_mencegah_kekosongan_pemerintahan: true
+      regulasi_daerah_wajib_menyesuaikan_tanpa_menunda_hak: true
+    relevan_untuk_dimension: ketepatan_jenis_hierarki
+    relevan_untuk_dimension_sekunder: institusional_evaluatif
+    distinguishing_note: >
+      Relevan untuk evaluasi draf Perbup Pilkades, Perbup Struktur Pemerintahan Desa,
+      serta pemantauan pasal peralihan via `legal_monitor_lifecycle`.
+    relevansi_domain: >
+      Relevan untuk modul tata kelola pemerintahan desa di SIP-DADES.
+
+  - case_id: mk_158_puu_xxiii_2025_kewenangan_urusan_konkuren_pemda
+    nama_kasus: "Putusan MK No. 158/PUU-XXIII/2025 — Urusan Konkuren Manajemen Pendidikan UU No. 23/2014 Pemda"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2025
+    isu: "pembagian_kewenangan_urusan_konkuren_antara_pusat_dan_daerah"
+    norma_diuji: "Pasal 15 ayat (1)-(2) dan Lampiran Huruf A UU No. 23 Tahun 2014"
+    ratio_decidendi: >
+      Pembagian urusan pemerintahan konkuren antara Pemerintah Pusat dan Daerah
+      (Provinsi/Kabupaten/Kota) tidak boleh menciptakan tumpang tindih tata kelola.
+      Standardisasi kurikulum dan regulasi makro berada di pusat, sedangkan pengelolaan
+      infrastruktur sarana/prasarana fisik dan operasional layanan dasar merupakan
+      ranah otonomi daerah yang tidak dapat ditarik sepihak ke pusat tanpa dasar efisiensi skala.
+    faktor_kunci:
+      kewenangan_konkuren_harus_jelas_demarkasi_pusat_daerah: true
+      otonomi_daerah_dalam_pengelolaan_sarana_prasarana: true
+      larangan_resentralisasi_tanpa_dasar_efisiensi_skala: true
+    relevan_untuk_dimension: kesesuaian_asas_bidang_hukum
+    relevan_untuk_dimension_sekunder: potensi_disharmoni
+    distinguishing_note: >
+      Wajib digunakan saat mengevaluasi Perda/Perbup tentang urusan konkuren daerah
+      (Pendidikan, Kesehatan, PU, Sosial). Menilai apakah pasal regulasi daerah
+      melampaui pembagian matriks Lampiran UU 23/2014 atau sebaliknya menjadi korban
+      resentralisasi terselubung oleh Permen sektoral.
+    relevansi_domain: >
+      Relevan untuk audit perda urusan konkuren dan SPM daerah.
+
+  - case_id: mk_60_dan_27_puu_xxii_2024_otonomi_pilkada_dan_masa_jabatan
+    nama_kasus: "Putusan MK No. 60/PUU-XXII/2024 & 27/PUU-XXII/2024 — Ambang Batas Pilkada & Masa Jabatan Kepala Daerah"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2024
+    isu: "demokratisasi_pencalonan_kepala_daerah_dan_kontinuitas_pemerintahan_daerah"
+    norma_diuji: "Pasal 40 ayat (1) dan Pasal 201 UU No. 10 Tahun 2016 (UU Pilkada)"
+    ratio_decidendi: >
+      Ambang batas pencalonan Kepala Daerah harus proporsional berbasis perolehan suara sah
+      pemilu legislatif (bukan monopoli kursi DPRD) guna menjamin pluralitas demokrasi lokal.
+      Masa jabatan Kepala Daerah petahana tetap diakui secara utuh hingga pelantikan
+      kepala daerah definitif hasil pilkada serentak guna menjamin kepastian hukum dan
+      kontinuitas penyelenggaraan pemerintahan daerah.
+    faktor_kunci:
+      penjaminan_hak_demokratis_dalam_suksesi_kepala_daerah: true
+      kepastian_kontinuitas_kebijakan_dan_anggaran_daerah: true
+      pencegahan_kekosongan_jabatan_pimpinan_daerah: true
+    relevan_untuk_dimension: pancasila_sila_4
+    relevan_untuk_dimension_sekunder: konstitusional
+    distinguishing_note: >
+      Relevan untuk telaah hukum produk hukum transisi kepala daerah (Pj/Pjs Bupati/Walikota)
+      dan diskresi penandatanganan Perda/Perbup APBD pada masa transisi kepemimpinan.
+    relevansi_domain: >
+      Relevan untuk tata laksana administrasi pemerintahan daerah TU SUPD II.
+
+  - case_id: mk_119_puu_xxii_2024_penataan_tenaga_non_asn_daerah
+    nama_kasus: "Putusan MK No. 119/PUU-XXII/2024 — Penataan Tenaga Honorer / Non-ASN UU No. 20/2023 ASN"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2024
+    isu: "kepastian_hukum_dan_perlindungan_tenaga_honorer_pemerintah_daerah"
+    norma_diuji: "Pasal 66 UU No. 20 Tahun 2023 tentang Aparatur Sipil Negara"
+    ratio_decidendi: >
+      Penataan dan penyelesaian tenaga honorer melalui seleksi formasi PPPK merupakan
+      kebijakan hukum terbuka (*open legal policy*) yang konstitusional dan berkeadilan.
+      Pemerintah Daerah dilarang keras mengangkat pegawai non-ASN baru, namun wajib
+      mengalokasikan anggaran formasi PPPK guna mengakomodasi tenaga honorer eksisting
+      yang telah mengabdi, tanpa mengakibatkan PHK massal yang melumpuhkan pelayanan publik.
+    faktor_kunci:
+      transisi_honorer_ke_pppk_adalah_mandat_UU: true
+      larangan_rekrutmen_honorer_baru_di_lingkungan_pemda: true
+      kewajiban_penataan_alokasi_belanja_pegawai_daerah: true
+    relevan_untuk_dimension: kesesuaian_asas_bidang_hukum
+    relevan_untuk_dimension_sekunder: efektivitas_pelaksanaan_pemda
+    distinguishing_note: >
+      Kunci dalam menguji draf Perbup tentang Standar Biaya Masukan (SBM), Perbup Jasa Tenaga Ahli/
+      Outsourcing, dan alokasi Belanja Pegawai APBD agar tidak melanggar larangan Pasal 66 UU ASN.
+    relevansi_domain: >
+      Relevan untuk SIKERJA, modul manajemen kepegawaian BKPSDM, dan evaluasi belanja APBD.
+
+  - case_id: ma_28_p_hum_2021_pembatalan_perda_retribusi_pdrd
+    nama_kasus: "Putusan MA No. 28 P/HUM/2021 — Pembatalan Perda Retribusi & Hambatan Investasi Daerah"
+    forum: "Mahkamah Agung"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2021
+    isu: "pembatalan_perda_retribusi_perizinan_karena_bertentangan_dengan_uu"
+    norma_diuji: "Perda Pajak dan Retribusi Daerah terhadap UU Penanaman Modal & UU PDRD"
+    ratio_decidendi: >
+      Peraturan Daerah tidak boleh menetapkan objek, tarif, atau syarat retribusi perizinan
+      yang bertentangan dengan peraturan perundang-undangan yang lebih tinggi atau menghambat
+      iklim kemudahan berusaha (*ease of doing business*) dan arus lalu lintas barang/jasa.
+      Pemungutan retribusi tanpa dasar pendelegasian materiil yang sah dari Undang-Undang
+      merupakan tindakan melampaui wewenang (*ultra vires*) dan batal demi hukum.
+    faktor_kunci:
+      retribusi_daerah_wajib_memiliki_dasar_delegasi_UU: true
+      larangan_menghambat_lalu_lintas_barang_jasa: true
+      prinsip_kemudahan_berusaha_dan_investasi_lokal: true
+    relevan_untuk_dimension: ketepatan_jenis_hierarki
+    relevan_untuk_dimension_sekunder: potensi_disharmoni
+    distinguishing_note: >
+      Rujukan mutlak saat menguji draf Perda Pajak dan Retribusi Daerah (PDRD),
+      Perbup Tarif Sewa Aset Daerah, dan Perbup Retribusi Persetujuan Bangunan Gedung (PBG).
+    relevansi_domain: >
+      Relevan untuk evaluasi fiskal pendapatan daerah Bapenda dan DPMPTSP.
+
+  - case_id: mk_48_62_puu_xi_2013_keuangan_bumd_dan_business_judgment
+    nama_kasus: "Putusan MK No. 48 & 62/PUU-XI/2013 — Pemisahan Keuangan BUMD & Business Judgment Rule"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2013
+    isu: "status_keuangan_bumd_bumn_dan_doktrin_business_judgment_rule"
+    norma_diuji: "Pasal 2 huruf g dan i UU No. 17 Tahun 2003 tentang Keuangan Negara"
+    ratio_decidendi: >
+      Modal daerah yang telah disetor ke dalam BUMD (Perseroda/Perumda) berstatus sebagai
+      kekayaan daerah yang dipisahkan (*separate legal entity*). Kerugian operasional
+      yang timbul semata-mata karena risiko bisnis yang wajar dan iktikad baik (*fiduciary duty*)
+      bukan merupakan kerugian keuangan negara/daerah tindak pidana korupsi, kecuali terbukti
+      adanya perbuatan melawan hukum (*fraud*, benturan kepentingan, suap).
+    faktor_kunci:
+      pemisahan_kekayaan_daerah_dalam_bumd_bersifat_korporasi: true
+      perlindungan_business_judgment_rule_bagi_direksi_bumd: true
+      penyertaan_modal_daerah_wajib_ditetapkan_dengan_perda: true
+    relevan_untuk_dimension: kesesuaian_asas_bidang_hukum
+    relevan_untuk_dimension_sekunder: efektivitas_pelaksanaan_pemda
+    distinguishing_note: >
+      Wajib digunakan saat mengevaluasi draf Perda Penyertaan Modal Daerah, Perbup Tata Kelola
+      BUMD/BLUD, dan audit regulasi subsidi/PSO kepada BUMD air minum atau perbankan daerah.
+    relevansi_domain: >
+      Relevan untuk tata kelola BUMD, BLUD Rumah Sakit/Puskesmas, dan BPR Daerah.
+
+  - case_id: mk_35_puu_x_2012_hutan_adat_bukan_hutan_negara
+    nama_kasus: "Putusan MK No. 35/PUU-X/2012 — Pengakuan Hutan Adat & Wilayah Adat dalam RTRW"
+    forum: "Mahkamah Konstitusi"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2012
+    isu: "pengakuan_hak_ulayat_dan_hutan_adat_dalam_tata_ruang_daerah"
+    norma_diuji: "Pasal 1 angka 6 dan Pasal 5 ayat (1) UU No. 41 Tahun 1999 tentang Kehutanan"
+    ratio_decidendi: >
+      Hutan adat adalah hutan yang berada dalam wilayah masyarakat hukum adat, bukan hutan negara.
+      Pemerintah Daerah berwenang dan berkewajiban menetapkan Peraturan Daerah (Perda) tentang
+      Pengakuan dan Perlindungan Masyarakat Hukum Adat (MHA) sebagai dasar hukum pengembalian
+      hak kelola wilayah adat dan integrasi spasial ke dalam dokumen RTRW/RDTR daerah.
+    faktor_kunci:
+      hutan_adat_bukan_hutan_negara_melainkan_hutan_hak: true
+      penetapan_masyarakat_hukum_adat_wajib_dengan_perda: true
+      integrasi_ruang_wilayah_adat_dalam_rtrw_daerah: true
+    relevan_untuk_dimension: pancasila_sila_2_dan_5
+    relevan_untuk_dimension_sekunder: konstitusional
+    distinguishing_note: >
+      Rujukan utama dalam evaluasi Perda Pengakuan MHA, Perda Tata Ruang Wilayah (RTRW),
+      serta pencegahan konflik tenurial agraria antara izin perkebunan/tambang vs masyarakat lokal.
+    relevansi_domain: >
+      Relevan untuk Dinas Lingkungan Hidup, Bappeda (Tata Ruang), dan Bagian Hukum Setda.
+
+  - case_id: ma_yurisprudensi_kontrak_pbj_daerah
+    nama_kasus: "Yurisprudensi MA — Demarkasi Sengketa Administrasi Pemilihan vs Perdata Kontrak PBJ"
+    forum: "Mahkamah Agung"
+    jenis_sumber: putusan_pengadilan
+    tahun: 2022
+    isu: "pemisahan_sengketa_administrasi_tun_dan_keperdataan_kontrak_pbj_daerah"
+    norma_diuji: "Perpres Pengadaan Barang/Jasa Pemerintah & UU Administrasi Pemerintahan"
+    ratio_decidendi: >
+      Tahapan pra-kontrak pemilihan penyedia tender merupakan ranah Keputusan Tata Usaha Negara (KTUN).
+      Namun setelah penandatanganan Surat Perjanjian/Kontrak PBJ, hubungan hukum berubah menjadi
+      ranah hukum keperdataan (kontraktual). Perselisihan wanprestasi diselesaikan melalui mekanisme
+      keperdataan atau arbitrase, dan Pejabat Pembuat Komitmen (PPK) tidak dapat memutus kontrak
+      secara sepihak tanpa memenuhi klausul wanprestasi yang disepakati.
+    faktor_kunci:
+      demarkasi_tegas_ranah_KTUN_dan_ranah_perdata_kontrak: true
+      larangan_pemutusan_kontrak_sepihak_tanpa_prosedur_perpres: true
+      kewenangan_ppk_dan_kuasa_pengguna_anggaran: true
+    relevan_untuk_dimension: kejelasan_rumusan
+    relevan_untuk_dimension_sekunder: efektivitas_pelaksanaan_pemda
+    distinguishing_note: >
+      Digunakan saat memeriksa draf Perbup Pengadaan Barang/Jasa BLUD/BUMD, Standar Kontrak Kerja Konstruksi,
+      dan tata cara pengenaan sanksi daftar hitam (*blacklist*) penyedia di daerah.
+    relevansi_domain: >
+      Relevan untuk UKPBJ, PPK Dinas Pekerjaan Umum/Kesehatan, dan Inspektorat Daerah.

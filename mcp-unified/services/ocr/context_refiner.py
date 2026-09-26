@@ -341,7 +341,27 @@ Jawab hanya dengan nama jenis dokumen.
             return result.strip() if result else "Tidak diketahui"
         except Exception as e:
             logger.warning(f"LLM classification failed: {e}")
+            self._record_llm_alert("classification", str(e))
             return self._rule_based_classification(text)
+
+    def _record_llm_alert(self, stage: str, error_msg: str, extra: Optional[dict] = None) -> None:
+        """Perekam alert anomali kegagalan LLM OCR ke file log terpusat."""
+        try:
+            import datetime
+            alert_file = Path("/home/aseps/MCP/logs/ocr_anomalies.jsonl")
+            alert_entry = {
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "component": "services.ocr.context_refiner",
+                "stage": stage,
+                "error": error_msg,
+                "provider": LLM_CONFIG.get("provider"),
+                "model": LLM_CONFIG.get("model"),
+                "extra": extra or {}
+            }
+            with open(alert_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(alert_entry, ensure_ascii=False) + "\n")
+        except Exception as alert_err:
+            logger.error(f"Gagal mencatat alert LLM anomaly: {alert_err}")
 
     def extract_spm_document(self, ocr_text: str) -> dict:
         """
@@ -449,7 +469,7 @@ PENTING: Hanya jawab dengan JSON murni, tidak ada tag pikir pikir, tidak ada pen
                 "Content-Type": "application/json",
             }
             payload = {
-                "model": LLM_CONFIG.get("model", "qwen/qwen3-32b"),
+                "model": LLM_CONFIG.get("model", "llama-3.1-8b-instant"),
                 "messages": [
                     {"role": "system", "content": "Anda adalah asisten ahli dokumen pemerintahan Indonesia."},
                     {"role": "user", "content": prompt}

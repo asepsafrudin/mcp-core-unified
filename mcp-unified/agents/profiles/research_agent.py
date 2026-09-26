@@ -14,6 +14,8 @@ Upgrade v2 (TASK-031):
 import sys
 import asyncio
 import logging
+from typing import Any, Dict, List, Optional
+from datetime import datetime
 from pathlib import Path
 
 # Add parent to path untuk imports
@@ -65,8 +67,9 @@ class ResearchAgent(BaseAgent):
                 "vane_legal_search",    # Riset hukum Indonesia
                 "vane_deep_research",   # Riset mendalam multi-query
                 "vane_gap_fill",        # Isi gap data UU 23/2014
-                # === Knowledge tools ===
+                # === Knowledge & LTM tools ===
                 "knowledge_search",
+                "memory_save",
                 # === File tools ===
                 "read_file",
                 "list_dir",
@@ -150,23 +153,29 @@ class ResearchAgent(BaseAgent):
                             sub_urusan=payload.get("sub_urusan", query),
                             bidang=payload.get("bidang", "Umum")
                         )
+                        data = result.get("data") if result.get("success") else result
+                        await self._auto_save_ltm(query, data, namespace=payload.get("namespace", "shared_legal"))
                         return TaskResult.success_result(
                             task_id=task.id,
-                            data=result.get("data") if result.get("success") else result,
+                            data=data,
                             context={"agent": self.name, "action": "gap_fill"}
                         )
 
                     # Deep research multi-query
                     if "deep" in task_type or payload.get("deep", False):
+                        ns = payload.get("namespace", "legal_research_deep")
                         result = await vane_ai_research(
                             query=query,
                             action="deep_research",
                             sub_queries=payload.get("sub_queries"),
-                            namespace=payload.get("namespace", "legal_research_deep")
+                            namespace=ns
                         )
+                        data = result.get("data") if result.get("success") else result
+                        data = self._attach_citation_metadata(data)
+                        await self._auto_save_ltm(query, data, namespace=ns)
                         return TaskResult.success_result(
                             task_id=task.id,
-                            data=result.get("data") if result.get("success") else result,
+                            data=data,
                             context={"agent": self.name, "action": "deep_research"}
                         )
 
@@ -184,6 +193,7 @@ class ResearchAgent(BaseAgent):
                             regulation=payload.get("regulation", "UU 23/2014")
                         )
                         action_name = "legal_research"
+                        default_ns = "shared_legal"
                     else:
                         result = await vane_ai_research(
                             query=query, 
@@ -191,13 +201,18 @@ class ResearchAgent(BaseAgent):
                             mode=payload.get("mode", "balanced")
                         )
                         action_name = "web_research"
+                        default_ns = "shared_general"
 
                     if result.get("success"):
+                        data = result.get("data", {})
+                        data = self._attach_citation_metadata(data)
+                        await self._auto_save_ltm(query, data, namespace=payload.get("namespace", default_ns))
                         return TaskResult.success_result(
                             task_id=task.id,
-                            data=result.get("data"),
+                            data=data,
                             context={"agent": self.name, "action": action_name}
                         )
+
 
             # ============================================
             # B. SCRAPING LANGSUNG (fallback / explicit)
@@ -268,3 +283,56 @@ class ResearchAgent(BaseAgent):
                 print(f"Peraturan scraping error: {e}")
         
         return results
+
+    def _attach_citation_metadata(self, data: Any) -> Any:
+        """Extract and attach structured citation metadata to research result."""
+        if not isinstance(data, dict):
+            return data
+
+        citations = []
+        # Check for sources in data
+        raw_sources = data.get("sources") or data.get("citations") or data.get("references") or []
+        if isinstance(raw_sources, list):
+            for s in raw_sources:
+                if isinstance(s, dict):
+                    citations.append({
+                        "title": s.get("title") or s.get("name") or "Resource",
+                        "url": s.get("url") or s.get("link") or "",
+                        "snippet": (s.get("snippet") or s.get("content") or "")[:200]
+                    })
+                elif isinstance(s, str):
+                    citations.append({"title": s, "url": s if s.startswith("http") else ""})
+
+        data["structured_citations"] = citations
+        data["citation_count"] = len(citations)
+        return data
+
+    async def _auto_save_ltm(self, query: str, data: Any, namespace: str = "shared_general") -> None:
+        """Automatically save research summary into LTM via memory_save."""
+        try:
+            from execution.registry import registry
+            import json
+
+            content_text = ""
+            if isinstance(data, dict):
+                content_text = data.get("synthesis") or data.get("summary") or data.get("answer") or str(data)[:1000]
+            elif isinstance(data, str):
+                content_text = data[:1000]
+
+            if not content_text:
+                return
+
+            memory_payload = {
+                "content": f"[Research: {query}]\n{content_text}",
+                "namespace": namespace,
+                "metadata": {
+                    "source": "research_agent",
+                    "query": query,
+                    "timestamp": datetime.utcnow().isoformat() if "datetime" in globals() else ""
+                }
+            }
+
+            await registry.execute("memory_save", memory_payload)
+            logger.info(f"[ResearchAgent] Auto-saved research to LTM in namespace '{namespace}'")
+        except Exception as e:
+            logger.debug(f"[ResearchAgent] LTM auto-save skipped or failed: {e}")

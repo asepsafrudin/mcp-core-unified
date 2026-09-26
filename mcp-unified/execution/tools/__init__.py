@@ -86,6 +86,17 @@ from execution.tools.ops_tools import (
     network_status_report,
     check_ssh_access,
     ssh_connection_manager,
+    cloudflare_tunnel_status,
+)
+
+# RunPod tools
+from integrations.runpod.tools import (
+    runpod_check_health,
+    runpod_run_job,
+    runpod_get_job_status,
+    runpod_cancel_job,
+    runpod_ocr_process,
+    runpod_process_heavy_document,
 )
 
 __all__ = [
@@ -141,5 +152,17 @@ __all__ = [
     "network_status_report",
     "check_ssh_access",
     "ssh_connection_manager",
+    "cloudflare_tunnel_status",
+
+    # RunPod Tools
+    "runpod_check_health",
+    "runpod_run_job",
+    "runpod_get_job_status",
+    "runpod_cancel_job",
+    "runpod_ocr_process",
+    "runpod_process_heavy_document",
 ]
+
+
+
 

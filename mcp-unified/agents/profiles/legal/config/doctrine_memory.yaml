@@ -1,0 +1,185 @@
+# doctrine_memory.yaml
+# Knowledge memory statis — pola pikir uji materi regulasi, 6 dimensi.
+# Di-load UTUH ke context agent, bukan lewat RAG semantik (harus selalu tersedia lengkap).
+
+doctrine_memory:
+
+  - dimension_id: filosofis
+    nama: "Hukum Pembangunan / Law as Tool of Social Engineering"
+    sumber: "Prof. Dr. Mochtar Kusumaatmadja, S.H., LL.M."
+    sifat: ex_ante_dan_ex_post
+    pertanyaan_kunci: "Untuk perubahan sosial-ekonomi apa hukum ini dirancang?"
+    trigger_conditions:
+      - selalu_relevan: true   # dimensi dasar, jarang di-skip
+    pertanyaan_uji:
+      - "Perubahan sosial/perilaku/ekonomi apa yang ingin didorong regulasi ini?"
+      - "Apakah perubahan itu bersifat mengarahkan (instrumen tertib/rekayasa sosial) atau sekadar melarang/membatasi?"
+      - "Apakah arah kebijakan dan tujuan pembaharuan dirumuskan secara substantif dalam konsiderans/batang tubuh (mis. hilirisasi, optimalisasi penerimaan negara, kedaulatan SDA), bukan sekadar prosedur administratif rutin? (Catatan: Uji data kuantitatif diuji terpisah pada Dimensi RIA)."
+    fakta_dibutuhkan:
+      - "Bagian Menimbang / konsiderans"
+      - "Naskah Akademik (jika ada)"
+      - "Rumusan tujuan dalam batang tubuh"
+    indikator_lulus: "Terdapat arah kebijakan pembaharuan struktural yang eksplisit dan substantif"
+    indikator_lemah:
+      - tujuan_hanya_administratif_tanpa_arah_perubahan_jelas
+      - konsiderans_generik_tanpa_kaitan_konkret_ke_pasal
+
+  - dimension_id: sosiologis
+    nama: "Teori Efektivitas Hukum — 5 Faktor"
+    sumber: "Prof. Dr. Soerjono Soekanto"
+    sifat: ex_post_empiris
+    pertanyaan_kunci: "Bisakah/apakah hukum ini bekerja nyata di lapangan?"
+    trigger_conditions:
+      - regulasi_sudah_berlaku_minimal_beberapa_bulan: true
+      - ATAU_ada_masa_transisi_pendek_yang_perlu_dinilai_risikonya: true
+    faktor:
+      - id: hukum_itu_sendiri
+        pertanyaan: "Apakah norma jelas, tidak multitafsir?"
+        fakta_dibutuhkan: "Uji linguistik pasal-pasal kunci"
+      - id: penegak_pelaksana
+        pertanyaan: "Siapa yang menjalankan, apakah kompetensi/kelembagaannya sudah definitif?"
+        fakta_dibutuhkan: "Struktur organisasi pelaksana, SOP, status penetapan lembaga pelaksana"
+      - id: sarana_fasilitas
+        pertanyaan: "Apakah anggaran, sistem, infrastruktur pendukung tersedia?"
+        fakta_dibutuhkan: "Data anggaran, ketersediaan sistem pendukung"
+      - id: masyarakat_subjek_hukum
+        pertanyaan: "Apakah pihak yang diatur punya waktu/kapasitas untuk patuh?"
+        fakta_dibutuhkan: "Jangka waktu transisi, data kesiapan sektor terdampak"
+      - id: budaya_hukum
+        pertanyaan: "Ada kebiasaan/ekosistem lama yang berpotensi resisten?"
+        fakta_dibutuhkan: "Riwayat ekosistem sektor sebelum regulasi berlaku"
+    indikator_lulus: "Minimal 4 dari 5 faktor mendukung; faktor lemah teridentifikasi spesifik"
+    indikator_lemah:
+      - lembaga_pelaksana_belum_ditetapkan_definitif_saat_regulasi_terbit
+      - masa_transisi_pendek_tanpa_readiness_study
+      - tidak_ada_data_kesiapan_dipublikasikan
+      - beban_kepatuhan_administrasi_berulang_ketat
+      - lemahnya_kapasitas_sdm_pengawas_desa
+
+  - dimension_id: normatif_akademik
+    nama: "Asas Formil & Materiil Pembentukan PUU"
+    sumber: "Pasal 5 & 6 UU No. 12/2011; a.l. Prof. Maria Farida Indrati"
+    sifat: ex_ante
+    pertanyaan_kunci: "Apakah rancangan/regulasi ini layak secara hukum?"
+    trigger_conditions:
+      - selalu_relevan: true
+    pertanyaan_uji:
+      - "Apakah tujuan pembentukan regulasi dirumuskan secara jelas dalam bagian Menimbang dan pasal tujuan (asas kejelasan tujuan)?"
+      - "Apakah pejabat pembentuk memiliki kewenangan atribusi/delegasi yang tepat dan sah (asas kelembagaan tepat)?"
+      - "Apakah materi muatan regulasi turunan ini (misal pembentukan kanal tunggal / monopoli BUMN) benar-benar diperintahkan eksplisit oleh UU induknya, atau melampaui cakupan delegasi kewenangan umum UU tersebut (asas kesesuaian jenis, hierarki, dan materi muatan)?"
+      - "Apakah bahasa delegasi di UU induk hanya berupa kewenangan umum administratif (misal 'menetapkan kebijakan dan pengendalian ekspor') tanpa mandat tekstual spesifik untuk membentuk monopoli satu pintu/BUMN? Jika ya, tandai indikator_lemah 'materi_muatan_tampak_melampaui_cakupan_delegasi_UU_induk'."
+      - "Apakah regulasi dapat dilaksanakan secara konkret tanpa menggantung pada peraturan turunan yang belum terbit (asas dapat dilaksanakan)?"
+      - "Apakah rumusan pasal tidak ambigu dan istilah kunci didefinisikan dengan tegas dalam Ketentuan Umum (asas kejelasan rumusan)?"
+      - "Apakah materi muatan mencerminkan asas pengayoman, keadilan, dan kepastian hukum?"
+    fakta_dibutuhkan:
+      - "Pasal konsiderans Menimbang dan Mengingat"
+      - "Bunyi norma delegasi dari UU induk terkait"
+      - "Ketentuan Umum Pasal 1 (definisi istilah)"
+      - "Pasal-pasal materi muatan inti dan pendelegasian lanjutan"
+    asas_formil:
+      - kejelasan_tujuan
+      - kelembagaan_pejabat_pembentuk_tepat
+      - kesesuaian_jenis_hierarki_materi_muatan
+      - dapat_dilaksanakan
+      - kedayagunaan_dan_kehasilgunaan
+      - kejelasan_rumusan
+      - keterbukaan
+    asas_materiil:
+      - pengayoman
+      - kemanusiaan
+      - kebangsaan
+      - kekeluargaan
+      - kenusantaraan
+      - bhinneka_tunggal_ika
+      - keadilan
+      - kesamaan_kedudukan
+      - ketertiban_dan_kepastian_hukum
+      - keseimbangan_keserasian_keselarasan
+    indikator_lulus: "Tidak ada asas formil gagal total; asas materiil terpenuhi substantif"
+    indikator_lemah:
+      - istilah_kunci_tidak_didefinisikan_di_ketentuan_umum
+      - banyak_ketentuan_lebih_lanjut_didelegasikan_ke_peraturan_turunan_yang_belum_terbit
+      - materi_muatan_tampak_melampaui_cakupan_delegasi_UU_induk   # → trigger dimensi konstitusional
+
+  - dimension_id: institusional_evaluatif
+    nama: "Pedoman 6 Dimensi BPHN"
+    sumber: "Badan Pembinaan Hukum Nasional, Kemenkumham (PHN-HN.01.03-07)"
+    sifat: ex_post
+    pertanyaan_kunci: "Apakah regulasi yang sudah berjalan ini bermasalah?"
+    trigger_conditions:
+      - regulasi_sudah_berlaku: true
+    pertanyaan_uji:
+      - "Dimensi Pancasila: Apakah substansi regulasi selaras dengan 5 Sila Pancasila (misal Sila ke-5 Keadilan Sosial)? (Catatan: Rujuk Sila 1-5 secara tepat, jangan tertukar dengan penomoran Pasal UUD 1945)."
+      - "Dimensi Ketepatan Jenis: Apakah materi muatan sesuai dengan tingkat hierarki jenis PUU ini?"
+      - "Dimensi Disharmoni: Apakah terdapat benturan vertikal dengan peraturan di atasnya, atau benturan horizontal/arah kebijakan dengan UU sektoral lain (mis. UU Cipta Kerja, UU Larangan Praktik Monopoli)?"
+      - "Dimensi Kejelasan Rumusan: Apakah norma pasal jelas, pasti, dan tidak multitafsir?"
+      - "Dimensi Kesesuaian Asas: Apakah selaras dengan asas hukum bidang terkait?"
+      - "Dimensi Efektivitas: Apakah regulasi efektif diterapkan atau menimbulkan beban kepatuhan tinggi?"
+    fakta_dibutuhkan:
+      - "Naskah pasal-pasal inti"
+      - "Inventarisasi UU/PP terkait setingkat dan di atasnya"
+    sub_dimensi:
+      - pancasila
+      - ketepatan_jenis_puu
+      - disharmoni_pengaturan   # vertikal & horizontal & arah_kebijakan
+      - kejelasan_rumusan
+      - kesesuaian_asas_bidang_hukum
+      - efektivitas_pelaksanaan
+    indikator_lulus: "Rekomendasi akhir tegas: dipertahankan / direvisi sebagian / dicabut"
+    indikator_lemah:
+      - disharmoni_arah_kebijakan_dengan_semangat_UU_terkait_lain
+      - potensi_gesekan_dengan_UU_di_bidang_lain_yang_relevan   # mis. UU anti-monopoli
+
+  - dimension_id: konstitusional
+    nama: "Pengujian Norma / Hak Uji Materiil (HUM)"
+    sumber: "Prof. Dr. Jimly Asshiddiqie; Pasal 24A UUD 1945; PERMA No.1/2011"
+    sifat: ex_post_judicial
+    pertanyaan_kunci: "Apakah norma ini sah menurut hierarki tertinggi & cakupan delegasinya?"
+    trigger_conditions:
+      - regulasi_di_bawah_UU: true
+      - indikator_lemah_normatif_mengandung_materi_melampaui_delegasi: true
+    pertanyaan_uji:
+      - "Uji formil: apakah proses pembentukan sah?"
+      - "Uji materiil: apakah isi bertentangan dengan norma di atasnya?"
+      - "Apakah delegasi UU induk cukup spesifik (perintah substantif eksplisit) untuk mencakup materi yang diatur, atau hanya kewenangan umum?"
+    fakta_dibutuhkan:
+      - "Teks pasal delegasi UU induk (misal Pasal 38 ayat 1 UU 7/2014)"
+      - "Pasal pembatasan hak / penciptaan mekanisme monopoli dalam regulasi turunan"
+    alasan_hum_lazim:
+      - bertentangan_peraturan_lebih_tinggi
+      - cacat_kewenangan_ultra_vires
+      - bertentangan_asas_pembentukan_puu
+    syarat_standing:
+      - kerugian_konkret_dan_terukur
+      - hubungan_sebab_akibat_causal_verband
+      - kerugian_hilang_jika_dikabulkan
+    indikator_lulus: "Delegasi UU induk memuat perintah substantif eksplisit yang mencakup mekanisme yang diatur regulasi turunan"
+    indikator_lemah:
+      - delegasi_bersifat_umum_tanpa_perintah_substantif_spesifik
+      - regulasi_turunan_menciptakan_mekanisme_baru_di_luar_bunyi_delegasi
+    fallback_precedent_query: "cari entri precedent_memory dengan relevan_untuk_dimension: konstitusional"
+
+  - dimension_id: ekonomi_kebijakan
+    nama: "Regulatory Impact Assessment (RIA)"
+    sumber: "Diadopsi OECD via Bappenas & Kemenko Perekonomian (Inpres No.7/2017) — catatan: kelembagaan-teknokratik, bukan pemikir senior perorangan"
+    sifat: ex_ante_dan_ex_post
+    pertanyaan_kunci: "Perlukah diatur, dan dengan cara paling efisien apa?"
+    trigger_conditions:
+      - regulasi_berdampak_ekonomi_signifikan: true
+      - ATAU_ada_isu_deregulasi_atau_restrukturisasi_pasar: true
+    pertanyaan_uji:
+      - "Apakah masalah yang melatarbelakangi regulasi ini terukur (data, bukan asumsi)?"
+      - "Apakah opsi non-regulasi/alternatif kebijakan pernah dipertimbangkan?"
+      - "Berapa estimasi biaya vs manfaat pelaksanaan?"
+      - "Siapa pemangku kepentingan terdampak, apakah dilibatkan?"
+      - "Jika mengatur beberapa objek berbeda karakter, apakah mekanismenya dibedakan (misal formula berbobot, klaster variabel, atau tarif bertingkat) atau seragam tanpa diferensiasi? Catatan: Formula alokasi berbasis variabel/bobot (kemiskinan, IKG, penduduk, luas wilayah) adalah bentuk diferensiasi yang sah."
+    fakta_dibutuhkan:
+      - "Data baseline ekonomi dalam konsiderans/penjelasan"
+      - "Kajian biaya-manfaat atau readiness study"
+      - "Daftar stakeholder dan komoditas/objek yang diatur"
+      - "Formula alokasi, pembobotan variabel, dan klasifikasi tarif/insentif"
+    indikator_lulus: "Manfaat terukur > biaya; alternatif non-regulasi dipertimbangkan & ditolak dengan alasan jelas"
+    indikator_lemah:
+      - tidak_ada_kajian_dampak_dipublikasikan_bersama_regulasi
+      - argumen_dasar_hanya_normatif_konstitusional_tanpa_data_kuantitatif
+      - mekanisme_seragam_untuk_objek_berkarakter_sangat_berbeda

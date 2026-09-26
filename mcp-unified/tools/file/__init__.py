@@ -17,11 +17,13 @@ from .path_utils import (
 from . import read
 from . import write
 from . import list_dir
+from . import ops
 
 # Backward compatibility - export functions
 from .read import read_file
 from .write import write_file
 from .list_dir import list_dir
+from .ops import copy_file, move_file, delete_file, grep_files
 
 
 # Export all file tools
@@ -35,4 +37,9 @@ __all__ = [
     "read_file",
     "write_file",
     "list_dir",
+    "copy_file",
+    "move_file",
+    "delete_file",
+    "grep_files",
 ]
+

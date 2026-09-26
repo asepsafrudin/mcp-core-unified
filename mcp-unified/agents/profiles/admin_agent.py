@@ -179,32 +179,94 @@ class AdminAgent(BaseAgent):
             )
     
     async def _system_monitoring(self, task: Task) -> TaskResult:
-        """Phase 5: System monitoring capabilities."""
-        import asyncio
-        import subprocess
-        
+        """Phase 5: Real system monitoring with psutil."""
+        import psutil
+        import shutil
+        from datetime import datetime
+
         try:
-            # Get system metrics
-            result = subprocess.run(
-                ["top", "-b", "-n", "1"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
+            # CPU
+            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_count = psutil.cpu_count()
+            cpu_freq = psutil.cpu_freq()
+
+            # Memory
+            mem = psutil.virtual_memory()
+            swap = psutil.swap_memory()
+
+            # Disk
+            disk = shutil.disk_usage("/home/aseps/MCP")
+
+            # Network
+            net_io = psutil.net_io_counters()
+
+            # Top processes by CPU
+            top_cpu = []
+            for proc in sorted(psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']),
+                               key=lambda p: p.info.get('cpu_percent') or 0, reverse=True)[:5]:
+                top_cpu.append({
+                    "pid": proc.info['pid'],
+                    "name": proc.info['name'],
+                    "cpu_percent": proc.info.get('cpu_percent', 0),
+                    "memory_percent": round(proc.info.get('memory_percent', 0), 1),
+                })
+
+            # Uptime
+            boot_time = datetime.fromtimestamp(psutil.boot_time())
+            uptime_seconds = (datetime.now() - boot_time).total_seconds()
+            uptime_hours = round(uptime_seconds / 3600, 1)
+
             metrics = {
-                "cpu_usage": "placeholder",
-                "memory_usage": "placeholder",
-                "disk_usage": "placeholder",
-                "top_output": result.stdout[:1000] if result.returncode == 0 else "unavailable"
+                "cpu": {
+                    "percent": cpu_percent,
+                    "cores": cpu_count,
+                    "freq_mhz": round(cpu_freq.current, 0) if cpu_freq else None,
+                },
+                "memory": {
+                    "total_gb": round(mem.total / (1024**3), 2),
+                    "used_gb": round(mem.used / (1024**3), 2),
+                    "available_gb": round(mem.available / (1024**3), 2),
+                    "percent": mem.percent,
+                },
+                "swap": {
+                    "total_gb": round(swap.total / (1024**3), 2),
+                    "used_gb": round(swap.used / (1024**3), 2),
+                    "percent": swap.percent,
+                },
+                "disk_workspace": {
+                    "total_gb": round(disk.total / (1024**3), 2),
+                    "used_gb": round(disk.used / (1024**3), 2),
+                    "free_gb": round(disk.free / (1024**3), 2),
+                    "percent": round(disk.used / disk.total * 100, 1),
+                },
+                "network": {
+                    "bytes_sent_mb": round(net_io.bytes_sent / (1024**2), 1),
+                    "bytes_recv_mb": round(net_io.bytes_recv / (1024**2), 1),
+                },
+                "top_processes_by_cpu": top_cpu,
+                "uptime_hours": uptime_hours,
             }
-            
+
+            # Health status
+            health = "healthy"
+            warnings = []
+            if cpu_percent > 90:
+                health = "warning"
+                warnings.append(f"CPU usage critical: {cpu_percent}%")
+            if mem.percent > 85:
+                health = "warning"
+                warnings.append(f"Memory usage high: {mem.percent}%")
+            if (disk.used / disk.total * 100) > 90:
+                health = "critical"
+                warnings.append(f"Disk space low: {round(disk.free / (1024**3), 1)}GB free")
+
             return TaskResult.success_result(
                 task_id=task.id,
                 data={
                     "success": True,
+                    "health": health,
+                    "warnings": warnings,
                     "metrics": metrics,
-                    "status": "system_monitoring_active"
                 },
                 context={"agent": self.name, "action": "system_monitoring"}
             )
@@ -214,40 +276,152 @@ class AdminAgent(BaseAgent):
                 error=f"Monitoring failed: {str(e)}",
                 error_code="MONITORING_ERROR"
             )
-    
+
     async def _security_audit(self, task: Task) -> TaskResult:
-        """Phase 5: Security auditing capabilities."""
+        """Phase 5: Real security auditing with actual system checks."""
+        import psutil
+        import subprocess
+        from pathlib import Path
+
         payload = task.payload
         audit_type = payload.get("audit_type", "basic")
-        
+        workspace = Path("/home/aseps/MCP")
+
         findings = []
-        
-        # Basic security checks
-        if audit_type in ["basic", "full"]:
+
+        # 1. Check for root-owned files in workspace
+        try:
+            result = subprocess.run(
+                ["find", str(workspace), "-not", "-user", "aseps", "-maxdepth", "3"],
+                capture_output=True, text=True, timeout=10
+            )
+            root_files = [l for l in result.stdout.strip().split("\n") if l]
+            if root_files:
+                findings.append({
+                    "severity": "high",
+                    "category": "file_ownership",
+                    "message": f"Found {len(root_files)} files not owned by 'aseps' in workspace",
+                    "detail": root_files[:10],
+                    "fix": "Run: sudo chown -R aseps:aseps /home/aseps/MCP"
+                })
+            else:
+                findings.append({
+                    "severity": "info",
+                    "category": "file_ownership",
+                    "message": "All workspace files correctly owned by 'aseps'"
+                })
+        except Exception:
+            findings.append({
+                "severity": "warning",
+                "category": "file_ownership",
+                "message": "Could not check file ownership"
+            })
+
+        # 2. Check for exposed .env files (should not be world-readable)
+        try:
+            env_files = list(workspace.rglob(".env"))
+            exposed = []
+            for ef in env_files[:20]:
+                if ef.stat().st_mode & 0o044:  # readable by group/others
+                    exposed.append(str(ef))
+            if exposed:
+                findings.append({
+                    "severity": "medium",
+                    "category": "secrets_exposure",
+                    "message": f"{len(exposed)} .env files are readable by group/others",
+                    "detail": exposed[:5],
+                    "fix": "Run: chmod 600 <file> for each"
+                })
+            else:
+                findings.append({
+                    "severity": "info",
+                    "category": "secrets_exposure",
+                    "message": f"All {len(env_files)} .env files have proper permissions"
+                })
+        except Exception:
+            pass
+
+        # 3. Check listening ports (network services)
+        try:
+            listening = []
+            for conn in psutil.net_connections(kind='inet'):
+                if conn.status == 'LISTEN':
+                    listening.append({
+                        "port": conn.laddr.port,
+                        "address": conn.laddr.ip,
+                        "pid": conn.pid
+                    })
             findings.append({
                 "severity": "info",
-                "category": "configuration",
-                "message": "Security audit initialized"
+                "category": "network",
+                "message": f"{len(listening)} ports listening",
+                "detail": sorted(listening, key=lambda x: x["port"])[:15]
             })
-        
-        # Placeholder untuk vulnerability checks
-        if audit_type == "full":
+        except (psutil.AccessDenied, PermissionError):
             findings.append({
-                "severity": "low",
-                "category": "scanning",
-                "message": "Vulnerability scan placeholder - integrate with security tools"
+                "severity": "warning",
+                "category": "network",
+                "message": "Cannot enumerate ports (permission denied, run without sudo is expected)"
             })
-        
+
+        # 4. Full audit: check pip packages for known vulnerabilities
+        if audit_type == "full":
+            try:
+                result = subprocess.run(
+                    [str(workspace / ".venv/bin/pip"), "audit", "--format=json"],
+                    capture_output=True, text=True, timeout=30
+                )
+                if result.returncode != 0 and result.stdout:
+                    import json as json_mod
+                    try:
+                        audit_data = json_mod.loads(result.stdout)
+                        vuln_count = len(audit_data.get("vulnerabilities", []))
+                        findings.append({
+                            "severity": "high" if vuln_count > 0 else "info",
+                            "category": "dependencies",
+                            "message": f"pip audit: {vuln_count} known vulnerabilities",
+                            "detail": audit_data.get("vulnerabilities", [])[:5]
+                        })
+                    except Exception:
+                        pass
+                else:
+                    findings.append({
+                        "severity": "info",
+                        "category": "dependencies",
+                        "message": "pip audit: no known vulnerabilities found"
+                    })
+            except FileNotFoundError:
+                findings.append({
+                    "severity": "info",
+                    "category": "dependencies",
+                    "message": "pip audit not available (pip version may not support 'audit' subcommand)"
+                })
+            except Exception as e:
+                findings.append({
+                    "severity": "warning",
+                    "category": "dependencies",
+                    "message": f"pip audit check failed: {str(e)}"
+                })
+
+        # Summary
+        high_count = sum(1 for f in findings if f["severity"] in ("high", "critical"))
+        medium_count = sum(1 for f in findings if f["severity"] == "medium")
+
         return TaskResult.success_result(
             task_id=task.id,
             data={
                 "success": True,
                 "audit_type": audit_type,
+                "summary": {
+                    "total_findings": len(findings),
+                    "high_severity": high_count,
+                    "medium_severity": medium_count,
+                },
                 "findings": findings,
                 "recommendations": [
-                    "Implement automated security scanning",
-                    "Regular dependency updates",
-                    "Access control review"
+                    "Run full audit periodically: audit_type='full'",
+                    "Fix high-severity findings immediately",
+                    "Schedule automated security checks via scheduler",
                 ]
             },
             context={"agent": self.name, "action": "security_audit"}

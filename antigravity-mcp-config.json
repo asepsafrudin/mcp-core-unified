@@ -1,1 +1,12 @@
-/home/aseps/MCP/config/local/antigravity-mcp-config.json
+{
+  "mcpServers": {
+    "mcp-bridge-openhands": {
+      "command": "/home/aseps/MCP/.venv/bin/python3",
+      "args": ["-m", "servers.bridge.openhands_server"],
+      "env": {
+        "PYTHONPATH": "/home/aseps/MCP/services/modular-mcp",
+        "MCP_ROOT": "/home/aseps/MCP"
+      }
+    }
+  }
+}

@@ -52,19 +52,60 @@ class WhatsAppClient:
                 logger.error(f"Request error: {e}")
                 raise
 
-    async def send_message(self, chat_id: str, text: str, session_name: str = "default") -> Dict[str, Any]:
+    async def send_message(
+        self,
+        chat_id: str,
+        text: str,
+        session_name: str = "default",
+        document_path: Optional[str] = None,
+        document_name: Optional[str] = None,
+        document_mimetype: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
-        Send a text message via Baileys Webhook.
+        Send a text message (and optional document attachment) via Baileys Webhook.
         
         Args:
-            chat_id: Recipient ID (e.g., '62812345678@c.us')
-            text: Message content
+            chat_id: Recipient ID (e.g., '62812345678@c.us' or '@s.whatsapp.net')
+            text: Message content / summary
             session_name: Ignored in Baileys
+            document_path: Optional file path to HTML/PDF document to attach
+            document_name: Optional custom filename for the attachment
+            document_mimetype: Optional MIME type (default 'text/html' for .html)
         """
-        return await self._request("POST", "/webhook/whatsapp", json={
+        payload = {
             "user_id": chat_id,
             "response": text
-        })
+        }
+        if document_path:
+            payload["document_path"] = document_path
+        if document_name:
+            payload["document_name"] = document_name
+        if document_mimetype:
+            payload["document_mimetype"] = document_mimetype
+
+        return await self._request("POST", "/webhook/whatsapp", json=payload)
+
+    async def send_document(
+        self,
+        chat_id: str,
+        document_path: str,
+        caption: str = "",
+        document_name: Optional[str] = None,
+        document_mimetype: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Send a document attachment via Baileys Webhook.
+        """
+        from pathlib import Path
+        file_name = document_name or Path(document_path).name
+        mime = document_mimetype or ("text/html" if document_path.endswith(".html") else "application/octet-stream")
+        return await self.send_message(
+            chat_id=chat_id,
+            text=caption or f"📄 Dokumen lampiran: {file_name}",
+            document_path=document_path,
+            document_name=file_name,
+            document_mimetype=mime
+        )
 
     # =========================================================
     # DEPRECATED WAHA METHODS (Petikemas)

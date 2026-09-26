@@ -117,7 +117,8 @@ class GoogleWorkspaceClient:
         try:
             token_path = self._get_token_path()
             if os.path.exists(token_path):
-                self._credentials = Credentials.from_authorized_user_file(token_path, self.SCOPES)
+                # Load credentials with the scopes stored inside the token itself
+                self._credentials = Credentials.from_authorized_user_file(token_path)
                 
                 # If credentials expired, refresh them
                 if self._credentials and self._credentials.expired and self._credentials.refresh_token:
@@ -126,21 +127,36 @@ class GoogleWorkspaceClient:
                     with open(token_path, 'w') as token:
                         token.write(self._credentials.to_json())
                 
-                return self._credentials and self._credentials.valid
+                return bool(self._credentials and self._credentials.valid)
             return False
         except Exception as e:
             logger.error("[GoogleWorkspace] OAuth2 loading error: %s", e)
             return False
 
     def _get_token_path(self) -> str:
-        """Get absolute path for the token file."""
-        if os.path.isabs(self.token_file):
+        """Get absolute path for the token file, checking candidate directories."""
+        if os.path.isabs(self.token_file) and os.path.exists(self.token_file):
             return self.token_file
         
-        creds_dir = os.getenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH")
-        if creds_dir:
-            return os.path.join(creds_dir, self.token_file)
-        return self.token_file
+        creds_dir = os.getenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH", "/home/aseps/MCP/config/credentials/google")
+        
+        # Check direct path
+        direct = os.path.join(creds_dir, self.token_file)
+        if os.path.exists(direct):
+            return direct
+            
+        # Check subdirectories (e.g. puubangda/token.json, token_user.json)
+        candidates = [
+            os.path.join(creds_dir, "puubangda", "token.json"),
+            os.path.join(creds_dir, "puubangda", self.token_file),
+            os.path.join(creds_dir, "token_user.json"),
+            os.path.join(creds_dir, "token.json"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+                
+        return direct
 
     def get_auth_url(self) -> str:
         """Generate Authorization URL for the user to visit (Option B)."""

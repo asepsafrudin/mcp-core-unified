@@ -109,6 +109,30 @@ def _register_all_tools():
     except ImportError:
         pass  # Vane connector may not be running
 
+    # Serena instance pool tools
+    try:
+        from .serena import (
+            serena_status,
+            serena_pool_spawn,
+            serena_pool_kill,
+            serena_pool_health,
+        )
+    except ImportError:
+        pass
+
+    # Srikandi Browser Agent Tools
+    try:
+        from .browser.srikandi_tools import (
+            SrikandiListProfilesTool,
+            SrikandiCheckSessionTool,
+            SrikandiFetchSuratTool,
+            SrikandiDownloadSuratTool,
+            SrikandiSyncDatabaseTool,
+        )
+    except ImportError:
+        pass
+        pass  # Serena may not be available in all environments
+
 # Trigger registration on first import of tools module
 _register_all_tools()
 

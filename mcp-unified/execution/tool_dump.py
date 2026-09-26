@@ -37,6 +37,17 @@ IDE_CORE_DUMP_TOOLS: FrozenSet[str] = frozenset(
         "scheduler_get_status",
         "whatsapp_get_status",
         "whatsapp_list_chats",
+        "runpod_check_health",
+        "runpod_run_job",
+        "runpod_get_job_status",
+        "runpod_cancel_job",
+        "runpod_ocr_process",
+        "runpod_process_heavy_document",
+        "legal_evaluate_doctrine",
+        # Autonomous Coder & Output Engine (TASK-134)
+        "code_agent_execute",
+        "report_agent_render",
+        "script_pipeline_run",
     }
 )
 

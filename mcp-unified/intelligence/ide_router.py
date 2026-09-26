@@ -198,11 +198,71 @@ def _get_local_tools() -> List[StructuredTool]:
     return tools
 
 
-def _get_llm() -> ChatOpenAI:
+def _get_llm_smart():
+    """
+    Smart LLM factory dengan fallback chain:
+      1. Colab Ollama (ollama.supd2.net) — jika OLLAMA_URL mengarah ke remote
+      2. Local Ollama (localhost:11434)  — jika OLLAMA_URL = localhost
+      3. OpenAI (gpt-4o)                — jika Ollama tidak tersedia
+
+    Membaca OLLAMA_URL dari .env.ai atau environment variable.
+    """
+    import time
+    import urllib.request
+
+    ollama_url = os.getenv("OLLAMA_URL", "")
+    if not ollama_url:
+        # Baca dari .env.ai
+        env_ai = Path(__file__).resolve().parents[2] / "config" / "env" / ".env.ai"
+        if env_ai.exists():
+            for line in env_ai.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("OLLAMA_URL="):
+                    ollama_url = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+    if not ollama_url:
+        ollama_url = "http://localhost:11434"
+
+    ollama_url = ollama_url.rstrip("/")
+    is_remote  = "localhost" not in ollama_url and "127.0.0.1" not in ollama_url
+    backend_label = "colab_ollama" if is_remote else "local_ollama"
+
+    # Coba koneksi ke Ollama (remote atau lokal)
+    try:
+        req = urllib.request.Request(
+            f"{ollama_url}/api/tags",
+            headers={"User-Agent": "MCP-IDERouter/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as r:
+            if r.status == 200:
+                # Tentukan model terbaik yang tersedia
+                import json as _json
+                data        = _json.loads(r.read())
+                model_names = [m.get("name") for m in data.get("models", [])]
+                model       = next(
+                    (m for m in ["qwen2.5-coder:7b", "qwen2.5-coder:14b", "codellama:13b"]
+                     if m in model_names),
+                    "qwen2.5-coder:7b",
+                )
+                try:
+                    from langchain_ollama import ChatOllama
+                    logger.info(f"[IDERouter] Using {backend_label}: {ollama_url} | model={model}")
+                    return ChatOllama(base_url=ollama_url, model=model, temperature=0)
+                except ImportError:
+                    logger.warning("[IDERouter] langchain_ollama not installed, falling back to OpenAI")
+    except Exception as e:
+        logger.warning(f"[IDERouter] {backend_label} unreachable ({e}), falling back to OpenAI")
+
+    # Fallback ke OpenAI
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise ValueError("OPENAI_API_KEY tidak dikonfigurasi")
+        raise ValueError(
+            "Tidak ada backend LLM yang tersedia. "
+            "Pastikan Colab runtime aktif (https://ollama.supd2.net) atau set OPENAI_API_KEY."
+        )
+    logger.info("[IDERouter] Using OpenAI fallback: gpt-4o")
     return ChatOpenAI(api_key=api_key, model="gpt-4o", temperature=0, timeout=30, max_retries=2)
+
 
 
 # =============================================================================
@@ -224,7 +284,7 @@ async def local_tools_node(state: IDEAgentState) -> dict:
     """Jalankan ReAct agent dengan tools lokal dari execution.registry."""
     print("[IDERouter] Executing via local_tools")
     try:
-        llm = _get_llm()
+        llm = _get_llm_smart()
         tools = _get_local_tools()
         if not tools:
             return {
@@ -311,7 +371,7 @@ async def general_chat_node(state: IDEAgentState) -> dict:
     """Jawab langsung via LLM tanpa tools."""
     print("[IDERouter] General chat")
     try:
-        llm = _get_llm()
+        llm = _get_llm_smart()
         messages = [
             SystemMessage(content="Kamu adalah asisten AI untuk Agentic IDE. Jawab dengan ringkas dan jelas."),
             HumanMessage(content=state["task"]),

@@ -249,6 +249,32 @@ async def initialize_all_components():
     except Exception as e:
         logger.warning(f"Failed to register OpenHands Antigravity tools: {e}")
 
+    # 5r. Register RunPod Serverless & GPU tools
+    try:
+        from integrations.runpod import get_runpod_tools
+        for tool_func in get_runpod_tools():
+            registry.register(tool_func)
+        logger.info("Registered RunPod Serverless & GPU tools (runpod_check_health, runpod_run_job, runpod_get_job_status, runpod_cancel_job, runpod_ocr_process)")
+    except Exception as e:
+        logger.warning(f"Failed to register RunPod tools: {e}")
+
+    # 5s. Register Autonomous Code & Output Engine tools (TASK-134)
+    try:
+        import execution.tools.code_output_tools
+        logger.info("Registered Autonomous Code & Output Engine tools (code_agent_execute, report_agent_render, script_pipeline_run)")
+    except Exception as e:
+        logger.warning(f"Failed to register Code & Output Engine tools: {e}")
+
+    # 5s. Register Legal Agent Tools (TASK-127 & TASK-128 Multi-Dimension Suite)
+    try:
+        from tools.legal_tools import register_tools as register_legal_tools
+        register_legal_tools()
+        logger.info("Registered Legal Agent tools suite (legal_comprehensive_audit, legal_evaluate_doctrine, legal_ingest_document, legal_visualize_radar, legal_verify_statutory, legal_verify_correspondence, legal_verify_policy_code, legal_monitor_lifecycle, legal_dispatch_alert, legal_check_compliance, legal_research, legal_verify_spm)")
+    except Exception as e:
+        logger.warning(f"Failed to register Legal Agent tools: {e}")
+
+
+
     # 6. Discover remote tools
     try:
         await discover_remote_tools()
