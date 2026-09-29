@@ -3,20 +3,23 @@
 # Telegram Bot Runner
 # 
 # Usage:
-#   ./run.sh          # Run with centralized root .env
+#   ./run.sh          # Run with centralized config/env credentials
 #   ./run.sh --daemon # Run in background
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
-ROOT_ENV="/home/aseps/MCP/.env"
+# TASK-154: credentials are consolidated in config/env/ and loaded by the Python
+# entrypoint via scripts.load_env.load_env(). This is only a sanity gate.
+ENV_DIR="/home/aseps/MCP/config/env"
+ENV_CORE="$ENV_DIR/.env.core"
 LOCAL_ENV=".env"
 
 # Check if centralized env exists
-if [ ! -f "$ROOT_ENV" ] && [ ! -f "$LOCAL_ENV" ]; then
+if [ ! -f "$ENV_CORE" ] && [ ! -f "$LOCAL_ENV" ]; then
     echo "❌ Error: no secret source found!"
-    echo "Expected root env: $ROOT_ENV"
+    echo "Expected centralized env dir: $ENV_DIR (at least .env.core)"
     echo "Optional fallback: $(pwd)/$LOCAL_ENV"
     exit 1
 fi

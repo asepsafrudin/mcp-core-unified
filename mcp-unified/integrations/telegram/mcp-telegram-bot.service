@@ -9,7 +9,16 @@ Type=simple
 User=aseps
 WorkingDirectory=/home/aseps/MCP/core/mcp-unified
 Environment="PYTHONPATH=/home/aseps/MCP/core/mcp-unified"
-EnvironmentFile=/home/aseps/MCP/.env
+# Environment files (TASK-154): all credentials are consolidated in config/env/.
+# Order mirrors scripts/load_env.py — later files override earlier ones.
+EnvironmentFile=/home/aseps/MCP/config/env/.env.core
+EnvironmentFile=/home/aseps/MCP/config/env/.env.ai
+EnvironmentFile=/home/aseps/MCP/config/env/.env.workspace
+EnvironmentFile=/home/aseps/MCP/config/env/.env.cloud
+EnvironmentFile=/home/aseps/MCP/config/env/.env.messaging
+EnvironmentFile=/home/aseps/MCP/config/env/.env.integrations
+EnvironmentFile=/home/aseps/MCP/config/env/.env.openhands
+EnvironmentFile=/home/aseps/MCP/config/env/.env.remote-access
 
 ExecStart=/home/aseps/MCP/.venv/bin/python3 /home/aseps/MCP/core/mcp-unified/integrations/telegram/run.py
 

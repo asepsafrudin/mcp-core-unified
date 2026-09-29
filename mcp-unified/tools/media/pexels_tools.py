@@ -2,12 +2,13 @@ import os
 import time
 import requests
 from dotenv import load_dotenv
+from scripts.load_env import load_env
 
 _PEXELS_CACHE = {}
 
 def get_pexels_key() -> str:
     """Retrieve the Pexels API key from .env"""
-    load_dotenv("/home/aseps/MCP/.env")
+    load_env()
     key = os.getenv("PEXELS_API_KEY")
     if not key:
         raise ValueError("PEXELS_API_KEY is not set in .env")
