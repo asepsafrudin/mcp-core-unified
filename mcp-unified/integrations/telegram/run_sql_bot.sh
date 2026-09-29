@@ -10,7 +10,10 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}🤖 SQL Bot Runner (Legacy/Separated Service)${NC}"
 echo "===================="
 
-ROOT_ENV="/home/aseps/MCP/.env"
+# TASK-154: credentials consolidated in config/env/ (TELEGRAM_BOT_TOKEN lives in
+# .env.messaging). The Python entrypoint loads them via scripts.load_env.
+ENV_DIR="/home/aseps/MCP/config/env"
+ENV_MESSAGING="$ENV_DIR/.env.messaging"
 LOCAL_ENV=".env"
 
 # Check if already running
@@ -33,16 +36,16 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 # Check centralized env file
-if [ ! -f "$ROOT_ENV" ] && [ ! -f "$LOCAL_ENV" ]; then
+if [ ! -f "$ENV_MESSAGING" ] && [ ! -f "$LOCAL_ENV" ]; then
     echo -e "${RED}❌ No secret source found${NC}"
-    echo "Expected root env: $ROOT_ENV"
+    echo "Expected centralized env: $ENV_MESSAGING"
     echo "Optional fallback: $(pwd)/$LOCAL_ENV"
     exit 1
 fi
 
 # Check required environment variables in centralized source first
-if [ -f "$ROOT_ENV" ]; then
-    ENV_TO_CHECK="$ROOT_ENV"
+if [ -f "$ENV_MESSAGING" ]; then
+    ENV_TO_CHECK="$ENV_MESSAGING"
 else
     ENV_TO_CHECK="$LOCAL_ENV"
 fi

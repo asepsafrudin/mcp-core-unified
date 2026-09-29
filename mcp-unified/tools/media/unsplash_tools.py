@@ -2,13 +2,14 @@ import os
 import time
 import requests
 from dotenv import load_dotenv
+from scripts.load_env import load_env
 
 # Basic in-memory cache to prevent exhausting the 50 req/hr limit during agent loops
 _SEARCH_CACHE = {}
 
 def get_unsplash_key() -> str:
     """Retrieve the Unsplash access key from .env"""
-    load_dotenv("/home/aseps/MCP/.env")
+    load_env()
     key = os.getenv("UNSPLASH_ACCES_KEY")
     if not key:
         raise ValueError("UNSPLASH_ACCES_KEY is not set in .env")

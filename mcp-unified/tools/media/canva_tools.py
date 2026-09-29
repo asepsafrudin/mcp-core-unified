@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 TOKEN_PATH = "/home/aseps/MCP/config/credentials/canva/token.json"
 
 def _get_canva_credentials():
-    load_dotenv("/home/aseps/MCP/.env")
+    load_env()
     client_id = os.getenv("CANVA_CLIENT_ID")
     client_secret = os.getenv("CANVA_CLIENT_SECRET")
     if not client_id or not client_secret:
@@ -76,6 +76,7 @@ def upload_canva_asset(file_path: str, name: str = None) -> dict:
     }
     
     import mimetypes
+from scripts.load_env import load_env
     mime_type, _ = mimetypes.guess_type(file_path)
     if not mime_type:
         mime_type = "application/octet-stream"
