@@ -141,7 +141,7 @@ update_config() {
     echo ""
     echo -e "${YELLOW}📝 Updating bot configuration...${NC}"
     
-    ENV_FILE="/home/aseps/MCP/.env"
+    ENV_FILE="/home/aseps/MCP/config/env/.env.ai"
     
     if [ -f "$ENV_FILE" ]; then
         # Backup
