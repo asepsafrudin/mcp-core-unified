@@ -519,29 +519,6 @@ def _retrieve_rag_legal_knowledge(query: str) -> str:
             'arsip_knowledge', 'setditjen_bangda', 'docs_rag', 'supd_iv'
         )
 
-        if keywords:
-            clauses = ["(COALESCE(metadata->>'title', metadata->>'file_name', id) ILIKE %s OR content ILIKE %s)" for _ in keywords]
-            params = []
-            for kw in keywords:
-                params.extend([f"%{kw}%", f"%{kw}%"])
-            params.append(active_namespaces)
-            sql = f"""
-                SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content 
-                FROM knowledge_documents 
-                WHERE ({' OR '.join(clauses)})
-                  AND namespace IN %s
-                ORDER BY created_at DESC LIMIT 3;
-            """
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-            if rows:
-                rag_text = "NASKAH PERATURAN & KNOWLEDGE BASE TERVERIFIKASI (RAG DATABASE):\n"
-                for r in rows:
-                    rag_text += f"\n📜 *{r[0]}*\n{r[1][:950]}\n"
-                cur.close()
-                conn.close()
-                return rag_text.strip()
-
         # Semantic Vector Search via Ollama nomic-embed-text
         try:
             import requests
@@ -571,6 +548,30 @@ def _retrieve_rag_legal_knowledge(query: str) -> str:
                         return rag_text.strip()
         except Exception as sem_err:
             logger.debug(f"Semantic search fallback notice: {sem_err}")
+
+        # Fallback to Keyword Search if semantic fails
+        if keywords:
+            clauses = ["(COALESCE(metadata->>'title', metadata->>'file_name', id) ILIKE %s OR content ILIKE %s)" for _ in keywords]
+            params = []
+            for kw in keywords:
+                params.extend([f"%{kw}%", f"%{kw}%"])
+            params.append(active_namespaces)
+            sql = f"""
+                SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content 
+                FROM knowledge_documents 
+                WHERE ({' OR '.join(clauses)})
+                  AND namespace IN %s
+                ORDER BY created_at DESC LIMIT 3;
+            """
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            if rows:
+                rag_text = "NASKAH PERATURAN & KNOWLEDGE BASE TERVERIFIKASI (RAG DATABASE):\n"
+                for r in rows:
+                    rag_text += f"\n📜 *{r[0]}*\n{r[1][:950]}\n"
+                cur.close()
+                conn.close()
+                return rag_text.strip()
 
         # Fallback query umum
         cur.execute("""

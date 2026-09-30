@@ -11,10 +11,8 @@ Usage:
     brief = await injector.get_brief()
     print(brief)  # Paste ke agent atau inject ke system prompt
 """
-import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, List
 from datetime import datetime
-from pathlib import Path
 
 
 class ContextInjector:
@@ -175,7 +173,7 @@ context = await client.get_context()
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         return await self.client.save_context(
-            key=f"last_session",
+            key="last_session",
             content=f"[{now}] {summary}",
             metadata={
                 "type": "session_summary",

@@ -7,10 +7,8 @@ Usage:
     text = extract_text("file.pdf")
     text = extract_text("file.docx")
 """
-import io
 import re
 from pathlib import Path
-from typing import Optional
 
 
 def extract_text(file_path: str | Path) -> str:
