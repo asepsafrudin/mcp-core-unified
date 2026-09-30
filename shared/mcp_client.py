@@ -12,11 +12,9 @@ Usage:
     context = await client.get_context()
 """
 import json
-import asyncio
 import urllib.request
 import urllib.error
-from typing import Any, Dict, List, Optional
-from pathlib import Path
+from typing import Any, Dict, List
 
 from .discovery import discover_hub, detect_namespace
 
