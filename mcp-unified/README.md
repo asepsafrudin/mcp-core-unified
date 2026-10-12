@@ -1,5 +1,10 @@
 # MCP Unified Server
 
+> **STATUS: ✅ AKTIF — kanonik untuk IDE/agent (monolith).**
+> Server MCP utama Cline (stdio) + SSE `:8000`; ±145 tool / 16 domain (lihat [`../../.agents/AGENTS.md`](../../.agents/AGENTS.md) §6 & §11).
+> Suite modular [`servers/`](../../servers/README.md) (`:8002–:8010`) adalah target migrasi bertahap. Stack legacy `services/modular-mcp/` berstatus **DEPRECATED**.
+> Rujukan: root [`README.md`](../../README.md) → §Stack Kanonik.
+
 Server terpadu untuk Agentic IDE, menyediakan platform hosting untuk tool-tool yang dapat diakses oleh berbagai agen.
 
 ## Deskripsi
