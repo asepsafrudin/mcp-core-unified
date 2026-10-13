@@ -45,8 +45,8 @@ class BrowserUseAdapter:
         if api_key:
             try:
                 from browser_use.llm.groq.chat import ChatGroq
-                self._llm = ChatGroq(model="llama-3.3-70b-versatile")
-                logger.info("BrowserUse: Groq llama-3.3-70b")
+                self._llm = ChatGroq(model="openai/gpt-oss-120b")
+                logger.info("BrowserUse: Groq openai/gpt-oss-120b")
                 return self._llm
             except ImportError:
                 pass

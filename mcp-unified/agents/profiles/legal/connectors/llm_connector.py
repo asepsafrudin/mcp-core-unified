@@ -29,7 +29,7 @@ class LLMConnector:
         self.vllm_endpoint = os.getenv('RUNPOD_VLLM_VISION_ENDPOINT_ID', 'qi2tml56v6cf1p')
         
         # Models
-        self.groq_model = os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile')
+        self.groq_model = os.getenv('GROQ_MODEL', 'openai/gpt-oss-120b')
         self.openai_model = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
         self.deepseek_model = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')
         self.gemini_model = 'gemini-1.5-flash'
@@ -54,7 +54,7 @@ class LLMConnector:
         if self.groq_api_key:
             try:
                 # Use standard supported models on Groq
-                for model in ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']:
+                for model in ['openai/gpt-oss-120b']:
                     result = await self._call_groq(prompt, system_prompt, temperature, max_tokens, model)
                     if result.get('success'):
                         return result

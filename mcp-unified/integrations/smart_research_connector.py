@@ -26,17 +26,14 @@ BLOCKED_DOMAINS = [
 SEARXNG_URL = "http://localhost:8091"   # SearxNG dari dalam Vane (port 8091 di-expose)
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL   = os.environ.get("GROQ_MODEL", "qwen/qwen3-32b")  # model default
+GROQ_MODEL   = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")  # model default
 
-# Fallback model — qwen/qwen3-32b bisa diakses (error 400 bukan 403)
-# Note: kita TIDAK pakai response_format jadi qwen support!
+# Fallback model — model Groq alternatif bila model utama gagal.
 GROQ_FALLBACK_MODELS = [
-    "qwen/qwen3-32b",
+    "openai/gpt-oss-120b",
     "moonshotai/kimi-k2-instruct",
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "groq/compound-mini",
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
 ]
 
 

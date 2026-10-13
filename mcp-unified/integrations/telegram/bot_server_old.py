@@ -119,7 +119,7 @@ class TelegramConfig:
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-1.5-flash"
     groq_api_key: Optional[str] = None
-    groq_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "openai/gpt-oss-120b"
     ai_provider: str = "groq"  # "gemini" or "groq"
     
     @classmethod
@@ -148,7 +148,7 @@ class TelegramConfig:
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
             groq_api_key=os.getenv("GROQ_API_KEY"),
-            groq_model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+            groq_model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
             ai_provider=os.getenv("AI_PROVIDER", "groq"),
         )
 
@@ -206,7 +206,7 @@ class GeminiAI:
 class GroqAI:
     """Groq AI Client wrapper with streaming support."""
     
-    def __init__(self, api_key: str, model: str = "llama-3.1-8b-instant"):
+    def __init__(self, api_key: str, model: str = "openai/gpt-oss-120b"):
         if not GROQ_AVAILABLE:
             raise RuntimeError("Groq not available. Install: pip install groq")
         

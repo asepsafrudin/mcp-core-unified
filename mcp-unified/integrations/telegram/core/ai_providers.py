@@ -34,7 +34,7 @@ class AIResponse:
 class GroqAI:
     """Groq AI Client with streaming."""
     
-    def __init__(self, api_key: str, model: str = "llama-3.1-8b-instant"):
+    def __init__(self, api_key: str, model: str = "openai/gpt-oss-120b"):
         if not GROQ_AVAILABLE:
             raise RuntimeError("Groq not installed. Run: pip install groq")
         self.client = AsyncGroq(api_key=api_key)

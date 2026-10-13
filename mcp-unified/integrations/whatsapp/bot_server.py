@@ -57,7 +57,7 @@ class WhatsAppBot:
         gemini_key = os.getenv("GEMINI_API_KEY")
         
         if groq_key:
-            self.ai = GroqAI(groq_key, os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"))
+            self.ai = GroqAI(groq_key, os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"))
             logger.info("✅ Groq AI initialized for WhatsApp")
         elif gemini_key:
             self.ai = GeminiAI(gemini_key, os.getenv("GEMINI_MODEL", "gemini-1.5-flash"))

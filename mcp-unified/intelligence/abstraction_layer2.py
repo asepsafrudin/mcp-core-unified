@@ -7,7 +7,7 @@ Trigger: docs/ltm-token-efficiency-impl-plan-2026-07-07.md (QW #3)
 Implementasi Layer 2 Abstraction: Ekstrak patterns, rules, generalizations
 dari LTM entries yang ada dan simpan ke knowledge_documents table.
 
-Menggunakan Groq API (GROQ_API_KEY_BOT_WHATSAPP) dengan model llama-3.1-8b-instant
+Menggunakan Groq API (GROQ_API_KEY_BOT_WHATSAPP) dengan model openai/gpt-oss-120b
 untuk efisiensi cost dan latency.
 
 Usage:
@@ -47,7 +47,7 @@ DB_CONFIG = {
 }
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY_BOT_WHATSAPP", "")
-GROQ_MODEL = "llama-3.1-8b-instant"  # User-specified
+GROQ_MODEL = "openai/gpt-oss-120b"  # User-specified
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
 # Source namespaces yang akan di-abstraksi

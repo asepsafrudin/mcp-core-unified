@@ -8,7 +8,7 @@ dengan unified interface.
 Changelog:
 - Tambah OpenAI provider (gpt-4o-mini)
 - Migrasi Gemini dari google-generativeai ke google-genai SDK baru (v1.57+)
-- Verifikasi Groq model: qwen/qwen3-32b (aktif, context 131072)
+- Verifikasi Groq model: openai/gpt-oss-120b (aktif, context 131072)
 """
 
 import os
@@ -113,7 +113,7 @@ class AIService(ABC):
     def strip_thinking_tags(text: str) -> str:
         """Hapus tag <think>...</think> dari output thinking models (Qwen3, QwQ, dll).
         
-        Model seperti qwen/qwen3-32b mengeluarkan proses berpikir dalam tag <think>.
+        Model seperti openai/gpt-oss-120b mengeluarkan proses berpikir dalam tag <think>.
         Tag ini harus dihapus sebelum dikirim ke user.
         """
         if not text:
@@ -283,20 +283,20 @@ Kamu dapat mencari data surat masuk/keluar secara real-time:
 
 # ==============================================================================
 # GROQ AI (Provider 1 - AKTIF)
-# Model: qwen/qwen3-32b | Context: 131072 | Max completion: 40960
+# Model: openai/gpt-oss-120b | Context: 131072 | Max completion: 40960
 # Status: ✅ Verified aktif via API 2026-03-27
 # ==============================================================================
 class GroqAI(AIService):
     """Groq AI Service implementation.
     
-    Model yang digunakan: qwen/qwen3-32b
+    Model yang digunakan: openai/gpt-oss-120b
     Verified aktif: 2026-03-27 via GET /openai/v1/models
     """
     
     def __init__(
         self,
         api_key: str,
-        model: str = "llama-3.1-8b-instant",
+        model: str = "openai/gpt-oss-120b",
         temperature: float = 0.7,
         max_tokens: int = 4096
     ):
@@ -1313,7 +1313,7 @@ class AIServiceManager:
     Menyediakan failover dan switching antara providers.
     
     Provider yang didukung:
-    - groq    → qwen/qwen3-32b (AKTIF, default)
+    - groq    → openai/gpt-oss-120b (AKTIF, default)
     - gemini  → gemini-2.0-flash (google-genai SDK baru)
     - openai  → gpt-4o-mini (BARU, API terverifikasi)
     """

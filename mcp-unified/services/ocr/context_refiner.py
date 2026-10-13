@@ -469,7 +469,7 @@ PENTING: Hanya jawab dengan JSON murni, tidak ada tag pikir pikir, tidak ada pen
                 "Content-Type": "application/json",
             }
             payload = {
-                "model": LLM_CONFIG.get("model", "llama-3.1-8b-instant"),
+                "model": LLM_CONFIG.get("model", "openai/gpt-oss-120b"),
                 "messages": [
                     {"role": "system", "content": "Anda adalah asisten ahli dokumen pemerintahan Indonesia."},
                     {"role": "user", "content": prompt}
