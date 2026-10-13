@@ -6,8 +6,10 @@ Edit bedah untuk berkas:
 - `diff`: menerapkan unified diff via `git apply`.
 
 Penulisan atomik (temp + rename) dan preservasi line-ending. Path divalidasi di
-dalam WORKSPACE_ROOT (tolak root-spill).
+dalam WORKSPACE_ROOT (tolak root-spill). Guard anti-race: `expected_sha256`
+menolak edit bila berkas berubah di disk sejak dibaca.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -39,6 +41,20 @@ def _read_preserve(path: Path) -> str:
         return f.read()
 
 
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _conflict(p: Path, expected: str, current: str) -> str:
+    return json.dumps({
+        "status": "conflict",
+        "path": str(p),
+        "summary": "Berkas berubah di disk sejak dibaca (hash tidak cocok); baca ulang sebelum mengedit.",
+        "expected_sha256": expected,
+        "current_sha256": current,
+    }, indent=2)
+
+
 def _atomic_write(path: Path, text: str) -> None:
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".editpatch-")
     try:
@@ -59,6 +75,7 @@ def edit_file_patch(
     new_string: Optional[str] = None,
     diff: Optional[str] = None,
     replace_all: bool = False,
+    expected_sha256: Optional[str] = None,
 ) -> str:
     """
     Mengedit berkas secara bedah (non-destruktif).
@@ -69,8 +86,11 @@ def edit_file_patch(
         old_string / new_string: untuk mode search_replace (old_string wajib unik kecuali replace_all).
         diff: unified diff untuk mode "diff" (diterapkan via `git apply`).
         replace_all: ganti semua kemunculan (mode search_replace).
+        expected_sha256: opsional; bila diisi, edit DITOLAK bila SHA-256 berkas di disk
+            tidak cocok (guard anti-race: deteksi perubahan eksternal setelah dibaca).
 
-    Mengembalikan JSON: {status, path, mode, changed, replacements, summary, stdout_tail}.
+    Mengembalikan JSON: {status, path, mode, changed, replacements, sha256_before,
+    sha256_after, summary, stdout_tail}. Status "conflict" bila guard hash gagal.
     """
     trace_id = EnforcementMiddleware.generate_trace_id()
     start = time.time()
@@ -85,6 +105,10 @@ def edit_file_patch(
             if not p.exists() or p.is_dir():
                 return json.dumps({"status": "rejected", "summary": f"Berkas '{p}' tidak ditemukan atau bukan berkas."}, indent=2)
 
+            sha_before = _file_sha256(p)
+            if expected_sha256 and expected_sha256.strip().lower() != sha_before:
+                return _conflict(p, expected_sha256.strip().lower(), sha_before)
+
             raw = _read_preserve(p)
             occurrences = raw.count(old_string)
             if occurrences == 0:
@@ -95,6 +119,7 @@ def edit_file_patch(
             new_text = raw.replace(old_string, new_string, -1 if replace_all else 1)
             replacements = occurrences if replace_all else 1
             _atomic_write(p, new_text)
+            sha_after = _file_sha256(p)
 
             EnforcementMiddleware.audit_log(trace_id=trace_id, tool_name="edit_file_patch", status="ok",
                                             details={"path": str(p), "mode": mode, "replacements": replacements})
@@ -105,6 +130,8 @@ def edit_file_patch(
                 "mode": mode,
                 "changed": True,
                 "replacements": replacements,
+                "sha256_before": sha_before,
+                "sha256_after": sha_after,
                 "duration_ms": duration_ms,
                 "summary": f"search_replace pada '{p}': {replacements} penggantian.",
             }, indent=2)
@@ -112,6 +139,10 @@ def edit_file_patch(
         if mode == "diff":
             if not diff:
                 return json.dumps({"status": "rejected", "summary": "Parameter 'diff' wajib untuk mode diff."}, indent=2)
+            if expected_sha256 and p.exists() and not p.is_dir():
+                sha_before = _file_sha256(p)
+                if expected_sha256.strip().lower() != sha_before:
+                    return _conflict(p, expected_sha256.strip().lower(), sha_before)
             proc = subprocess.run(
                 ["git", "apply", "--whitespace=nowarn", "-"],
                 cwd=str(WORKSPACE_ROOT), input=diff, capture_output=True, text=True, timeout=60,
@@ -126,6 +157,7 @@ def edit_file_patch(
                 "mode": mode,
                 "changed": ok,
                 "exit_code": proc.returncode,
+                "sha256_after": _file_sha256(p) if (p.exists() and not p.is_dir()) else None,
                 "duration_ms": duration_ms,
                 "summary": f"git apply pada '{p}': {'OK' if ok else 'GAGAL'} (exit={proc.returncode}).",
                 "stdout_tail": (proc.stdout or proc.stderr or "")[-1000:],
