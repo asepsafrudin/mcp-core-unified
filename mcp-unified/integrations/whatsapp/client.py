@@ -108,14 +108,29 @@ class WhatsAppClient:
         )
 
     # =========================================================
-    # DEPRECATED WAHA METHODS (Petikemas)
+    # BAILEYS COMPATIBILITY METHODS
     # =========================================================
     
     async def get_status(self) -> Dict[str, Any]:
-        raise NotImplementedError("get_status is deprecated in Baileys migration")
+        """Get status of the Baileys WhatsApp bot socket and queues."""
+        try:
+            return await self._request("GET", "/socket/status")
+        except Exception as e:
+            return {"ready": False, "error": str(e)}
 
     async def list_sessions(self) -> List[Dict[str, Any]]:
-        raise NotImplementedError("list_sessions is deprecated in Baileys migration")
+        """List active WhatsApp sessions (Baileys single active session)."""
+        try:
+            status = await self.get_status()
+            is_ready = bool(status.get("ready"))
+            return [{
+                "name": "default",
+                "status": "WORKING" if is_ready else "STOPPED",
+                "engine": "baileys",
+                "details": status
+            }]
+        except Exception as e:
+            return [{"name": "default", "status": "FAILED", "error": str(e)}]
 
     async def get_session(self, session_name: str = "default") -> Dict[str, Any]:
         raise NotImplementedError("get_session is deprecated in Baileys migration")

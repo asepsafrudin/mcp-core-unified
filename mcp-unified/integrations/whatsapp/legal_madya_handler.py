@@ -52,6 +52,13 @@ from integrations.whatsapp.non_service_handler import (
     satria_non_service_handlers,
     NonServiceCategory
 )
+from integrations.whatsapp.message_formatter import (
+    _clean_and_format_reply,
+    _is_summary_or_wrapup_request,
+    chunk_message,
+    render_plain_text,
+    get_adaptive_prompt_instructions
+)
 from integrations.whatsapp.interaction_logger import satria_interaction_logger
 from integrations.whatsapp.session_manager import satria_session_manager
 from integrations.whatsapp.deep_tracer import TokenUsage, LatencyBreakdown, satria_tracer
@@ -108,6 +115,7 @@ Fokus Utama & Kerangka Analisis Multi-Dimensi:
    a. Anda DILARANG KERAS mengarang tautan URL spesifik (misal: format /Details/...), nomor peraturan daerah, atau mengutip portal eksternal (seperti bpk.go.id, jdih, peraturan.go.id) dari ingatan parametrik semata.
    b. Jika pengguna menanyakan regulasi pada portal luar (misal: "cari di bpk.go.id", "peraturan di jdih", "cari di web"), informasi dan tautan URL HANYA boleh dicantumkan jika secara faktual terdapat pada fakta resmi terverifikasi / output tool penelusuran ('search_web_realtime' atau 'browse_portal_autonomous').
    c. Jika hasil penelusuran web tidak menemukan dokumen yang dicari, nyatakan secara jujur dan transparan bahwa dokumen tersebut belum terindeks pada portal resmi bersangkutan.
+   d. (TASK-158 CITATION ENFORCEMENT) Setiap pernyataan faktual tentang ISI regulasi (nomor, tahun, bunyi pasal, angka, tanggal) WAJIB disertai penanda sumber: awali blok rujukan dengan 📜 dan sebutkan judul/nomor naskah persis seperti pada konteks RAG yang diberikan. Jika konteks RAG tidak memuat sumbernya, nyatakan jujur "tidak menemukan sumber terverifikasi" dan JANGAN mengarang isi pasal. Larangan mengarang berlaku juga untuk nomor surat/disposisi dan identitas personel (NIP/pangkat).
 9. Struktur Organisasi dan Tata Kerja (SOTK) Ditjen Bina Pembangunan Daerah (Permendagri No. 9 Tahun 2025 / SOTK Kemendagri):
    a. Pimpinan: Direktur Jenderal Bina Pembangunan Daerah.
    b. Unsur Pembantu Pimpinan: Sekretariat Direktorat Jenderal (Setditjen), terdiri atas:
@@ -166,6 +174,160 @@ Karakter & Etika Komunikasi:
 """
 
 SATRIA_SYSTEM_PROMPT = SATRIA_LEGAL_MADYA_PROMPT
+
+
+# ===== TASK-158: Validator sitasi RAG (citation enforcement, pasca-generasi) =====
+
+# Penanda bahwa jawaban faktual-regulasi didukung sumber terverifikasi.
+CITATION_MARKERS = ("📜", "📖", "📎", "🔗", "sumber:", "referensi:", "rujukan:")
+
+# Pola pernyataan faktual regulasi yang menuntut sitasi.
+_REGULATION_FACT_PATTERNS = (
+    r"\bUU\s+(No\.?\s*)?\d+",
+    r"\bPP\s+(No\.?\s*)?\d+",
+    r"\bPerpres\s+(No\.?\s*)?\d+",
+    r"\bPermendagri\s+(No\.?\s*)?\d+",
+    r"\bPermen\s+[A-Za-z]*\s*(No\.?\s*)?\d+",
+    r"\bPerda\b", r"\bPerbup\b", r"\bPerwali\b",
+    r"\bpasal\s+\d+", r"\bPasal\s+\d+",
+    r"\bayat\s*\(\d+\)", r"\bDiktum\s+(KESATU|KEDUA|KETIGA|KEEMPAT|KELIMA)",
+    r"\bNIP\s+\d{8,}",
+    r"\b\d{3,}(?:[./][A-Za-z0-9.]+){2,}/\d{4}\b",  # nomor surat/disposisi multi-segmen
+)
+_COMPILED_FACT_PATTERNS = [re.compile(p) for p in _REGULATION_FACT_PATTERNS]
+
+_HONEST_ABSTAIN_PHRASES = (
+    "tidak menemukan sumber", "belum terindeks", "tidak memiliki akses",
+    "tidak dapat memverifikasi", "belum ada data", "tidak ditemukan",
+)
+
+
+def validate_rag_citation(reply_text: str) -> Dict[str, Any]:
+    """TASK-158 (158-C): validasi pasca-generasi citation enforcement.
+
+    Mengembalikan {has_regulation_fact, has_citation, honest_abstain, citation_ok}.
+    - has_regulation_fact: jawaban memuat klaim faktual regulasi/surat/personel.
+    - has_citation: jawaban memuat penanda sumber.
+    - honest_abstain: jawaban jujur menyatakan tidak ada sumber (dianggap OK).
+    - citation_ok: True bila tidak ada klaim faktual ATAU (klaim + sitasi) ATAU abstain jujur.
+    """
+    text = reply_text or ""
+    has_fact = any(p.search(text) for p in _COMPILED_FACT_PATTERNS)
+    lowered = text.lower()
+    has_citation = any(m.lower() in lowered for m in CITATION_MARKERS)
+    honest_abstain = any(p in lowered for p in _HONEST_ABSTAIN_PHRASES)
+    citation_ok = (not has_fact) or has_citation or honest_abstain
+    return {
+        "has_regulation_fact": has_fact,
+        "has_citation": has_citation,
+        "honest_abstain": honest_abstain,
+        "citation_ok": citation_ok,
+    }
+
+
+# ===== TASK-156: Perintah preferensi natural language =====
+
+# Kunci preferensi yang didukung & nilai baku yang dikenali (Bahasa Indonesia).
+PREFERENCE_FORMAT_KEYWORDS = {
+    "tabel": "tabel",
+    "table": "tabel",
+    "ringkas": "ringkas",
+    "singkat": "ringkas",
+    "detail": "detail",
+    "rinci": "detail",
+    "panjang": "detail",
+    "bullet": "bullet",
+    "poin": "bullet",
+    "poin-poin": "bullet",
+    "paragraf": "paragraf",
+    "narasi": "paragraf",
+}
+
+PREFERENCE_TONE_KEYWORDS = {
+    "formal": "formal",
+    "resmi": "formal",
+    "santai": "santai",
+    "teknis": "teknis",
+}
+
+_PREFERENCE_REMEMBER_PREFIXES = (
+    "ingat ", "ingat ya", "tolong ingat", "catat ", "simpan ",
+    "mulai sekarang ", "seterusnya ",
+)
+_PREFERENCE_FORGET_PHRASES = (
+    "lupakan preferensi", "hapus preferensiku", "hapus preferensi saya",
+    "reset preferensi", "lupakan semua preferensi",
+)
+
+
+def format_user_preferences_for_prompt(preferences: Dict[str, str]) -> str:
+    """TASK-156: render preferensi user menjadi blok system-prompt (injeksi 156-C)."""
+    if not preferences:
+        return ""
+    lines = ["PREFERENSI TERSIMPAN PENGGUNA (WAJIB DIPATUHI kecuali diminta lain):"]
+    if "format_jawaban" in preferences:
+        fmt = preferences["format_jawaban"]
+        lines.append(f"- Format jawaban yang disukai: {fmt}.")
+    if "gaya_bahasa" in preferences:
+        lines.append(f"- Gaya bahasa yang disukai: {preferences['gaya_bahasa']}.")
+    for k, v in preferences.items():
+        if k not in ("format_jawaban", "gaya_bahasa"):
+            lines.append(f"- {k}: {v}.")
+    return "\n".join(lines)
+
+
+def _handle_preference_command(cleaned_text: str, clean_phone: str) -> Optional[str]:
+    """TASK-156 (156-D): deteksi perintah preferensi natural language.
+
+    Mengembalikan balasan konfirmasi bila perintah dikenali, else None.
+    Contoh: 'ingat saya suka format tabel' -> simpan format_jawaban=tabel.
+    """
+    text_lower = (cleaned_text or "").lower().strip()
+    if not text_lower:
+        return None
+
+    # Lupakan preferensi
+    if any(p in text_lower for p in _PREFERENCE_FORGET_PHRASES):
+        prefs = satria_session_manager.get_user_preferences(clean_phone)
+        for key in list(prefs.keys()):
+            satria_session_manager.delete_user_preference(clean_phone, key)
+        return (
+            "🗑️ *PREFERENSI DIHAPUS*\n\n"
+            "Seluruh preferensi tersimpan Anda telah saya hapus. "
+            "Riwayat percakapan saat ini tetap berjalan seperti biasa."
+        )
+
+    # Ingat preferensi (hanya format_jawaban & gaya_bahasa yang dikenali)
+    is_remember = text_lower.startswith(_PREFERENCE_REMEMBER_PREFIXES) or " favorit" in text_lower or " kesukaan" in text_lower
+    if not is_remember:
+        return None
+
+    saved: List[str] = []
+    for word, normalized in PREFERENCE_FORMAT_KEYWORDS.items():
+        if word in text_lower and any(w in text_lower for w in ("format", "jawaban", "jawab", "tampil", "suka", "mau", "ingin")):
+            satria_session_manager.set_user_preference(clean_phone, "format_jawaban", normalized)
+            saved.append(f"format jawaban: *{normalized}*")
+            break
+    for word, normalized in PREFERENCE_TONE_KEYWORDS.items():
+        if word in text_lower and any(w in text_lower for w in ("gaya", "bahasa", "nada", "tone", "suka", "mau", "ingin")):
+            satria_session_manager.set_user_preference(clean_phone, "gaya_bahasa", normalized)
+            saved.append(f"gaya bahasa: *{normalized}*")
+            break
+
+    if not saved:
+        return (
+            "📌 *PREFERENSI BELUM TERSIMPAN*\n\n"
+            "Saya belum mengenali preferensi spesifiknya. Contoh yang bisa saya ingat:\n"
+            "• *Format jawaban*: tabel / ringkas / detail / bullet / paragraf\n"
+            "• *Gaya bahasa*: formal / santai / teknis\n\n"
+            "Contoh: _\"ingat saya suka format tabel\"_ atau _\"ingat gaya bahasa formal\"_"
+        )
+    return (
+        "✅ *PREFERENSI TERSIMPAN*\n\n"
+        + "\n".join(f"• {s}" for s in saved)
+        + "\n\nPreferensi ini akan saya pakai di setiap jawaban berikutnya, "
+          "bahkan setelah sesi di-reset. Ketik _\"lupakan preferensi saya\"_ untuk menghapusnya."
+    )
 
 def _lookup_bangda_staff_data(query: str) -> str:
     """Mencari data kepegawaian, pejabat, dan struktur tim kerja Ditjen Bangda dari database master SK 2026."""
@@ -475,7 +637,22 @@ def _check_ltm_memory_status() -> str:
         return f"Gagal mengecek status LTM: {e}"
 
 
-def _retrieve_rag_legal_knowledge(query: str) -> str:
+def _namespace_of_title(title: str) -> str:
+    """TASK-158: heuristik namespace dari judul untuk diversifikasi hasil RAG."""
+    t = (title or "").lower()
+    if t.startswith("tim_kerja_2026") or "personel tim kerja" in t:
+        return "organisasi_bangda"
+    if t.startswith("arsip surat 2025"):
+        return "archive_2025"
+    if t.startswith("gdrive_doc_"):
+        return "arsip_regulasi"
+    return "other"
+
+
+import functools
+
+@functools.lru_cache(maxsize=100)
+def _retrieve_rag_legal_knowledge(query: str, namespace: Optional[str] = None, top_k: int = 3) -> str:
     """Mencari naskah peraturan perundang-undangan dan tata naskah dari database RAG pgvector / knowledge_documents."""
     q_lower = query.lower()
 
@@ -513,11 +690,42 @@ def _retrieve_rag_legal_knowledge(query: str) -> str:
             "amaryadi", "lpk", "akad", "upah", "ump", "umk", "pengawasan ketenagakerjaan"
         ]
         keywords = [kw for kw in reg_keywords if kw in q_lower]
-
+        # TASK-158: 7 namespace -> 10 (audit 2026-10-05, knowledge_documents live).
+        # +archive_2025 (2382 arsip korespondensi 2025), +organisasi_bangda (368 personel Tim Kerja 2026),
+        # +arsip_regulasi (100 arsip digital regulasi). SRIKANDI tetap via search_srikandi_rag terpisah.
+        # Namespace prioritas per kategori query: korespondensi/kepegawaian diutamakan bila
+        # query menyebutkannya, agar namespace besar (archive_2025) tidak menenggelamkan yang kecil.
         active_namespaces = (
             'evaluasi_regulasi', 'legal_regulations', 'shared_legal',
-            'arsip_knowledge', 'setditjen_bangda', 'docs_rag', 'supd_iv'
+            'arsip_knowledge', 'setditjen_bangda', 'docs_rag', 'supd_iv',
+            'archive_2025', 'organisasi_bangda', 'arsip_regulasi',
         )
+        if namespace:
+            active_namespaces = (namespace,)
+        else:
+            is_personnel_query = any(w in q_lower for w in (
+                "tim kerja", "personel", "personil", "pegawai", "pejabat", "staf",
+                "nip", "pangkat", "golongan", "jabatan", "siapa saja", "struktur tim",
+            ))
+            is_correspondence_query = any(w in q_lower for w in (
+                "surat", "disposisi", "arsip surat", "nomor surat", "pengirim",
+                "korespondensi", "nota dinas", "agenda surat",
+            ))
+            if is_personnel_query and not is_correspondence_query:
+                active_namespaces = ('organisasi_bangda',) + tuple(
+                    ns for ns in active_namespaces if ns != 'organisasi_bangda'
+                )
+            elif is_correspondence_query and not is_personnel_query:
+                active_namespaces = ('archive_2025', 'arsip_knowledge') + tuple(
+                    ns for ns in active_namespaces if ns not in ('archive_2025', 'arsip_knowledge')
+                )
+
+        # TASK-158: ambang jarak vektor per kategori query (dinamis, bukan hardcode global).
+        # Personel: embedding personel berjarak jauh (~0.35 vs ~0.24 arsip) karena perbedaan
+        # kosakata — ambang longgar agar organisasi_bangda tetap terambil.
+        vector_distance_threshold: Optional[float] = None
+        if is_personnel_query and not is_correspondence_query:
+            vector_distance_threshold = 0.45
 
         # Semantic Vector Search via Ollama nomic-embed-text
         try:
@@ -531,14 +739,30 @@ def _retrieve_rag_legal_knowledge(query: str) -> str:
                 emb = resp.json().get("embedding")
                 if emb:
                     cur.execute("""
-                        SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content
+                        SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content,
+                               embedding <=> %s::vector AS vec_distance
                         FROM knowledge_documents
                         WHERE namespace IN %s
                           AND embedding IS NOT NULL
                         ORDER BY embedding <=> %s::vector
-                        LIMIT 3;
-                    """, (active_namespaces, emb))
+                        LIMIT %s;
+                    """, (emb, active_namespaces, emb, top_k * 2))
                     v_rows = cur.fetchall()
+                    if vector_distance_threshold is not None:
+                        v_rows = [r for r in v_rows if r[2] is not None and float(r[2]) <= vector_distance_threshold]
+                    # Diversifikasi namespace: maksimal 2 baris per namespace agar satu
+                    # namespace besar tidak menenggelamkan namespace kecil yang relevan.
+                    diversified = []
+                    per_ns_count: Dict[str, int] = {}
+                    for r in v_rows:
+                        ns_of_row = _namespace_of_title(str(r[0]))
+                        if per_ns_count.get(ns_of_row, 0) >= 2:
+                            continue
+                        per_ns_count[ns_of_row] = per_ns_count.get(ns_of_row, 0) + 1
+                        diversified.append(r)
+                        if len(diversified) >= top_k:
+                            break
+                    v_rows = diversified or v_rows[:top_k]
                     if v_rows:
                         rag_text = "NASKAH PERATURAN & KNOWLEDGE BASE TERVERIFIKASI (RAG DATABASE):\n"
                         for r in v_rows:
@@ -561,8 +785,9 @@ def _retrieve_rag_legal_knowledge(query: str) -> str:
                 FROM knowledge_documents 
                 WHERE ({' OR '.join(clauses)})
                   AND namespace IN %s
-                ORDER BY created_at DESC LIMIT 3;
+                ORDER BY created_at DESC LIMIT %s;
             """
+            params.append(top_k)
             cur.execute(sql, params)
             rows = cur.fetchall()
             if rows:
@@ -591,7 +816,8 @@ def _retrieve_rag_legal_knowledge(query: str) -> str:
     except Exception as e:
         logger.warning(f"RAG search error: {e}")
 
-    return ""
+    # TASK-158: Guardrail anti-halusinasi jika gagal mendapatkan referensi relevan
+    return "[GUARDRAIL RAG] ⚠️ Tidak ditemukan referensi yang relevan pada database RAG. JANGAN mengarang jawaban (no hallucination). Jika Anda tidak tahu, sampaikan secara jujur bahwa referensi tidak ditemukan di sistem."
 
 
 def _query_korespondensi_data(query: str) -> str:
@@ -1297,12 +1523,14 @@ async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipi
 
         elif tool_name == "search_regulation_knowledge":
             q = clean_args.get("query", "")
+            ns = clean_args.get("namespace", None)
+            tk = clean_args.get("top_k", 3)
             res = await satria_timeout_guard.call_with_timeout(
                 "search_regulation_knowledge",
                 _retrieve_rag_legal_knowledge,
-                {"query": q}
+                {"query": q, "namespace": ns, "top_k": tk}
             )
-            return str(res.get("data") or "Dokumen regulasi tidak ditemukan.")
+            return str(res.get("data") or "[GUARDRAIL RAG] Dokumen regulasi tidak ditemukan.")
 
         elif tool_name == "cari_surat_korespondensi":
             q = clean_args.get("query", "")
@@ -1602,7 +1830,22 @@ def _clean_raw_ai_markers(text: Optional[str]) -> str:
     cleaned = re.sub(r"<｜.*?｜>", "", cleaned)
     # Bersihkan tag thinking jika ada
     cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL)
-    return cleaned.strip()
+    cleaned = cleaned.strip()
+
+    # TASK-163 163-D: Guardrail batas kewenangan bot (Keputusan Final Mengikat)
+    restricted_keywords = ["disetujui resmi", "ditolak resmi", "diputuskan bahwa", "kami putuskan"]
+    clean_lower = cleaned.lower()
+    for kw in restricted_keywords:
+        if kw in clean_lower:
+            return (
+                "⚠️ *PEMBATASAN OTORITAS SISTEM*\n\n"
+                "Mohon maaf, sistem AI SATRIA hanya bertindak sebagai asisten analis. "
+                "Pernyataan yang bersifat **keputusan akhir yang mengikat** "
+                "(seperti persetujuan atau penolakan resmi) berada di luar kewenangan bot "
+                "dan harus diputuskan langsung oleh pejabat yang berwenang."
+            )
+            
+    return cleaned
 
 
 # Provider Health State Cache (mencegah latency overhead 3s pada provider yang kehabisan kuota/down)
@@ -1731,8 +1974,20 @@ async def _call_openai_engine(
             )
     else:
         context_prompt += (
-            "4. FORMAT PERCAKAPAN BERJALAN (ONGOING DIALOGUE): Jawablah LANGSUNG KE SUBSTANSI tanpa kalimat basa-basi pengantar, tanpa mencetak sapaan formal 'Yth. Bapak/Ibu', dan tanpa mengulang ajakan mengisi profil tugas tambahan.\n"
         )
+    context_prompt += "\n"
+
+    # TASK-159: Adaptive Formatting & Tone Switching
+    is_executive_brief = "executive brief" in user_query.lower() or "poin penting" in user_query.lower()
+    context_prompt += get_adaptive_prompt_instructions(user_info, is_executive_brief=is_executive_brief)
+    
+    # TASK-158: RAG Citation Enforcement
+    context_prompt += (
+        "\n5. ATURAN SITASI REFERENSI (CITATION ENFORCEMENT):\n"
+        "JIKA dan HANYA JIKA Anda menggunakan informasi dari data yang diambil dari tool RAG (seperti search_regulation_knowledge atau search_srikandi_rag), "
+        "Anda WAJIB MENCANTUMKAN SITASI di akhir kalimat atau paragraf yang relevan dalam format `(Sumber: [Nama Regulasi/Dokumen])`. "
+        "JANGAN menyertakan sitasi jika menjawab berdasarkan pengetahuan umum Anda sendiri di luar konteks dokumen.\n"
+    )
     context_prompt += "\n"
 
     if extra_context:
@@ -1747,6 +2002,17 @@ async def _call_openai_engine(
                 f"    Status Norma: {p.get('status_norma', '')}\n"
                 f"    Ratio Decidendi: {p.get('ratio_decidendi', '')}\n\n"
             )
+
+    # TASK-156 (156-C): injeksi preferensi lintas sesi ke konteks (best-effort, non-blocking).
+    try:
+        _pref_phone = str(target_user_jid or "")
+        if _pref_phone:
+            _prefs = satria_session_manager.get_user_preferences(_pref_phone)
+            _prefs_block = format_user_preferences_for_prompt(_prefs)
+            if _prefs_block:
+                context_prompt += f"{_prefs_block}\n\n"
+    except Exception as e:
+        logger.warning(f"[PREFS] Gagal membaca preferensi user: {e}")
 
     # Dynamic Composable Prompt Builder (MAF & RBAC-Aware)
     try:
@@ -1781,6 +2047,36 @@ async def _call_openai_engine(
             eval_query = f"{prev_user_queries[-1]} {user_query}"
 
     selected_tools = satria_tool_selector.select(eval_query, model_size="7B")
+    
+    # TASK-163 163-C: RBAC Mapping Tool Allowlist
+    TOOL_PERMISSION_MAP = {
+        "evaluate_bphn_doctrine": "doctrine_evaluation",
+        "legal_deontic_verify": "doctrine_evaluation",
+        "legal_naskah_akademik_generate": "doctrine_evaluation",
+        "legal_harmonization_matrix": "safe_patch",
+        "legal_opinion_irac": "doctrine_evaluation",
+        "legal_contract_vetting": "safe_patch",
+        "legal_litigation_advocacy": "full_audit",
+        "legal_patch_clause": "safe_patch",
+        "legal_verify_spm": "spm_verification",
+        "cari_surat_korespondensi": "correspondence_tracking",
+        "nd_generate_laporan": "nd_laporan_generate",
+        "system_health_check": "system_health",
+        "list_database_tables": "full_audit",
+        "read_activity_log": "admin_manage",
+    }
+    
+    # Filter tools based on RBAC permissions
+    user_phone_rbac = user_info.get("phone_number") or ""
+    filtered_tools = []
+    for st in selected_tools:
+        req_perm = TOOL_PERMISSION_MAP.get(st.tool.name)
+        if not req_perm or is_authorized(user_phone_rbac, req_perm):
+            filtered_tools.append(st)
+        else:
+            logger.warning(f"RBAC Block: {user_phone_rbac} ditolak akses ke tool {st.tool.name} (butuh: {req_perm})")
+    selected_tools = filtered_tools
+
     tools_schema = satria_tool_selector.get_openai_tools_schema(selected_tools)
 
     last_error = None
@@ -1832,7 +2128,8 @@ async def _call_openai_engine(
                 logger.info(f"[{provider_name}] Autonomous tool calls detected: {len(resp_msg.tool_calls)} calls")
                 messages.append(resp_msg)
 
-                for tc in resp_msg.tool_calls:
+                # TASK-160: Mengaktifkan konfigurasi parallel tool calling pada orkestrator
+                async def run_tool(tc):
                     call_fn_name = tc.function.name
                     try:
                         call_args = json.loads(tc.function.arguments)
@@ -1840,11 +2137,14 @@ async def _call_openai_engine(
                         call_args = {"query": tc.function.arguments}
 
                     tool_output = await _execute_satria_tool(call_fn_name, call_args, recipient_jid=target_user_jid)
-                    messages.append({
+                    return {
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": str(tool_output)
-                    })
+                    }
+
+                tool_results = await asyncio.gather(*(run_tool(tc) for tc in resp_msg.tool_calls))
+                messages.extend(tool_results)
 
                 # Giliran Kedua: Sintesis hasil akhir berbasis fakta segar
                 final_resp = await client.chat.completions.create(
@@ -1956,91 +2256,6 @@ def _detect_persona(query: str, intent: Optional[str] = None) -> str:
         return "admin_persuratan"
 
     return "legal_madya"
-
-
-def _is_summary_or_wrapup_request(query: str, intent: Optional[str] = None) -> bool:
-    """
-    Mendeteksi apakah permintaan pengguna meminta kesimpulan menyeluruh, resume,
-    rangkuman akhir, atau penutupan sesi percakapan.
-    """
-    if not query:
-        return False
-    q_lower = query.lower().strip()
-
-    # 1. Kata kunci eksplisit penutup / resume / kesimpulan
-    summary_keywords = [
-        "simpulkan", "kesimpulan", "resume", "rangkum", "rangkuman",
-        "rekap", "rekapitulasi", "intisari", "intisarikan", "ikhtisar",
-        "terima kasih satria", "makasih satria", "cukup sekian",
-        "selesai diskusinya", "tutup sesi", "closing", "buatkan kesimpulan",
-        "buatkan resume", "kesimpulan akhir", "rekap hasil"
-    ]
-    if any(k in q_lower for k in summary_keywords):
-        return True
-
-    return False
-
-
-def _clean_and_format_reply(
-    user: Dict[str, Any], 
-    text: str, 
-    persona: str = "legal_madya",
-    is_summary_session: bool = False
-) -> str:
-    """
-    Membersihkan segala variasi header, sapaan ganda, dan kalimat filler intro dari output model.
-    - Sesi Berjalan (is_summary_session=False): Langsung ke substansi dengan footer minimalis inisial SATRIA.
-    - Sesi Akhir / Resume (is_summary_session=True): Menggunakan header formal lengkap dan sapaan resmi.
-    """
-    cleaned = text.strip()
-
-    # 1. Bersihkan semua variasi header yang mungkin dicetak model
-    header_pattern = r"(?:[🏛📮📄📋📚💡🛠️⚙️⚖️]\s*\*?[^\n]*(?:PENDAPAT|SATRIA|LAPORAN|TELAAH|ASISTEN|ADMINISTRASI|PERSURATAN|DATA RESMI|INFORMASI|RESUME|KESIMPULAN)[^\n]*\n+[━─=-—]+\n*)+"
-    cleaned = re.sub(header_pattern, "", cleaned, flags=re.IGNORECASE).strip()
-
-    # 2. Bersihkan SEMUA baris sapaan di awal (Yth..., Selamat pagi/siang..., Halo..., Salam...)
-    salutation_pattern = r"^(?:(?:Yth\.|Selamat\s+(?:pagi|siang|sore|malam)|Halo|Salam\s+hangat|Salam\s+hormat)[^\n]*\n*)+"
-    cleaned = re.sub(salutation_pattern, "", cleaned, flags=re.IGNORECASE).strip()
-
-    # 3. Bersihkan kalimat filler pengantar model di awal pesan (mis. "Baik, Pak Amir...", "Baik, saya bantu...")
-    filler_pattern = r"^(?:Baik,?\s*(?:saya|kami|Pak|Ibu|Bapak|Bapak/Ibu)?\s+[^\n]*\n*)+"
-    cleaned = re.sub(filler_pattern, "", cleaned, flags=re.IGNORECASE).strip()
-
-    # 4. Bersihkan sapaan lagi jika muncul setelah filler
-    cleaned = re.sub(salutation_pattern, "", cleaned, flags=re.IGNORECASE).strip()
-
-    # 5. Bersihkan pemisah horizontal yang menggantung di paling awal teks
-    cleaned = re.sub(r"^(?:[-—─=━]{3,}\n*)+", "", cleaned).strip()
-
-    user_name = user.get("full_name") or "Bapak/Ibu"
-
-    if is_summary_session:
-        # Mode Penutup / Resume Sesi: Pasang Header Formal Resmi
-        if persona == "admin_persuratan":
-            header = (
-                f"📮 *REKAPITULASI & RESUME PERSURATAN BANGDA*\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Yth. Bapak/Ibu *{user_name}*,\n\n"
-            )
-        else:
-            header = (
-                f"🏛️ *RESUME & KESIMPULAN — SATRIA AHLI MADYA BANGDA*\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Yth. Bapak/Ibu *{user_name}*,\n\n"
-            )
-        return header + cleaned
-    else:
-        # Mode Interaksi Berjalan (Ongoing): Langsung ke substansi + Footer inisial minimalis
-        if persona == "admin_persuratan":
-            footer = "\n\n_— 📮 SATRIA Persuratan Bangda_"
-        elif persona == "system":
-            footer = "\n\n_— ⚙️ SATRIA System_"
-        else:
-            footer = "\n\n_— 🏛️ SATRIA Ahli Madya_"
-
-        # Pastikan tidak ada double footer jika model sudah mencetak footer serupa di akhir
-        cleaned = re.sub(r"\n*(?:_|\b)[-—─\s🏛📮⚙️]*SATRIA[^\n_]*_?\s*$", "", cleaned, flags=re.IGNORECASE).strip()
-        return cleaned + footer
 
 
 async def _detect_and_handle_additional_duty(
@@ -2231,6 +2446,13 @@ class LegalMadyaWhatsAppHandler:
         # Ambil riwayat percakapan multi-turn (Sliding Window 6 turn terakhir)
         history = satria_session_manager.get_recent_history(clean_phone, limit=6)
         satria_session_manager.record_turn(clean_phone, "user", raw_text)
+
+        # TASK-156 2.4b: Deteksi perintah preferensi natural language
+        # ("ingat saya suka format tabel", "lupakan preferensi saya").
+        preference_reply = _handle_preference_command(cleaned_text, clean_phone)
+        if preference_reply:
+            satria_session_manager.record_turn(clean_phone, "assistant", preference_reply, intent="PREFERENCE_UPDATE")
+            return preference_reply
 
         # 1. Mode Lampiran Dokumen (PDF, DOCX, TXT via WhatsApp)
         # WAJIB didahulukan agar berkas lampiran tidak pernah terbegal oleh detektor non-service regex
@@ -3011,4 +3233,3 @@ class LegalMadyaWhatsAppHandler:
 
 # Singleton instance
 legal_madya_handler = LegalMadyaWhatsAppHandler()
-

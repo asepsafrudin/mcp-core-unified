@@ -19,7 +19,6 @@ logger = logging.getLogger("satria_srikandi_rag")
 DB_PATH = Path('/home/aseps/MCP/storage/admin_data/srikandi_korespondensi.db')
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434')
 EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'nomic-embed-text')
-NAMESPACE = 'srikandi_korespondensi'
 
 
 def get_embedding(text: str) -> List[float]:
@@ -54,7 +53,7 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     return dot / (norm1 * norm2)
 
 
-def search_srikandi_rag(query: str, top_k: int = 3, threshold: float = 0.55) -> List[Dict[str, Any]]:
+def search_srikandi_rag(query: str, namespace: str = "srikandi_korespondensi", top_k: int = 3, threshold: float = 0.55) -> List[Dict[str, Any]]:
     """
     Melakukan pencarian semantik terhadap 1.288 vektor chunks SRIKANDI.
     """
@@ -74,7 +73,7 @@ def search_srikandi_rag(query: str, top_k: int = 3, threshold: float = 0.55) -> 
             SELECT id, nomor_naskah, perihal, tanggal_naskah, pengirim, filename, local_path, chunk_text, embedding_json
             FROM srikandi_vector_index
             WHERE namespace = ?
-        ''', (NAMESPACE,))
+        ''', (namespace,))
         
         rows = cur.fetchall()
         scored = []

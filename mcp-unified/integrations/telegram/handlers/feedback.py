@@ -12,6 +12,13 @@ from telegram.ext import ContextTypes, CommandHandler
 
 from integrations.telegram.handlers.base import BaseHandler
 
+# Add korespondensi-server/src/services to path for legacy_korespondensi_integration import
+import sys
+import os
+_korep_src = os.path.join('/home/aseps/MCP/workspace/korespondensi-server/src/services')
+if _korep_src not in sys.path:
+    sys.path.insert(0, _korep_src)
+
 logger = logging.getLogger(__name__)
 
 
@@ -178,7 +185,7 @@ class FeedbackHandler(BaseHandler):
                                   tanggal_autentifikasi: date, catatan: str, user):
         """Kirim notifikasi ke admin setelah feedback disimpan."""
         try:
-            from integrations.korespondensi.utils import send_telegram_notification
+            from legacy_korespondensi_integration.utils import send_telegram_notification
             
             notification_text = (
                 f"📝 *FEEDBACK BARU*\n\n"

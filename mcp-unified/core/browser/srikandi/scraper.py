@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from urllib.parse import urljoin
@@ -72,8 +73,10 @@ class SrikandiScraper:
         extracted_rows: List[Dict[str, Any]] = []
 
         async with async_playwright() as p:
+            # Auto-detect headless environment (cron, CI, no display)
+            headless_mode = not bool(os.environ.get("DISPLAY")) or os.environ.get("FORCE_HEADLESS", "").lower() in ("1", "true", "yes")
             browser, context = await self.auth_manager.create_browser_context(
-                p, profile_id=profile_id, headless=False
+                p, profile_id=profile_id, headless=headless_mode
             )
             page = await context.new_page()
 
@@ -81,14 +84,20 @@ class SrikandiScraper:
                 # 1. Buka /beranda terlebih dahulu untuk inisialisasi state sesi React SPA
                 beranda_url = f"{SRIKANDI_BASE_URL}/beranda"
                 logger.info(f"Membuka {beranda_url} untuk inisialisasi sesi profil '{profile_id}'...")
-                await page.goto(beranda_url, wait_until="domcontentloaded", timeout=35000)
-                await asyncio.sleep(2.5)
+                await page.goto(beranda_url, wait_until="networkidle", timeout=40000)
+                await asyncio.sleep(2)
 
                 # 2. Navigasi ke modul target
                 logger.info(f"Navigasi ke {target_url}...")
                 if page.url != target_url:
-                    await page.goto(target_url, wait_until="domcontentloaded", timeout=40000)
-                    await asyncio.sleep(3)
+                    await page.goto(target_url, wait_until="networkidle", timeout=40000)
+                    
+                # Tunggu React merender komponen utama (table atau list)
+                try:
+                    await page.wait_for_selector('table, .MuiTable-root, .MuiDataGrid-root, [role="grid"], .card-surat, .MuiCard-root, .list-item', state="visible", timeout=20000)
+                except Exception as e:
+                    logger.warning(f"Elemen tabel tidak segera muncul, kemungkinan kosong atau timeout: {e}")
+                await asyncio.sleep(2)
 
                 # Jika dialihkan kembali ke login, sesi kedaluwarsa
                 if "/auth/login" in page.url:
@@ -107,7 +116,7 @@ class SrikandiScraper:
                 # 3. Terapkan kata kunci pencarian jika ada
                 if search_query:
                     search_selectors = [
-                        'input[placeholder*="Cari" i]',
+                        'input[placeholder*="Cari" i]:not([type="date"])',
                         'input[placeholder*="Search" i]',
                         'input[type="search"]',
                         'input.MuiInputBase-input'
@@ -524,7 +533,7 @@ class SrikandiScraper:
         Mendukung penangkapan respons API backend (JSON) secara otomatis dan fallback DOM.
         """
         detail_page = None
-        intercepted_api_data: Dict[str, Any] = {}
+        intercepted_api_data: List[Dict[str, Any]] = []
 
         try:
             detail_page = await context.new_page()
@@ -535,8 +544,8 @@ class SrikandiScraper:
                     url = response.url
                     if any(k in url for k in ["/api/", "/naskah", "/verifikasi", "/detail"]) and "json" in response.headers.get("content-type", ""):
                         data = await response.json()
-                        if isinstance(data, dict):
-                            intercepted_api_data.update(data)
+                        if isinstance(data, dict) or isinstance(data, list):
+                            intercepted_api_data.append(data)
                 except Exception:
                     pass
 
@@ -545,15 +554,15 @@ class SrikandiScraper:
             await detail_page.goto(detail_url, wait_until="domcontentloaded", timeout=35000)
             await asyncio.sleep(4)
 
-            # 1. Expand seluruh Accordion (Verifikator, Penandatangan, Riwayat Metadata, Linimasa)
+            # 1. Expand seluruh Accordion (Verifikator, Penandatangan, Riwayat Metadata, Linimasa, Lampiran)
             try:
-                acc_headers = await detail_page.locator('div:has-text("Daftar Verifikator"), div:has-text("Daftar Penandatangan"), div:has-text("Linimasa"), div:has-text("Daftar Riwayat")').all()
+                acc_headers = await detail_page.locator('div:has-text("Daftar Verifikator"), div:has-text("Daftar Penandatangan"), div:has-text("Linimasa"), div:has-text("Daftar Riwayat"), div:has-text("Lampiran"), div:has-text("File Pendukung")').all()
                 for h in acc_headers:
                     txt = await h.inner_text()
-                    if any(k in txt for k in ["Daftar", "Linimasa", "Riwayat"]):
+                    if any(k in txt for k in ["Daftar", "Linimasa", "Riwayat", "Lampiran", "File"]):
                         try:
                             await h.click(timeout=1000)
-                            await asyncio.sleep(0.5)
+                            await asyncio.sleep(2)
                         except Exception:
                             pass
             except Exception:
@@ -637,7 +646,7 @@ class SrikandiScraper:
                 const links = document.querySelectorAll('a[href*="download"], a[href*="pdf"], a[href*="docx"], a.btn-download, embed[src], iframe[src]');
                 links.forEach(el => {
                     const src = el.href || el.src;
-                    if (src && !src.startsWith('javascript:')) {
+                    if (src && !src.startsWith('javascript:') && (src.includes('arsip.go.id') || src.includes('.pdf') || src.includes('.doc') || src.includes('.xls'))) {
                         res.lampiran_urls.push(src);
                     }
                 });
@@ -651,14 +660,22 @@ class SrikandiScraper:
             query_params = up.parse_qs(parsed_u.query)
             srikandi_id = query_params.get("id", [""])[0]
 
+            # API-First Extraction: Cari S3 URLs langsung dari JSON mentah untuk mencegah kebocoran file akibat DOM Culling
+            import json, re
+            api_str = json.dumps(intercepted_api_data)
+            api_s3_urls = re.findall(r'https://s3\.arsip\.go\.id/[^\s"]+', api_str)
+            
+            # Gabungkan URL dari DOM dan URL dari API
+            all_lampiran_urls = list(set(dom_detail.get("lampiran_urls", []) + api_s3_urls))
+
             combined_result = {
                 "srikandi_id": srikandi_id,
                 "detail_url": detail_url,
-                "api_payload": intercepted_api_data.get("data") or intercepted_api_data,
+                "api_payload": intercepted_api_data,
                 "dom_fields": dom_detail.get("fields", {}),
                 "verifikator_list": dom_detail.get("verifikator_list", []),
                 "history_logs": dom_detail.get("history_logs", []),
-                "lampiran_urls": list(set(dom_detail.get("lampiran_urls", []))),
+                "lampiran_urls": all_lampiran_urls,
             }
 
             return combined_result

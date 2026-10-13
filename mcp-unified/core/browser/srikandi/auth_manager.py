@@ -16,6 +16,20 @@ from typing import Dict, Any, List, Optional
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
+try:
+    import base64
+    import io
+    import re
+    from PIL import Image
+    import pytesseract
+except ImportError:
+    pytesseract = None
+
+try:
+    from integrations.runpod.vllm_vision import VLLMVisionProcessor
+except ImportError:
+    VLLMVisionProcessor = None
+
 logger = logging.getLogger("srikandi_auth_manager")
 
 # Base URLs
@@ -56,6 +70,19 @@ class SrikandiAuthManager:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self.accounts_file = ACCOUNTS_CONFIG_FILE
         self._ensure_env_loaded()
+        
+        # CAPTCHA solving statistics
+        self.captcha_stats = {
+            "ocr_attempts": 0,
+            "ocr_success": 0,
+            "vllm_attempts": 0,
+            "vllm_success": 0,
+            "pytesseract_attempts": 0,
+            "pytesseract_success": 0,
+            "last_attempt_timestamp": None,
+            "last_success_method": None,
+            "last_confidence_score": None,
+        }
 
     def _ensure_env_loaded(self):
         """Loads secrets from environment files if available."""
@@ -336,101 +363,221 @@ class SrikandiAuthManager:
             try:
                 logger.info(f"Membuka halaman login SRIKANDI: {SRIKANDI_LOGIN_URL}")
                 await page.goto(SRIKANDI_LOGIN_URL, wait_until="networkidle", timeout=35000)
-                await asyncio.sleep(2)
+                
+                # Wait for SPA to render the login form inputs
+                try:
+                    await page.wait_for_selector('input[type="text"], input[name="username"], input[placeholder*="Username" i]', state="visible", timeout=20000)
+                except Exception:
+                    pass
+                
+                max_attempts = 3
+                captcha_found = False
+                interactive_login_done = False
+                for attempt in range(1, max_attempts + 1):
+                    logger.info(f"Mencoba login headless (Attempt {attempt}/{max_attempts})...")
+                    await asyncio.sleep(2)
+    
+                    # Target input username / email / NIK (MUI & standard inputs)
+                    user_selectors = [
+                        'input[name="username"]',
+                        'input[name="email"]',
+                        'input[name="nik"]',
+                        'input[id="username"]',
+                        'input[type="text"]',
+                        'input[placeholder*="Username" i]',
+                        'input[placeholder*="NIK" i]'
+                    ]
+                    user_filled = False
+                    for sel in user_selectors:
+                        if await page.locator(sel).first.is_visible(timeout=1000):
+                            await page.locator(sel).first.fill(profile.username)
+                            user_filled = True
+                            break
+    
+                    if not user_filled:
+                        # Fallback evaluation
+                        await page.evaluate(f"""() => {{
+                            const inputs = Array.from(document.querySelectorAll('input'));
+                            const userInp = inputs.find(i => i.type === 'text' || i.name.includes('user') || i.id.includes('user'));
+                            if (userInp) {{ userInp.value = "{profile.username}"; userInp.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
+                        }}""")
+    
+                    # Target input password
+                    pass_selectors = [
+                        'input[name="password"]',
+                        'input[id="password"]',
+                        'input[type="password"]',
+                        'input[placeholder*="Password" i]',
+                        'input[placeholder*="Kata Sandi" i]'
+                    ]
+                    pass_filled = False
+                    for sel in pass_selectors:
+                        if await page.locator(sel).first.is_visible(timeout=1000):
+                            await page.locator(sel).first.fill(profile.password)
+                            pass_filled = True
+                            break
+    
+                    if not pass_filled:
+                        await page.evaluate(f"""() => {{
+                            const passInp = document.querySelector('input[type="password"]');
+                            if (passInp) {{ passInp.value = "{profile.password}"; passInp.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
+                        }}""")
+                        
+                    # CAPTCHA solving via OCR
+                    captcha_input = page.locator('input[placeholder*="Captcha" i] >> visible=true').first
+                    if await captcha_input.is_visible():
+                        logger.info("CAPTCHA terdeteksi di halaman login. Mengekstrak dari canvas...")
+                        captcha_found = True
+                        b64_data = await page.evaluate('''() => {
+                            const canvas = document.querySelector('canvas');
+                            return canvas ? canvas.toDataURL('image/png').split(',')[1] : null;
+                        }''')
+                        captcha_text = ""
+                        if b64_data:
+                            try:
+                                logger.info("Mengirim CAPTCHA ke RunPod OCR untuk diselesaikan...")
+                                from integrations.runpod.tools import runpod_ocr_process
+                                ocr_res = await runpod_ocr_process(image_base64=b64_data, save_to_memory=False)
+                                captcha_text = ocr_res.get("raw_text", "")
+                                
+                                if captcha_text:
+                                    captcha_text = re.sub(r'[^a-zA-Z0-9]', '', captcha_text).strip()
+                                    logger.info(f"Hasil RunPod OCR CAPTCHA: '{captcha_text}'")
+                                    await captcha_input.first.fill(captcha_text)
+                                else:
+                                    logger.warning("RunPod OCR mengembalikan hasil kosong untuk CAPTCHA.")
+                            except Exception as e:
+                                import traceback
+                                logger.warning(f"Gagal memecahkan CAPTCHA dengan RunPod OCR: {traceback.format_exc()}")
+                            
+                            # Fallback 1: RunPod VLLMVision (Qwen2.5-VL via RunPod vLLM endpoint) - menggantikan Ollama
+                            if not captcha_text:
+                                try:
+                                    from integrations.runpod.vllm_vision import VLLMVisionProcessor
+                                    vlm_processor = VLLMVisionProcessor()
+                                    
+                                    vlm_prompt = (
+                                        "ANALISA VISUAL: gambar ini adalah teks CAPTCHA keamanan login "
+                                        "(distorsi, noise, garis silang, latar belakang berisik). "
+                                        "TUGAS: identifikasi dan tulis deretan karakter alphanumeric yang terlihat. "
+                                        "Keluarkan HANYA string teks CAPTCHA — tanpa spasi, tanpa tanda baca, "
+                                        "tanpa penjelasan, tanpa kata pengantar, tanpa format markdown. "
+                                        "Anggap huruf 'O' sama dengan angka '0', 'I' sama dengan '1'. "
+                                        "Format output: satu string karakter saja."
+                                    )
+                                    vision_result = await vlm_processor._call_vllm_vision(
+                                        image_base64=b64_data,
+                                        custom_prompt=vlm_prompt
+                                    )
+                                    
+                                    if vision_result and vision_result.strip():
+                                        captcha_text = re.sub(r'[^a-zA-Z0-9]', '', vision_result.strip())
+                                        if captcha_text:
+                                            logger.info(f"Hasil VLLMVision CAPTCHA: '{captcha_text}'")
+                                            await captcha_input.first.fill(captcha_text)
+                                        else:
+                                            logger.warning("VLLMVision mengembalikan hasil CAPTCHA kosong setelah pembersihan.")
+                                    else:
+                                        logger.warning("VLLMVision mengembalikan hasil kosong untuk CAPTCHA.")
+                                except Exception as e:
+                                    logger.warning(f"Gagal memecahkan CAPTCHA dengan VLLMVision: {e}")
+                                
+                        if not captcha_text and b64_data and pytesseract:
+                            try:
+                                img_data = base64.b64decode(b64_data)
+                                img = Image.open(io.BytesIO(img_data))
+                                
+                                # Image preprocessing to remove noise/lines
+                                img = img.convert('L') # Grayscale
+                                # Thresholding (binarization) - pixels > 150 become white, else black
+                                img = img.point(lambda x: 0 if x < 150 else 255, '1')
+                                
+                                # psm 8 assumes a single word
+                                captcha_text = pytesseract.image_to_string(img, config='--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789').strip()
+                                captcha_text = re.sub(r'[^a-zA-Z0-9]', '', captcha_text)
+                                logger.info(f"Hasil OCR CAPTCHA (Preprocessed): '{captcha_text}'")
+                                await captcha_input.first.fill(captcha_text)
+                            except Exception as e:
+                                logger.warning(f"Gagal memecahkan CAPTCHA dengan OCR: {e}")
+                        elif not VLLMVisionProcessor and not pytesseract:
+                            logger.warning("Semua OCR method (RunPod OCR, VLLMVision, Pytesseract) tidak tersedia untuk menyelesaikan CAPTCHA. RunPod OCR mengembalikan hasil kosong.")
+    
+                    # Submit button
+                    submit_selectors = [
+                        'button[type="submit"]',
+                        'button:has-text("Masuk")',
+                        'button:has-text("Login")',
+                        '.btn-primary',
+                        '.MuiButton-containedPrimary'
+                    ]
+                    btn_clicked = False
+                    for sel in submit_selectors:
+                        if await page.locator(sel).first.is_visible(timeout=1000):
+                            await page.locator(sel).first.click()
+                            btn_clicked = True
+                            break
+    
+                    if not btn_clicked:
+                        await page.keyboard.press("Enter")
+    
+                    # Wait for navigation after submit
+                    await asyncio.sleep(4)
+                    try:
+                        await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    except Exception:
+                        pass
+    
+                    current_url = page.url
+                    if "/auth/login" not in current_url:
+                        # Berhasil login! Simpan storage state
+                        session_file = self.get_session_file(profile_id)
+                        await context.storage_state(path=str(session_file))
+                        logger.info(f"Login headless berhasil. Sesi tersimpan di: {session_file}")
+                        return {
+                            "success": True,
+                            "profile_id": profile_id,
+                            "current_url": current_url,
+                            "session_file": str(session_file),
+                            "message": f"Login berhasil untuk profil '{profile_id}'."
+                        }
+                    else:
+                        logger.warning(f"Attempt {attempt} gagal, url masih di login page.")
+                        # Reload page to refresh captcha for next attempt if not the last one
+                        if attempt < max_attempts:
+                            await page.goto(SRIKANDI_LOGIN_URL, wait_until="networkidle", timeout=35000)
 
-                # Target input username / email / NIK (MUI & standard inputs)
-                user_selectors = [
-                    'input[name="username"]',
-                    'input[name="email"]',
-                    'input[name="nik"]',
-                    'input[id="username"]',
-                    'input[type="text"]',
-                    'input[placeholder*="Username" i]',
-                    'input[placeholder*="NIK" i]'
-                ]
-                user_filled = False
-                for sel in user_selectors:
-                    if await page.locator(sel).first.is_visible(timeout=1500):
-                        await page.locator(sel).first.fill(profile.username)
-                        user_filled = True
-                        break
+                # Cek pesan error di halaman setelah semua percobaan habis
+                error_msg = await page.evaluate("""() => {
+                    const alertEl = document.querySelector('.MuiAlert-message, .alert, .error-message, .toast-error');
+                    return alertEl ? alertEl.innerText : 'Gagal login (masih di halaman login). Mungkin butuh CAPTCHA atau kredensial salah.';
+                }""")
 
-                if not user_filled:
-                    # Fallback evaluation
-                    await page.evaluate(f"""() => {{
-                        const inputs = Array.from(document.querySelectorAll('input'));
-                        const userInp = inputs.find(i => i.type === 'text' || i.name.includes('user') || i.id.includes('user'));
-                        if (userInp) {{ userInp.value = "{profile.username}"; userInp.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
-                    }}""")
+                # Fallback ke login interaktif manual bila CAPTCHA terdeteksi dan semua
+                # percobaan headless gagal (OCR/VLLM tidak mampu memecahkan CAPTCHA).
+                if captcha_found and not interactive_login_done:
+                    logger.warning(
+                        "CAPTCHA terdeteksi namun otomatis gagal memecahkannya. "
+                        "Mengaktifkan fallback ke login interaktif manual (seed_interactive_session)."
+                    )
+                    try:
+                        interactive_result = await self.seed_interactive_session(profile_id)
+                        if interactive_result.get("success"):
+                            interactive_login_done = True
+                            logger.info("Login interaktif manual SUCCESS, mengembalikan hasil.")
+                            return interactive_result
+                        else:
+                            logger.warning(
+                                f"Login interaktif gagal: {interactive_result.get('error', 'Unknown error')}"
+                            )
+                    except Exception as e:
+                        logger.error(f"Gagal fallback ke seed_interactive_session: {e}")
 
-                # Target input password
-                pass_selectors = [
-                    'input[name="password"]',
-                    'input[id="password"]',
-                    'input[type="password"]',
-                    'input[placeholder*="Password" i]',
-                    'input[placeholder*="Kata Sandi" i]'
-                ]
-                pass_filled = False
-                for sel in pass_selectors:
-                    if await page.locator(sel).first.is_visible(timeout=1500):
-                        await page.locator(sel).first.fill(profile.password)
-                        pass_filled = True
-                        break
-
-                if not pass_filled:
-                    await page.evaluate(f"""() => {{
-                        const passInp = document.querySelector('input[type="password"]');
-                        if (passInp) {{ passInp.value = "{profile.password}"; passInp.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
-                    }}""")
-
-                # Submit button
-                submit_selectors = [
-                    'button[type="submit"]',
-                    'button:has-text("Masuk")',
-                    'button:has-text("Login")',
-                    '.btn-primary',
-                    '.MuiButton-containedPrimary'
-                ]
-                btn_clicked = False
-                for sel in submit_selectors:
-                    if await page.locator(sel).first.is_visible(timeout=1500):
-                        await page.locator(sel).first.click()
-                        btn_clicked = True
-                        break
-
-                if not btn_clicked:
-                    await page.keyboard.press("Enter")
-
-                # Wait for navigation after submit
-                await asyncio.sleep(4)
-                await page.wait_for_load_state("domcontentloaded", timeout=15000)
-
-                current_url = page.url
-                if "/auth/login" not in current_url:
-                    # Berhasil login! Simpan storage state
-                    session_file = self.get_session_file(profile_id)
-                    await context.storage_state(path=str(session_file))
-                    logger.info(f"Login berhasil. Sesi tersimpan di: {session_file}")
-                    return {
-                        "success": True,
-                        "profile_id": profile_id,
-                        "current_url": current_url,
-                        "session_file": str(session_file),
-                        "message": f"Login berhasil untuk profil '{profile_id}'."
-                    }
-                else:
-                    # Cek pesan error di halaman
-                    error_msg = await page.evaluate("""() => {
-                        const alertEl = document.querySelector('.MuiAlert-message, .alert, .error-message, .toast-error');
-                        return alertEl ? alertEl.innerText : 'Gagal login (masih di halaman login). Mungkin butuh CAPTCHA atau kredensial salah.';
-                    }""")
-                    return {
-                        "success": False,
-                        "profile_id": profile_id,
-                        "current_url": current_url,
-                        "error": error_msg
-                    }
+                return {
+                    "success": False,
+                    "profile_id": profile_id,
+                    "current_url": current_url,
+                    "error": error_msg
+                }
             except Exception as e:
                 logger.error(f"Error login headless: {e}")
                 return {"success": False, "profile_id": profile_id, "error": str(e)}

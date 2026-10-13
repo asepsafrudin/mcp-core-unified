@@ -692,7 +692,8 @@ class SatriaToolSelector:
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "Nomor peraturan, topik regulasi, atau pasal yang ingin dicari."},
-                        "namespace": {"type": "string", "description": "Namespace memori hukum (default: legal_agent)."}
+                        "namespace": {"type": "string", "description": "Namespace memori hukum (opsional, default: aktifkan beberapa)."},
+                        "top_k": {"type": "integer", "description": "Jumlah maksimal dokumen referensi yang dikembalikan (default: 3)."}
                     },
                     "required": ["query"]
                 },
@@ -845,7 +846,9 @@ class SatriaToolSelector:
                 parameters={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Nomor surat, perihal surat, atau nama pengirim daerah."}
+                        "query": {"type": "string", "description": "Nomor surat, perihal surat, atau nama pengirim daerah."},
+                        "namespace": {"type": "string", "description": "Filter dokumen berdasarkan namespace (opsional, contoh: srikandi_korespondensi)."},
+                        "top_k": {"type": "integer", "description": "Jumlah maksimal dokumen surat yang dikembalikan (default: 3)."}
                     },
                     "required": ["query"]
                 },

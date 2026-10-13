@@ -105,6 +105,154 @@ class VLLMVisionProcessor:
         res_json = resp.json()
         return res_json["choices"][0]["message"]["content"]
 
+    async def _call_vllm_vision_with_confidence(
+        self,
+        image_base64: str,
+        custom_prompt: Optional[str] = None,
+        timeout: int = 120,
+        request_confidence: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Call RunPod vLLM OpenAI endpoint with an image and request confidence score.
+        
+        Args:
+            image_base64: Base64 encoded image
+            custom_prompt: Custom prompt (will be extended with confidence request if None)
+            timeout: Request timeout in seconds
+            request_confidence: Whether to request confidence score from model
+            
+        Returns:
+            Dict with keys: text (str), confidence (float 0-1), raw_response (str)
+        """
+        import re
+        
+        # Build prompt with confidence request
+        base_prompt = custom_prompt or (
+            "Anda adalah AI OCR & Document Extractor profesional. Ekstrak seluruh isi dokumen, "
+            "lembar disposisi, catatan tulisan tangan pimpinan, paraf, stempel, nomor agenda, tabel, "
+            "dan tanda tangan dari gambar ini ke dalam format Markdown yang sangat rapi, akurat, dan lengkap "
+            "tanpa ada yang terlewat."
+        )
+        
+        if request_confidence:
+            prompt = (
+                f"{base_prompt}\n\n"
+                "PENTING: Sertakan skor kepercayaan (confidence score) 0.0-1.0 di akhir jawaban "
+                "dengan format: CONFIDENCE: <nilai>. Contoh: CONFIDENCE: 0.92"
+            )
+        else:
+            prompt = base_prompt
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 3000,
+            "temperature": 0.1,
+        }
+
+        loop = asyncio.get_running_loop()
+        
+        def _request():
+            return requests.post(self.api_url, headers=headers, json=payload, timeout=timeout)
+
+        resp = await loop.run_in_executor(None, _request)
+
+        if resp.status_code != 200:
+            raise RuntimeError(f"vLLM Vision request failed ({resp.status_code}): {resp.text}")
+
+        res_json = resp.json()
+        raw_response = res_json["choices"][0]["message"]["content"]
+        
+        # Parse confidence score from response
+        confidence = 0.5  # default
+        text = raw_response
+        
+        if request_confidence:
+            conf_match = re.search(r'CONFIDENCE:\s*([0-9]*\.?[0-9]+)', raw_response, re.IGNORECASE)
+            if conf_match:
+                try:
+                    confidence = float(conf_match.group(1))
+                    confidence = max(0.0, min(1.0, confidence))  # clamp to [0,1]
+                    # Remove confidence marker from text
+                    text = re.sub(r'CONFIDENCE:\s*[0-9]*\.?[0-9]+', '', raw_response, flags=re.IGNORECASE).strip()
+                except ValueError:
+                    pass
+            
+            # Also check for percentage format
+            if confidence == 0.5:
+                pct_match = re.search(r'confidence[:\s]+(\d{1,3})\s*%', raw_response, re.IGNORECASE)
+                if pct_match:
+                    confidence = float(pct_match.group(1)) / 100.0
+                    text = re.sub(r'confidence[:\s]+\d{1,3}\s*%', '', raw_response, flags=re.IGNORECASE).strip()
+        
+        logger.info(f"VLLM Vision confidence: {confidence:.2f}")
+        return {
+            "text": text,
+            "confidence": confidence,
+            "raw_response": raw_response,
+        }
+
+    def _calculate_captcha_confidence(self, text: str) -> float:
+        """
+        Calculate heuristic confidence for CAPTCHA text based on patterns.
+        
+        Args:
+            text: Extracted text from CAPTCHA
+            
+        Returns:
+            Confidence score 0.0-1.0
+        """
+        import re
+        
+        if not text or len(text) < 2:
+            return 0.0
+        
+        score = 0.5  # base score
+        
+        # Length check - typical CAPTCHA is 4-8 chars
+        if 4 <= len(text) <= 8:
+            score += 0.1
+        elif len(text) > 12:
+            score -= 0.2
+        
+        # Alphanumeric only
+        if re.match(r'^[a-zA-Z0-9]+$', text):
+            score += 0.2
+        else:
+            score -= 0.1
+            
+        # Mixed case or all caps/numbers
+        if re.search(r'[a-z]', text) and re.search(r'[A-Z]', text):
+            score += 0.1  # mixed case is common in CAPTCHAs
+        elif re.search(r'[0-9]', text) and re.search(r'[A-Za-z]', text):
+            score += 0.1  # alphanumeric mix
+        
+        # No special characters (good for CAPTCHA)
+        if not re.search(r'[^a-zA-Z0-9]', text):
+            score += 0.1
+            
+        # Repeated characters (might be noise)
+        if re.search(r'(.)\1{2,}', text):
+            score -= 0.1
+        
+        return max(0.0, min(1.0, score))
+
     async def process_document(
         self,
         file_path: Union[str, Path],
