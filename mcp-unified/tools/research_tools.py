@@ -4,9 +4,11 @@ Research Tools - MCP Tools untuk AI-powered Web Research
 Menggunakan VaneConnector (SearxNG + Groq) untuk riset cepat dan akurat.
 
 Tools yang tersedia:
-    - vane_search:        Pencarian cepat dengan sintesis AI
-    - vane_deep_research: Riset mendalam multi-query + simpan ke KB
-    - vane_legal_search:  Riset khusus hukum Indonesia (domain filter)
+    - vane_search:           Pencarian cepat dengan sintesis AI
+    - vane_deep_research:    Riset mendalam multi-query + simpan ke KB
+    - vane_legal_search:     Riset khusus hukum Indonesia (domain filter)
+    - vane_gap_fill:         Pengisian data gap urusan/sub-urusan UU 23/2014
+    - vane_7pillars_analyze: Analisis Naskah/Regulasi Taksonomi 7 Pilar DIM v2.0 (Track A Ditjen PP)
 
 Digunakan oleh: ResearchAgent, LegalAgent
 """
@@ -23,16 +25,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
 
-# Import VaneConnector
+# Import VaneConnector & MemForge normalizer
 try:
-    from integrations.vane_connector import VaneConnector
+    from integrations.vane_connector import VaneConnector, normalize_research_namespace
     _vane_available = True
 except ImportError:
     try:
-        from mcp_unified.integrations.vane_connector import VaneConnector
+        from mcp_unified.integrations.vane_connector import VaneConnector, normalize_research_namespace
         _vane_available = True
     except ImportError:
         _vane_available = False
+        def normalize_research_namespace(ns):
+            return ns or "puu:regulasi:pencari"
         logger.warning("VaneConnector tidak tersedia, research tools akan terbatas")
 
 
@@ -95,15 +99,12 @@ async def vane_search(
         elif mode == "quality":
             num_results = max(num_results, 10)
 
-        # Run sync connector di thread pool agar tidak block asyncio
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: conn.research(
-                query=query,
-                num_results=num_results,
-                system_prompt=system_prompt,
-            )
+        # Eksekusi riset asinkron langsung (non-blocking)
+        result = await conn.research_async(
+            query=query,
+            num_results=num_results,
+            system_prompt=system_prompt,
+            mode=mode,
         )
         result["query"] = query
         result["mode"]  = mode
@@ -169,7 +170,7 @@ async def vane_legal_search(
 async def vane_deep_research(
     main_query: str,
     sub_queries: Optional[List[str]] = None,
-    namespace: str = "legal_research_deep",
+    namespace: str = "puu:regulasi:pencari",
     save_to_kb: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -177,13 +178,13 @@ async def vane_deep_research(
 
     Melakukan serangkaian pencarian untuk topik yang kompleks,
     menggabungkan hasilnya menjadi satu laporan komprehensif,
-    dan secara opsional menyimpan ke Knowledge Base.
+    dan secara opsional menyimpan ke MemForge Native / Knowledge Base.
 
     Args:
         main_query:  Query utama / topik riset
         sub_queries: Daftar sub-query tambahan (auto-generated jika kosong)
-        namespace:   Namespace KB untuk penyimpanan (default: "legal_research_deep")
-        save_to_kb:  Simpan hasil ke Knowledge Base (default: False)
+        namespace:   Namespace MemForge (default: "puu:regulasi:pencari")
+        save_to_kb:  Simpan hasil ke MemForge/KB (default: False)
 
     Returns:
         {
@@ -327,6 +328,93 @@ async def vane_gap_fill(
 
 
 # ============================================================
+# TOOL: vane_7pillars_analyze (Track A Ditjen PP & Bangda)
+# ============================================================
+async def vane_7pillars_analyze(
+    title: str,
+    draft_content: str,
+    context: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    cross_references: Optional[List[Dict[str, str]]] = None,
+    save_to_kb: bool = False,
+    namespace: str = "puu:regulasi:pencari",
+) -> Dict[str, Any]:
+    """
+    MCP Tool: Analisis Naskah/Regulasi Berbasis Taksonomi 7 Pilar DIM v2.0 (Track A Ditjen PP).
+
+    Mengevaluasi draf regulasi daerah terhadap 7 Pilar Legislatif:
+      1. Kewenangan & Yurisdiksi (Urusan Konkuren UU 23/2014 & Ultra Vires Check)
+      2. Kelembagaan & Tata Kelola (OPD & Struktur Pelaksana)
+      3. Hierarki Peraturan & Landasan Hukum (UU 12/2011 jo UU 13/2022)
+      4. Personil & SDM Aparatur (PPNS & Pejabat Fungsional Perancang/Pengawas)
+      5. Finansial, Beban Fiskal & APBD (Kepatuhan UU HKPD 1/2022 & Standar Biaya)
+      6. Sarana Prasarana & Fasilitas Standar (SPBE & Infrastruktur Layanan Publik)
+      7. Prosedur, Standar SPM & Penegakan (SOP & Sanksi Bertahap)
+    Serta menyusun Matriks Disposisi DIM (APPROVED, PARKING_LOT, ENCLAVE,
+    ALTERNATIVE_VEHICLE, OUT_OF_SCOPE, FUTURE_AGENDA).
+
+    Args:
+        title:            Judul rancangan peraturan / regulasi yang dievaluasi
+        draft_content:    Teks draf pasal/materi muatan yang dianalisis
+        context:          Konteks/catatan latar belakang analisis
+        metadata:         Metadata tambahan (misal: jenis regulasi, pemda pemrakarsa)
+        cross_references: Referensi silang peraturan terkait
+        save_to_kb:       Simpan hasil evaluasi ke MemForge Native (default: False)
+        namespace:        Namespace MemForge (default: "puu:regulasi:pencari")
+
+    Returns:
+        {
+            "success":           bool,
+            "title":             str,
+            "analysis_7pillars": str,
+            "model_used":        str,
+            "timestamp":         str,
+            "analysis_version":  str,
+            "pillars_evaluated": int,
+            "namespace":         str,
+            "saved_to_kb":       bool
+        }
+    """
+    logger.info(f"[vane_7pillars_analyze] Title: {title!r}")
+    try:
+        conn = _get_connector()
+        result = await conn.synthesize_7_pillars_async(
+            title=title,
+            draft_text=draft_content,
+            metadata=metadata,
+            context_notes=context,
+            cross_references=cross_references,
+        )
+
+        result["namespace"] = namespace
+        result["saved_to_kb"] = False
+
+        if result.get("success") and save_to_kb:
+            analysis_text = result.get("analysis_7pillars", "")
+            if analysis_text:
+                saved = await _save_to_knowledge_base(
+                    query=f"Analisis 7 Pilar DIM: {title}",
+                    content=analysis_text,
+                    sources={"self": {"title": title, "url": f"internal://ranperda/{title}"}},
+                    namespace=namespace,
+                )
+                result["saved_to_kb"] = bool(saved)
+
+        return result
+    except Exception as e:
+        logger.error(f"[vane_7pillars_analyze] Error: {e}")
+        return {
+            "success":           False,
+            "error":             str(e),
+            "title":             title,
+            "analysis_version":  "7Pillars-v2.0-DitjenPP-Bangda",
+            "pillars_evaluated": 7,
+            "namespace":         namespace,
+            "saved_to_kb":       False,
+        }
+
+
+# ============================================================
 # HELPERS
 # ============================================================
 def _generate_sub_queries(main_query: str) -> List[str]:
@@ -346,23 +434,58 @@ async def _save_to_knowledge_base(
     sources: dict,
     namespace: str,
 ) -> bool:
-    """Simpan hasil riset ke Knowledge Base (PostgreSQL + pgvector)."""
+    """
+    Simpan hasil riset ke MemForge Native (PostgreSQL pgvector / SQLite-vec).
+    Mengikuti Zero-Leakage Policy dan taksonomi resmi PUU.
+    """
+    target_ns = normalize_research_namespace(namespace)
     try:
+        conn = _get_connector()
+        memforge_res = await conn.save_to_memforge_async(
+            result={
+                "query": query,
+                "answer": content,
+                "sources": [{"url": u} for u in list(sources.keys())[:10]],
+            },
+            namespace=target_ns,
+            importance=0.85,
+            agent_id="puu:regulasi:pencari",
+        )
+        if memforge_res.get("success"):
+            logger.info(f"Riset tersimpan ke MemForge namespace '{target_ns}': {memforge_res.get('memory_id')}")
+            return True
+
+        # Fallback ke KnowledgeStore jika MemForge belum aktif
         from knowledge.store import KnowledgeStore
         kb = KnowledgeStore()
         await kb.store(
             content=content,
-            namespace=namespace,
+            namespace=target_ns,
             metadata={
-                "query":    query,
-                "sources":  list(sources.keys())[:10],
-                "type":     "vane_research",
+                "query":   query,
+                "sources": list(sources.keys())[:10],
+                "type":    "vane_research",
             }
         )
         return True
     except Exception as e:
-        logger.warning(f"KB store failed: {e}")
+        logger.warning(f"Simpan hasil riset gagal: {e}")
         return False
+
+
+def register_research_tools(registry) -> int:
+    """Register Vane AI Research tools into execution.registry."""
+    tools_list = [vane_search, vane_deep_research, vane_legal_search, vane_gap_fill, vane_7pillars_analyze]
+    registered = 0
+    for fn in tools_list:
+        try:
+            name = getattr(fn, "__name__", None)
+            if name and registry.get_tool(name) is None:
+                registry.register(fn, name=name, category="research")
+                registered += 1
+        except Exception as e:
+            logger.warning(f"Failed to register research tool: {e}")
+    return registered
 
 
 # ============================================================

@@ -18,19 +18,26 @@ Port yang digunakan:
 
 import re
 import os
+import asyncio
 import logging
-import requests
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
+import httpx
 
 from core.secrets import load_runtime_secrets
 
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# KONFIGURASI DEFAULT
+# KONFIGURASI DEFAULT & UPSTREAM ENDPOINTS
 # ============================================================
+VANE_API_URL = os.environ.get("VANE_API_URL", "http://localhost:3002")
 SEARXNG_URL  = os.environ.get("SEARXNG_URL",  "http://localhost:8091")
+EXA_API_URL  = "https://api.exa.ai/search"
+EXA_API_KEY  = os.environ.get("EXA_API_KEY", "")
+TAVILY_API_URL = "https://api.tavily.com/search"
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
+
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL   = os.environ.get("GROQ_MODEL",   "openai/gpt-oss-120b")
@@ -62,30 +69,38 @@ BLOCKED_DOMAINS = [
 
 class VaneConnector:
     """
-    Connector utama untuk riset dengan AI.
+    Connector utama untuk riset dengan AI (Asinkron & Upstream Aligned).
     Digunakan oleh ResearchAgent dan LegalAgent di MCP Unified.
     
-    Mendukung 3-Tier LLM Synthesis Fallback:
-      Tier 1: Groq Cloud API (Ultra-fast, ~1-3s)
-      Tier 2: RunPod GPU vLLM Serverless (~2-5s)
-      Tier 3: Local Ollama (~3-8s)
+    Fitur Utama:
+      - Upstream Vane Adapter: Mode 'speed', 'balanced', 'quality' via /api/search
+      - Search Providers: Exa Neural Search / Tavily / SearxNG lokal
+      - 3-Tier LLM Synthesis Fallback:
+          Tier 1: Groq Cloud API (Ultra-fast, ~1-3s)
+          Tier 2: RunPod GPU vLLM Serverless (~2-5s)
+          Tier 3: Local Ollama (~3-8s)
+      - Dual Support: Full Async native + Synchronous wrappers
     """
 
     def __init__(
         self,
-        searxng_url:        str = SEARXNG_URL,
-        groq_key:           str = GROQ_API_KEY,
-        model:              str = GROQ_MODEL,
+        vane_api_url:       Optional[str] = None,
+        searxng_url:        Optional[str] = None,
+        groq_key:           Optional[str] = None,
+        model:              Optional[str] = None,
         runpod_endpoint_id: Optional[str] = None,
         runpod_api_key:     Optional[str] = None,
         runpod_model:       Optional[str] = None,
         ollama_url:         Optional[str] = None,
         ollama_model:       Optional[str] = None,
+        exa_key:            Optional[str] = None,
+        tavily_key:         Optional[str] = None,
     ):
         load_runtime_secrets()
-        self.searxng_url      = searxng_url or os.getenv("SEARXNG_URL", "http://localhost:8091")
-        self.groq_key         = groq_key or os.getenv("GROQ_API_KEY", "")
-        self.model            = model or os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+        self.vane_api_url     = (vane_api_url or os.getenv("VANE_API_URL", VANE_API_URL)).strip()
+        self.searxng_url      = (searxng_url or os.getenv("SEARXNG_URL", SEARXNG_URL)).strip()
+        self.groq_key         = (groq_key or os.getenv("GROQ_API_KEY", GROQ_API_KEY)).strip()
+        self.model            = (model or os.getenv("GROQ_MODEL", GROQ_MODEL)).strip()
         
         self.runpod_endpoint  = (runpod_endpoint_id or os.getenv("RUNPOD_VLLM_VISION_ENDPOINT_ID") or os.getenv("RUNPOD_ENDPOINT_ID") or RUNPOD_DEFAULT_ENDPOINT).strip()
         self.runpod_key       = (runpod_api_key or os.getenv("RUNPOD_VLLM_API_KEY") or os.getenv("RUNPOD_API_KEY", "")).strip()
@@ -94,10 +109,19 @@ class VaneConnector:
         self.ollama_url       = (ollama_url or os.getenv("OLLAMA_URL", OLLAMA_DEFAULT_URL)).strip()
         self.ollama_model     = (ollama_model or os.getenv("OLLAMA_MODEL", OLLAMA_DEFAULT_MODEL)).strip()
 
-        self.session          = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "MCP-Research-Agent/1.0"
-        })
+        self.exa_key          = (exa_key or os.getenv("EXA_API_KEY", EXA_API_KEY)).strip()
+        self.tavily_key       = (tavily_key or os.getenv("TAVILY_API_KEY", TAVILY_API_KEY)).strip()
+
+    def _run_sync(self, coro):
+        """Helper untuk menjalankan async coroutine dengan aman dari fungsi sinkron."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(asyncio.run, coro).result()
 
     def _is_blocked(self, url: str) -> bool:
         return any(d in url for d in BLOCKED_DOMAINS)
@@ -107,21 +131,84 @@ class VaneConnector:
         return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
     # ----------------------------------------------------------
-    # SEARCH
+    # UPSTREAM VANE NATIVE ADAPTER (/api/search)
     # ----------------------------------------------------------
-    def search_web(
+    async def search_vane_native_async(
         self,
-        query:       str,
+        query: str,
+        mode: str = "speed",
         num_results: int = 8,
-        engines:     str = "google,bing,duckduckgo,wikipedia",
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Panggil langsung Vane Next.js API (/api/search) dengan optimizationMode.
+        Upstream Vane alignment (speed / balanced / quality).
+        """
+        if not self.vane_api_url:
+            return None
+
+        url = f"{self.vane_api_url.rstrip('/')}/api/search"
+        payload = {
+            "query": query,
+            "optimizationMode": mode,
+            "stream": False,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "MCP-Research-Agent/2.0"
+        }
+
+        should_close = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=25.0)
+            should_close = True
+
+        try:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                answer = data.get("message") or data.get("answer") or ""
+                sources = data.get("sources") or []
+                if answer:
+                    return {
+                        "success": True,
+                        "answer": self._strip_think_tags(answer),
+                        "model_used": f"vane-native:{mode}",
+                        "sources": sources[:num_results],
+                        "timestamp": datetime.now().isoformat(),
+                    }
+            else:
+                logger.debug(f"Vane native API HTTP {resp.status_code}: {resp.text[:120]}")
+        except Exception as e:
+            logger.debug(f"Vane native API tidak merespons ({e}), fallback ke provider lain.")
+        finally:
+            if should_close:
+                await client.aclose()
+
+        return None
+
+    # ----------------------------------------------------------
+    # SEARCH PROVIDERS (SearxNG, Exa, Tavily)
+    # ----------------------------------------------------------
+    async def search_web_async(
+        self,
+        query: str,
+        num_results: int = 8,
+        engines: str = "google,bing,duckduckgo,wikipedia",
+        client: Optional[httpx.AsyncClient] = None,
     ) -> List[Dict[str, str]]:
         """
-        Cari web menggunakan SearxNG dan kembalikan daftar snippet.
+        Cari web menggunakan SearxNG secara asinkron.
         Tidak melakukan full-page scraping (cepat).
         """
+        should_close = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=20.0)
+            should_close = True
+
         try:
-            resp = self.session.get(
-                f"{self.searxng_url}/search",
+            resp = await client.get(
+                f"{self.searxng_url.rstrip('/')}/search",
                 params={
                     "q":          query,
                     "format":     "json",
@@ -131,7 +218,7 @@ class VaneConnector:
                     "categories": "general",
                     "pageno":     1,
                 },
-                timeout=20,
+                headers={"User-Agent": "MCP-Research-Agent/2.0"},
             )
             resp.raise_for_status()
             raw = resp.json().get("results", [])
@@ -153,70 +240,209 @@ class VaneConnector:
         except Exception as e:
             logger.error(f"SearxNG error: {e}")
             return []
+        finally:
+            if should_close:
+                await client.aclose()
+
+    def search_web(
+        self,
+        query: str,
+        num_results: int = 8,
+        engines: str = "google,bing,duckduckgo,wikipedia",
+    ) -> List[Dict[str, str]]:
+        """Wrapper sinkron untuk search_web_async."""
+        return self._run_sync(self.search_web_async(
+            query=query,
+            num_results=num_results,
+            engines=engines,
+        ))
+
+    async def search_exa_async(
+        self,
+        query: str,
+        num_results: int = 8,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> List[Dict[str, str]]:
+        """Neural Search via Exa API jika EXA_API_KEY dikonfigurasi."""
+        if not self.exa_key:
+            return []
+
+        should_close = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=20.0)
+            should_close = True
+
+        try:
+            resp = await client.post(
+                EXA_API_URL,
+                headers={
+                    "x-api-key": self.exa_key,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "query": query,
+                    "numResults": num_results,
+                    "useAutoprompt": True,
+                },
+            )
+            if resp.status_code == 200:
+                raw_results = resp.json().get("results", [])
+                results = []
+                for r in raw_results:
+                    url = r.get("url", "")
+                    if self._is_blocked(url):
+                        continue
+                    results.append({
+                        "title": r.get("title", ""),
+                        "url": url,
+                        "snippet": r.get("text", "")[:300],
+                        "engine": "exa",
+                    })
+                return results
+        except Exception as e:
+            logger.warning(f"Exa search error: {e}")
+        finally:
+            if should_close:
+                await client.aclose()
+
+        return []
+
+    async def search_tavily_async(
+        self,
+        query: str,
+        num_results: int = 8,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> List[Dict[str, str]]:
+        """Web search via Tavily API jika TAVILY_API_KEY dikonfigurasi."""
+        if not self.tavily_key:
+            return []
+
+        should_close = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=20.0)
+            should_close = True
+
+        try:
+            resp = await client.post(
+                TAVILY_API_URL,
+                headers={"Content-Type": "application/json"},
+                json={
+                    "api_key": self.tavily_key,
+                    "query": query,
+                    "max_results": num_results,
+                },
+            )
+            if resp.status_code == 200:
+                raw_results = resp.json().get("results", [])
+                results = []
+                for r in raw_results:
+                    url = r.get("url", "")
+                    if self._is_blocked(url):
+                        continue
+                    results.append({
+                        "title": r.get("title", ""),
+                        "url": url,
+                        "snippet": r.get("content", ""),
+                        "engine": "tavily",
+                    })
+                return results
+        except Exception as e:
+            logger.warning(f"Tavily search error: {e}")
+        finally:
+            if should_close:
+                await client.aclose()
+
+        return []
 
     # ----------------------------------------------------------
-    # SYNTHESIS PROVIDERS (Groq -> RunPod -> Ollama)
+    # SYNTHESIS PROVIDERS ASYNC (Groq -> RunPod -> Ollama)
     # ----------------------------------------------------------
+    async def _synthesize_groq_async(
+        self,
+        messages: List[Dict],
+        target_model: str,
+        temperature: float = 0.0,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Tier 1: Sintesis asinkron via Groq Cloud API."""
+        if not self.groq_key:
+            return None
+
+        should_close = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=25.0)
+            should_close = True
+
+        models_to_try = [target_model] + [
+            m for m in GROQ_FALLBACK_MODELS if m != target_model
+        ]
+
+        try:
+            for m in models_to_try:
+                try:
+                    resp = await client.post(
+                        GROQ_API_URL,
+                        headers={
+                            "Authorization": f"Bearer {self.groq_key}",
+                            "Content-Type":  "application/json",
+                        },
+                        json={
+                            "model":       m,
+                            "messages":    messages,
+                            "temperature": temperature,
+                            "max_tokens":  2048,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        raw = resp.json()["choices"][0]["message"]["content"]
+                        answer = self._strip_think_tags(raw)
+                        logger.info(f"Sintesis Groq berhasil dengan model: {m}")
+                        return {
+                            "answer": answer,
+                            "model_used": f"groq:{m}",
+                        }
+                    else:
+                        err = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                        code = err.get("error", {}).get("code", "")
+                        logger.warning(f"Groq [{m}] HTTP {resp.status_code}: {code}")
+                        if resp.status_code == 401 or code == "invalid_api_key":
+                            break
+                        if code in ("model_permission_blocked_project", "model_not_found", "rate_limit_exceeded"):
+                            continue
+                except Exception as e:
+                    logger.warning(f"Groq [{m}] Exception: {e}")
+                    continue
+        finally:
+            if should_close:
+                await client.aclose()
+
+        return None
+
     def _synthesize_groq(
         self,
         messages: List[Dict],
         target_model: str,
         temperature: float = 0.0,
     ) -> Optional[Dict[str, Any]]:
-        """Tier 1: Sintesis via Groq Cloud API."""
-        if not self.groq_key:
-            return None
+        return self._run_sync(self._synthesize_groq_async(messages, target_model, temperature))
 
-        models_to_try = [target_model] + [
-            m for m in GROQ_FALLBACK_MODELS if m != target_model
-        ]
-
-        for m in models_to_try:
-            try:
-                resp = self.session.post(
-                    GROQ_API_URL,
-                    headers={
-                        "Authorization": f"Bearer {self.groq_key}",
-                        "Content-Type":  "application/json",
-                    },
-                    json={
-                        "model":       m,
-                        "messages":    messages,
-                        "temperature": temperature,
-                        "max_tokens":  2048,
-                    },
-                    timeout=25,
-                )
-                if resp.status_code == 200:
-                    raw = resp.json()["choices"][0]["message"]["content"]
-                    answer = self._strip_think_tags(raw)
-                    logger.info(f"Sintesis Groq berhasil dengan model: {m}")
-                    return {
-                        "answer": answer,
-                        "model_used": f"groq:{m}",
-                    }
-                else:
-                    err = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-                    code = err.get("error", {}).get("code", "")
-                    logger.warning(f"Groq [{m}] HTTP {resp.status_code}: {code}")
-                    if resp.status_code == 401 or code == "invalid_api_key":
-                        break
-                    if code in ("model_permission_blocked_project", "model_not_found", "rate_limit_exceeded"):
-                        continue
-            except Exception as e:
-                logger.warning(f"Groq [{m}] Exception: {e}")
-                continue
-
-        return None
-
-    def _synthesize_runpod(self, messages: List[Dict]) -> Optional[Dict[str, Any]]:
-        """Tier 2: Sintesis fallback via RunPod vLLM GPU Serverless."""
+    async def _synthesize_runpod_async(
+        self,
+        messages: List[Dict],
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Tier 2: Sintesis asinkron fallback via RunPod vLLM GPU Serverless."""
         if not self.runpod_key or not self.runpod_endpoint:
             return None
 
+        should_close = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=45.0)
+            should_close = True
+
         api_url = f"https://api.runpod.ai/v2/{self.runpod_endpoint}/openai/v1/chat/completions"
         try:
-            resp = self.session.post(
+            resp = await client.post(
                 api_url,
                 headers={
                     "Authorization": f"Bearer {self.runpod_key}",
@@ -228,7 +454,6 @@ class VaneConnector:
                     "temperature": 0.2,
                     "max_tokens":  2048,
                 },
-                timeout=45,
             )
             if resp.status_code == 200:
                 raw = resp.json()["choices"][0]["message"]["content"]
@@ -242,14 +467,29 @@ class VaneConnector:
                 logger.warning(f"RunPod vLLM HTTP {resp.status_code}: {resp.text[:150]}")
         except Exception as e:
             logger.warning(f"RunPod vLLM exception: {e}")
+        finally:
+            if should_close:
+                await client.aclose()
 
         return None
 
-    def _synthesize_ollama(self, messages: List[Dict]) -> Optional[Dict[str, Any]]:
-        """Tier 3: Sintesis fallback via Ollama lokal."""
+    def _synthesize_runpod(self, messages: List[Dict]) -> Optional[Dict[str, Any]]:
+        return self._run_sync(self._synthesize_runpod_async(messages))
+
+    async def _synthesize_ollama_async(
+        self,
+        messages: List[Dict],
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Tier 3: Sintesis asinkron fallback via Ollama lokal."""
+        should_close = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=30.0)
+            should_close = True
+
         try:
-            resp = self.session.post(
-                f"{self.ollama_url}/v1/chat/completions",
+            resp = await client.post(
+                f"{self.ollama_url.rstrip('/')}/v1/chat/completions",
                 headers={"Content-Type": "application/json"},
                 json={
                     "model":       self.ollama_model,
@@ -257,7 +497,6 @@ class VaneConnector:
                     "temperature": 0.2,
                     "max_tokens":  2048,
                 },
-                timeout=30,
             )
             if resp.status_code == 200:
                 raw = resp.json()["choices"][0]["message"]["content"]
@@ -269,23 +508,29 @@ class VaneConnector:
                 }
         except Exception as e:
             logger.warning(f"Ollama fallback exception: {e}")
+        finally:
+            if should_close:
+                await client.aclose()
 
         return None
 
-    def synthesize(
+    def _synthesize_ollama(self, messages: List[Dict]) -> Optional[Dict[str, Any]]:
+        return self._run_sync(self._synthesize_ollama_async(messages))
+
+    async def synthesize_async(
         self,
-        query:          str,
+        query: str,
         search_results: List[Dict],
-        system_prompt:  Optional[str] = None,
-        model:          Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+        client: Optional[httpx.AsyncClient] = None,
     ) -> Dict[str, Any]:
         """
-        Kirim hasil pencarian ke engine AI untuk disintesis menjadi jawaban dengan sitasi.
+        Sintesis asinkron jawaban dengan sitasi dari hasil pencarian.
         Secara otomatis mencoba Groq -> RunPod GPU -> Ollama Lokal.
         """
-        # Bangun konteks dari snippets
         context = "\n\n".join(
-            f"[{i}] {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}"
+            f"[{i}] {r.get('title', '')}\nURL: {r.get('url', '')}\nSnippet: {r.get('snippet', '')}"
             for i, r in enumerate(search_results, 1)
         )
 
@@ -312,7 +557,7 @@ class VaneConnector:
         target_model = model or self.model
 
         # 1. Tier 1: Groq Cloud API
-        res = self._synthesize_groq(messages, target_model)
+        res = await self._synthesize_groq_async(messages, target_model, client=client)
         if res:
             return {
                 "success":    True,
@@ -323,7 +568,7 @@ class VaneConnector:
             }
 
         # 2. Tier 2: RunPod GPU vLLM Serverless
-        res = self._synthesize_runpod(messages)
+        res = await self._synthesize_runpod_async(messages, client=client)
         if res:
             return {
                 "success":    True,
@@ -334,7 +579,7 @@ class VaneConnector:
             }
 
         # 3. Tier 3: Local Ollama
-        res = self._synthesize_ollama(messages)
+        res = await self._synthesize_ollama_async(messages, client=client)
         if res:
             return {
                 "success":    True,
@@ -346,41 +591,89 @@ class VaneConnector:
 
         return {"success": False, "error": "Semua provider sintesis AI (Groq, RunPod, Ollama) gagal atau tidak dapat diakses."}
 
-    # ----------------------------------------------------------
-    # FULL RESEARCH PIPELINE
-    # ----------------------------------------------------------
-    def research(
+    def synthesize(
         self,
-        query:          str,
-        num_results:    int            = 8,
-        system_prompt:  Optional[str]  = None,
-        model:          Optional[str]  = None,
+        query: str,
+        search_results: List[Dict],
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Wrapper sinkron untuk synthesize_async."""
+        return self._run_sync(self.synthesize_async(
+            query=query,
+            search_results=search_results,
+            system_prompt=system_prompt,
+            model=model,
+        ))
+
+    # ----------------------------------------------------------
+    # FULL RESEARCH PIPELINE (ASYNC & SYNC)
+    # ----------------------------------------------------------
+    async def research_async(
+        self,
+        query: str,
+        num_results: int = 8,
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+        mode: str = "speed",
+        client: Optional[httpx.AsyncClient] = None,
+        use_vane_native: bool = True,
     ) -> Dict[str, Any]:
         """
-        Pipeline riset lengkap: SearxNG → Groq synthesis → hasil dengan sitasi.
-        
-        Args:
-            query:         Pertanyaan riset
-            num_results:   Jumlah hasil SearxNG yang diambil (default: 8)
-            system_prompt: Custom prompt untuk Groq (optional)
-            model:         Override model Groq (optional)
-            
-        Returns:
-            {
-                "success": bool,
-                "answer":  str,           # Jawaban tersintesis
-                "model_used": str,        # Model yang berhasil digunakan
-                "sources": [              # Sumber-sumber yang digunakan
-                    {"title": ..., "url": ..., "snippet": ...}
-                ],
-                "timestamp": str
-            }
+        Pipeline riset asinkron lengkap:
+          1. Coba Vane Native API jika aktif (/api/search dengan optimizationMode).
+          2. Jika tidak aktif / gagal: Ambil data via Exa/Tavily/SearxNG -> 3-Tier Synthesis LLM.
         """
-        logger.info(f"Research query: {query}")
-        results = self.search_web(query, num_results)
+        logger.info(f"Research query async: {query!r} (mode={mode})")
+
+        if use_vane_native and self.vane_api_url:
+            native_res = await self.search_vane_native_async(
+                query=query,
+                mode=mode,
+                num_results=num_results,
+                client=client,
+            )
+            if native_res and native_res.get("success"):
+                return native_res
+
+        # Fallback / Direct search: Coba Exa -> Tavily -> SearxNG
+        results = []
+        if self.exa_key:
+            results = await self.search_exa_async(query, num_results=num_results, client=client)
+        if not results and self.tavily_key:
+            results = await self.search_tavily_async(query, num_results=num_results, client=client)
         if not results:
-            return {"success": False, "error": "SearxNG tidak mengembalikan hasil"}
-        return self.synthesize(query, results, system_prompt=system_prompt, model=model)
+            results = await self.search_web_async(query, num_results=num_results, client=client)
+
+        if not results:
+            return {"success": False, "error": "Mesin pencari tidak mengembalikan hasil"}
+
+        return await self.synthesize_async(
+            query=query,
+            search_results=results,
+            system_prompt=system_prompt,
+            model=model,
+            client=client,
+        )
+
+    def research(
+        self,
+        query: str,
+        num_results: int = 8,
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+        mode: str = "speed",
+        use_vane_native: bool = True,
+    ) -> Dict[str, Any]:
+        """Wrapper sinkron untuk research_async."""
+        return self._run_sync(self.research_async(
+            query=query,
+            num_results=num_results,
+            system_prompt=system_prompt,
+            model=model,
+            mode=mode,
+            use_vane_native=use_vane_native,
+        ))
 
     # ----------------------------------------------------------
     # 6 DIMENSI ANALISIS PRODUK HUKUM (STANDAR BPHN PHN-HN.01.03-07)
@@ -436,7 +729,7 @@ class VaneConnector:
 
         return "\n\n".join(blocks)
 
-    def synthesize_6_dimensions(
+    async def synthesize_6_dimensions_async(
         self,
         title: str,
         metadata: Optional[Dict[str, Any]] = None,
@@ -444,67 +737,24 @@ class VaneConnector:
         context_notes: Optional[str] = None,
         cross_references: Optional[List[Dict[str, str]]] = None,
         related_laws: Optional[List[str]] = None,
+        client: Optional[httpx.AsyncClient] = None,
     ) -> Dict[str, Any]:
         """
-        Sintesis Analisis Yuridis Komprehensif berbasis Standar Baku 6 Dimensi
+        Sintesis Analisis Yuridis Komprehensif berbasis Standar Baku 6 Dimensi (Async).
         Evaluasi Peraturan Perundang-undangan (Pedoman BPHN No. PHN-HN.01.03-07).
-
-        Versi 2.0 — menutup 4 gap dari bedah logika dokumen referensi BPHN 2024:
-          Gap 1: Pre-Analysis Layer — peta isu krusial & politik hukum wajib
-                 disusun SEBELUM masuk analisis per-dimensi.
-          Gap 2: Tabel Persandingan — norma lama vs baru (wajib bila related_laws tersedia).
-          Gap 3: Cross-Reference Pasal — setiap dimensi wajib menyebut min. 2-3 referensi
-                 dari cross_references yang diberikan.
-          Gap 4: Empirical Layer Dimensi 6 — analisis cost-benefit & data lapangan,
-                 bukan sekadar deskripsi normatif.
-
-        Args:
-            title:            Judul/nama peraturan yang dianalisis.
-            metadata:         Metadata regulasi (jenis, nomor, tahun, instansi, dll).
-            extracted_text:   Kutipan teks dokumen asli (konsiderans & pasal pokok).
-            context_notes:    Catatan kontekstual tambahan dari caller.
-            cross_references: Dokumen/pasal referensi yang diberikan user untuk
-                              cross-check. Format:
-                              [{'title': 'UU No.32/2009 Pasal 22',
-                                'content': 'teks pasal atau ringkasan...'}]
-            related_laws:     Daftar UU/PP terkait untuk membangun tabel persandingan.
-                              Contoh: ['UU No.11/2020 tentang Cipta Kerja',
-                                       'PP No.22/2021 tentang Penyelenggaraan PPLH']
-
-        Returns:
-            Dict berisi:
-              success (bool), title, analysis_6d (str hasil analisis),
-              model_used, timestamp, cross_references_used (int),
-              related_laws (list), analysis_version (str)
-
-        Dimensi Analisis:
-          0. Pra-Analisis: Politik Hukum & Isu Krusial  [GAP-1 BARU]
-          1. Dimensi Pancasila
-          2. Dimensi Ketepatan Jenis PUU
-          3. Dimensi Potensi Disharmoni Pengaturan       [GAP-2 BARU: Tabel Persandingan]
-          4. Dimensi Kejelasan Rumusan
-          5. Dimensi Kesesuaian Asas Bidang Hukum
-          6. Dimensi Efektivitas Pelaksanaan             [GAP-4 BARU: Empirical]
-          7. Rekomendasi Yuridis Final                   [GAP-3 BARU: Cross-ref wajib]
         """
         meta     = metadata or {}
         meta_str = (
             "\n".join(f"- **{k}:** {v}" for k, v in meta.items() if v)
             or "- Tidak ada metadata spesifik"
         )
-        # Batasi panjang teks agar tidak overflow context window
         text_snippet = (extracted_text or "")[:3000]
 
-        # -------------------------------------------------------
-        # SYSTEM PROMPT v2.0 — menutup 4 gap
-        # -------------------------------------------------------
         system_prompt = (
             "Anda adalah Analis Hukum Senior di Pusat Analisis dan Evaluasi Hukum Nasional "
             "(BPHN, Kemenkumham RI) dan Perancang Peraturan Perundang-undangan berpengalaman. "
             "Anda WAJIB mengikuti metodologi resmi Pedoman Evaluasi Peraturan Perundang-undangan BPHN "
             "Nomor PHN-HN.01.03-07 Tahun 2020 (Standar 6 Dimensi) dengan presisi tinggi.\n\n"
-
-            # ── INSTRUKSI UMUM KUALITAS ─────────────────────────────────
             "INSTRUKSI UMUM:\n"
             "1. Output HARUS mengikuti urutan seksi yang ditetapkan di bawah ini tanpa terkecuali.\n"
             "2. Setiap temuan WAJIB disertai dasar hukum atau referensi pasal yang konkret.\n"
@@ -514,8 +764,6 @@ class VaneConnector:
             "4. Gunakan pola penalaran berlapis: \n"
             "   Normatif-Hierarkis → Komparatif-Temporal → Teleologis → Empiris.\n"
             "5. Hindari generalisasi. Tajam, spesifik, dan berbasis data/norma.\n\n"
-
-            # ── SEKSI 0: PRA-ANALISIS (GAP-1) ──────────────────────────
             "### 0. 🗺️ Pra-Analisis: Politik Hukum & Isu Krusial [WAJIB — sebelum 6 Dimensi]\n"
             "Uraikan:\n"
             "  a) Teleologi pembentukan: mengapa regulasi ini ada? Apa masalah yang ingin diselesaikan?\n"
@@ -524,8 +772,6 @@ class VaneConnector:
             "     untuk analisis 6 dimensi berikutnya.\n"
             "  d) Posisi regulasi ini dalam ekosistem regulasi terkait (sebagai payung, \n"
             "     pelaksana, atau peraturan sektoral).\n\n"
-
-            # ── DIMENSI 1 ───────────────────────────────────────────────
             "### 1. 🏛️ Dimensi Pancasila\n"
             "Nilai-nilai Pancasila sebagai pisau analisis (5 variabel):\n"
             "  - Ketuhanan: apakah norma menghormati nilai keagamaan dan moralitas?\n"
@@ -534,8 +780,6 @@ class VaneConnector:
             "  - Kerakyatan: apakah melibatkan partisipasi publik yang bermakna?\n"
             "  - Keadilan Sosial: distribusi hak & kewajiban yang adil, akses layanan merata.\n"
             "Wajib cross-reference ke Pasal 28A-J UUD 1945 bila relevan.\n\n"
-
-            # ── DIMENSI 2 ───────────────────────────────────────────────
             "### 2. ⚖️ Dimensi Ketepatan Jenis Peraturan Perundang-undangan\n"
             "Gunakan pendekatan HELICOPTER VIEW secara berurutan:\n"
             "  1) Judul: apakah mencerminkan materi muatan dengan tepat?\n"
@@ -544,8 +788,6 @@ class VaneConnector:
             "  4) Batang Tubuh: apakah materi muatan sesuai jenis & hierarki (UU/PP/Permen)?\n"
             "  5) Penjelasan Umum & Lampiran: apakah konsisten dengan batang tubuh?\n"
             "Acuan: UU No. 12/2011 jo UU No. 15/2019 jo UU No. 13/2022.\n\n"
-
-            # ── DIMENSI 3 (GAP-2: Tabel Persandingan) ──────────────────
             "### 3. 🔍 Dimensi Potensi Disharmoni Pengaturan\n"
             "Evaluasi 6 objek disharmoni:\n"
             "  1) Kewenangan  2) Hak  3) Kewajiban  4) Perlindungan  "
@@ -555,8 +797,6 @@ class VaneConnector:
             "Wajib sajikan TABEL PERSANDINGAN dengan format:\n"
             "| Aspek/Norma | Peraturan Lama / Norma Asli | Peraturan Baru / Perubahan | Implikasi Disharmoni |\n"
             "Identifikasi pergeseran paradigma (contoh: dari ex-ante ke ex-post compliance).\n\n"
-
-            # ── DIMENSI 4 ───────────────────────────────────────────────
             "### 4. 📝 Dimensi Kejelasan Rumusan\n"
             "Acuan wajib: Lampiran II UU No. 12/2011 (Petunjuk Legistik No. 62–69).\n"
             "Periksa:\n"
@@ -565,37 +805,16 @@ class VaneConnector:
             "  - Konsistensi istilah di seluruh batang tubuh.\n"
             "  - Kejelasan subjek-objek hukum dan sanksi.\n"
             "  - Definisi yang cermat (tidak tumpang tindih dengan UU lain).\n\n"
-
-            # ── DIMENSI 5 ───────────────────────────────────────────────
             "### 5. 📚 Dimensi Kesesuaian Asas Bidang Hukum\n"
             "Berdasarkan Pasal 6 ayat (2) UU No. 12/2011: setiap PUU harus memenuhi asas \n"
             "materiil khusus sesuai bidang hukumnya.\n"
-            "Identifikasi dan evaluasi asas-asas domain spesifik yang relevan, misal:\n"
-            "  - Bidang Lingkungan Hidup: precautionary principle, polluter pays, "
-            "intergenerational equity, public participation.\n"
-            "  - Bidang Pemerintahan: AUPB (kepastian hukum, ketidakberpihakan, "
-            "proporsionalitas, akuntabilitas).\n"
-            "  - Bidang Keuangan: transparansi, efisiensi, akuntabilitas anggaran.\n\n"
-
-            # ── DIMENSI 6 (GAP-4: Empirical Layer) ─────────────────────
+            "Identifikasi dan evaluasi asas-asas domain spesifik yang relevan.\n\n"
             "### 6. 🌐 Dimensi Efektivitas Pelaksanaan & Implikasi Pemda\n"
             "[GAP-4] Analisis ini WAJIB melampaui deskripsi normatif. Gunakan pendekatan empiris:\n"
-            "  a) Daya Laku Sosiologis:\n"
-            "     - Apakah target subyek hukum mampu mematuhi (kapasitas, sumber daya)?\n"
-            "     - Apakah sanksi dan mekanisme enforcement realistis?\n"
-            "  b) Analisis Cost-Benefit (Rasio Biaya-Manfaat):\n"
-            "     - Beban kepatuhan: biaya implementasi oleh pemerintah & masyarakat.\n"
-            "     - Manfaat yang diharapkan: apakah proporsional dengan beban?\n"
-            "     - Bila data kuantitatif tidak tersedia, estimasi berdasarkan:\n"
-            "       kompleksitas mandatory vs optional, resource requirement, "
-            "monitoring complexity.\n"
-            "  c) Kesiapan Institusi Daerah:\n"
-            "     - SDM, anggaran, infrastruktur daerah yang diperlukan.\n"
-            "     - Implikasi terhadap tata kelola & APBD daerah.\n"
-            "  d) Hambatan Implementasi yang Teridentifikasi:\n"
-            "     - Struktural, kapasitas, budaya hukum, tumpang tindih kewenangan.\n\n"
-
-            # ── REKOMENDASI FINAL ───────────────────────────────────────
+            "  a) Daya Laku Sosiologis: kemampuan subjek mematuhi dan efektivitas penegakan.\n"
+            "  b) Analisis Cost-Benefit: rasio beban kepatuhan dengan manfaat publik.\n"
+            "  c) Kesiapan Institusi Daerah: SDM, anggaran APBD, kelembagaan.\n"
+            "  d) Hambatan Implementasi: struktural, koordinasi, tumpang tindih.\n\n"
             "### 💡 Rekomendasi Yuridis Final\n"
             "Format rekomendasi WAJIB mengikuti 3 pilihan BPHN:\n"
             "  ✅ PERTAHANKAN — bila sudah sesuai 6 dimensi, tidak ada permasalahan signifikan.\n"
@@ -606,9 +825,6 @@ class VaneConnector:
             "Bila diperlukan peraturan pelaksana daerah, sebutkan secara eksplisit."
         )
 
-        # -------------------------------------------------------
-        # USER CONTENT BUILDER
-        # -------------------------------------------------------
         user_content = (
             f"PERATURAN YANG DIANALISIS:\n"
             f"Judul: **{title}**\n"
@@ -624,7 +840,6 @@ class VaneConnector:
         if context_notes:
             user_content += f"\n📌 Catatan Kontekstual:\n{context_notes}\n"
 
-        # Inject cross-references dan related_laws (Gap 3 & Gap 2)
         xref_block = self._build_persandingan_context(
             cross_references or [],
             related_laws or [],
@@ -645,16 +860,12 @@ class VaneConnector:
             {"role": "user",   "content": user_content},
         ]
 
-        # -------------------------------------------------------
-        # EKSEKUSI 3-TIER FALLBACK
-        # -------------------------------------------------------
-        # Tingkatkan max_tokens untuk output yang lebih komprehensif
         original_model = self.model
-        res = self._synthesize_groq(messages, original_model)
+        res = await self._synthesize_groq_async(messages, original_model, client=client)
         if not res:
-            res = self._synthesize_runpod(messages)
+            res = await self._synthesize_runpod_async(messages, client=client)
         if not res:
-            res = self._synthesize_ollama(messages)
+            res = await self._synthesize_ollama_async(messages, client=client)
 
         if res and res.get("answer"):
             return {
@@ -675,19 +886,288 @@ class VaneConnector:
             "analysis_version": "6D-v2.0-BPHN-PHN.01.03-07",
         }
 
-    def format_for_knowledge_base(self, result: Dict[str, Any], namespace: str = "legal_research_deep") -> Dict:
-        """Format hasil riset untuk disimpan ke MCP Knowledge Base."""
+    def synthesize_6_dimensions(
+        self,
+        title: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        extracted_text: Optional[str] = None,
+        context_notes: Optional[str] = None,
+        cross_references: Optional[List[Dict[str, str]]] = None,
+        related_laws: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Wrapper sinkron untuk synthesize_6_dimensions_async."""
+        return self._run_sync(self.synthesize_6_dimensions_async(
+            title=title,
+            metadata=metadata,
+            extracted_text=extracted_text,
+            context_notes=context_notes,
+            cross_references=cross_references,
+            related_laws=related_laws,
+        ))
+
+    # ----------------------------------------------------------
+    # 7 PILAR DIM v2.0 SINTESIS ANALISIS REGULASI (TRACK A DITJEN PP & BANGDA)
+    # ----------------------------------------------------------
+    async def synthesize_7_pillars_async(
+        self,
+        title: str,
+        draft_text: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        context_notes: Optional[str] = None,
+        cross_references: Optional[List[Dict[str, str]]] = None,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> Dict[str, Any]:
+        """
+        Sintesis Analisis Legislatif Berbasis Taksonomi 7 Pilar DIM v2.0 (Async).
+        Standar Ditjen Pembangunan Daerah & Ditjen Peraturan Perundang-undangan (Ditjen PP).
+
+        Pilar:
+          1. Kewenangan & Yurisdiksi (Urusan Konkuren UU 23/2014 & Ultra Vires Check)
+          2. Kelembagaan & Tata Kelola (OPD & Struktur Pelaksana)
+          3. Hierarki Peraturan & Landasan Hukum (UU 12/2011 jo UU 13/2022)
+          4. Personil & SDM Aparatur (PPNS & Pejabat Fungsional Perancang/Pengawas)
+          5. Finansial, Beban Fiskal & APBD (Kepatuhan UU HKPD 1/2022 & Standar Biaya)
+          6. Sarana Prasarana & Fasilitas Standar (SPBE & Infrastruktur Layanan Publik)
+          7. Prosedur, Standar SPM & Penegakan (SOP & Sanksi Bertahap)
+        Output dilengkapi MATRIKS DISPOSISI DIM (APPROVED, PARKING_LOT, ENCLAVE,
+        ALTERNATIVE_VEHICLE, OUT_OF_SCOPE, FUTURE_AGENDA).
+        """
+        meta = metadata or {}
+        meta_str = (
+            "\n".join(f"- **{k}:** {v}" for k, v in meta.items() if v)
+            or "- Tidak ada metadata spesifik"
+        )
+        text_snippet = (draft_text or "")[:3500]
+
+        system_prompt = (
+            "Anda adalah Tenaga Ahli Perancang Peraturan Perundang-undangan Senior (Ditjen PP, Kemenkumham RI) "
+            "dan Analis Kebijakan Otonomi Daerah (Ditjen Bina Pembangunan Daerah, Kemendagri RI).\n"
+            "Tugas Anda: Melakukan evaluasi rancangan regulasi / instrumen hukum berdasarkan "
+            "TAKSONOMI 7 PILAR DAFTAR INVENTARISASI MASALAH (DIM) v2.0 secara tajam, berbobot, dan normatif.\n\n"
+            "URUTAN OUTPUT WAJIB:\n"
+            "### 1. 🏛️ Pilar 1: Kewenangan & Yurisdiksi (Ultra Vires Check)\n"
+            "  - Pemetaan jenis urusan pemerintahan (Absolut / Konkuren Wajib Pelayanan Dasar / Wajib Non-Dasar / Pilihan / Umum) berdasarkan UU 23/2014.\n"
+            "  - Verifikasi batas kewenangan pusat vs provinsi vs kabupaten/kota. Pastikan tidak ada norma yang ultra vires.\n\n"
+            "### 2. 🏢 Pilar 2: Kelembagaan & Tata Kelola Perangkat Daerah\n"
+            "  - Ketepatan penunjukan dinas/badan/satuan kerja perangkat daerah pelaksana.\n"
+            "  - Hubungan kerja lintas sektor dan koordinasi vertikal/horizontal.\n\n"
+            "### 3. ⚖️ Pilar 3: Hierarki Peraturan & Landasan Hukum\n"
+            "  - Validasi asas hierarki UU No. 12/2011 jo UU No. 13/2022 (Pasal 7 & 8).\n"
+            "  - Ketepatan atribusi/delegasi wewenang; hindari perbenturan dengan peraturan perundang-undangan yang lebih tinggi.\n\n"
+            "### 4. 👥 Pilar 4: Personil & SDM Aparatur Pelaksana\n"
+            "  - Ketersediaan formasi jabatan fungsional, PPNS, inspektur, atau aparat pengawas.\n"
+            "  - Standar kompetensi dan integritas aparatur daerah yang diwajibkan.\n\n"
+            "### 5. 💰 Pilar 5: Finansial, Beban Fiskal & Implikasi APBD\n"
+            "  - Analisis beban anggaran dan sumber pembiayaan (APBD / DAK / DAU / DBH).\n"
+            "  - Kesesuaian dengan UU No. 1/2022 tentang Hubungan Keuangan antara Pemerintah Pusat dan Pemerintahan Daerah (HKPD).\n\n"
+            "### 6. 🏗️ Pilar 6: Sarana Prasarana & Fasilitas Standar (SPBE & Aset)\n"
+            "  - Kebutuhan sistem informasi pemerintahan daerah (SIPD / SPBE nasional).\n"
+            "  - Standar kelayakan sarana prasarana fisik/teknis minimal.\n\n"
+            "### 7. 📋 Pilar 7: Prosedur, Standar SPM & Mekanisme Penegakan\n"
+            "  - Kejelasan tahapan SOP, jangka waktu penerbitan izin/rekomendasi, transparansi pelayanan.\n"
+            "  - Kepatuhan Standar Pelayanan Minimal (PP 2/2018) dan gradasi sanksi (teguran -> pembatasan -> pembekuan/pencabutan).\n\n"
+            "### 📊 MATRIKS DISPOSISI DIM (Daftar Inventarisasi Masalah)\n"
+            "Sajikan tabel DIM terstruktur dengan klasifikasi disposisi resmi:\n"
+            "| No | Pasal / Frasa Kritis | Isu Yuridis & Catatan Kritis | Disposisi | Rekomendasi Rumusan Alternatif |\n"
+            "Pilihan Disposisi Wajib:\n"
+            "- APPROVED (Disetujui)\n"
+            "- PARKING_LOT (Ditunda / Perlu Kajian Lanjutan)\n"
+            "- ENCLAVE (Pindahkan ke Juknis/SOP Daerah)\n"
+            "- ALTERNATIVE_VEHICLE (Atur di instrumen hukum lain yang lebih tepat)\n"
+            "- OUT_OF_SCOPE (Keluarkan dari materi muatan / Di luar kewenangan)\n"
+            "- FUTURE_AGENDA (Simpan untuk revisi Prolegda mendatang)"
+        )
+
+        user_content = (
+            f"RANCANGAN PERATURAN YANG DIEVALUASI:\n"
+            f"Judul: **{title}**\n"
+            f"Metadata Regulasi:\n{meta_str}\n"
+        )
+
+        if text_snippet:
+            user_content += (
+                f"\n📄 Teks Rancangan Regulasi ({len(text_snippet)} karakter):\n"
+                f"{text_snippet}\n"
+            )
+
+        if context_notes:
+            user_content += f"\n📌 Catatan Pembahasan / Latar Belakang:\n{context_notes}\n"
+
+        if cross_references:
+            ref_lines = []
+            for i, ref in enumerate(cross_references, 1):
+                ref_title = ref.get("title", f"Referensi-{i}")
+                ref_content = ref.get("content", "").strip()[:600]
+                ref_lines.append(f"[REF-{i}] {ref_title}:\n{ref_content}")
+            user_content += f"\n\n📎 Ketentuan Pembanding / Rujukan:\n" + "\n\n".join(ref_lines) + "\n"
+
+        user_content += (
+            "\n---\n"
+            "Susun analisis komprehensif 7 Pilar DIM v2.0 secara lengkap dan diakhiri dengan "
+            "Matriks Disposisi DIM yang memuat telaah per pasal/isu kritis."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_content},
+        ]
+
+        original_model = self.model
+        res = await self._synthesize_groq_async(messages, original_model, client=client)
+        if not res:
+            res = await self._synthesize_runpod_async(messages, client=client)
+        if not res:
+            res = await self._synthesize_ollama_async(messages, client=client)
+
+        if res and res.get("answer"):
+            return {
+                "success":           True,
+                "title":             title,
+                "analysis_7pillars": res["answer"],
+                "model_used":        res["model_used"],
+                "timestamp":         datetime.now().isoformat(),
+                "analysis_version":  "7Pillars-v2.0-DitjenPP-Bangda",
+                "pillars_evaluated": 7,
+            }
+
+        return {
+            "success":           False,
+            "error":            "Gagal melakukan sintesis 7 pilar DIM dengan seluruh tier model AI",
+            "title":             title,
+            "analysis_version": "7Pillars-v2.0-DitjenPP-Bangda",
+            "pillars_evaluated": 7,
+        }
+
+    def synthesize_7_pillars(
+        self,
+        title: str,
+        draft_text: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        context_notes: Optional[str] = None,
+        cross_references: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """Wrapper sinkron untuk synthesize_7_pillars_async."""
+        return self._run_sync(self.synthesize_7_pillars_async(
+            title=title,
+            draft_text=draft_text,
+            metadata=metadata,
+            context_notes=context_notes,
+            cross_references=cross_references,
+        ))
+
+    def format_for_knowledge_base(
+        self,
+        result: Dict[str, Any],
+        namespace: str = "puu:regulasi:pencari"
+    ) -> Dict[str, Any]:
+        """
+        Format hasil riset untuk disimpan ke MemForge / MCP Knowledge Base.
+        Mengikuti taksonomi Zero-Leakage (AGENTS.md §5).
+        """
+        target_ns = normalize_research_namespace(namespace)
+        sources_urls = [s["url"] for s in result.get("sources", []) if isinstance(s, dict) and s.get("url")]
         return {
             "title":     f"Research: {result.get('query', 'Untitled')}",
             "content":   result.get("answer", ""),
-            "namespace": namespace,
+            "namespace": target_ns,
             "metadata": {
                 "source":       "vane_smart_connector",
                 "model":        result.get("model_used", ""),
-                "sources_urls": [s["url"] for s in result.get("sources", [])],
+                "sources_urls": sources_urls,
                 "timestamp":    result.get("timestamp", datetime.now().isoformat()),
             },
         }
+
+    async def save_to_memforge_async(
+        self,
+        result: Dict[str, Any],
+        namespace: str = "puu:regulasi:pencari",
+        importance: float = 0.8,
+        agent_id: str = "puu:regulasi:pencari",
+        memory_type: str = "observation",
+    ) -> Dict[str, Any]:
+        """
+        Simpan hasil riset Vane ke MemForge Native (PostgreSQL pgvector / SQLite-vec).
+        Secara otomatis memvalidasi taksonomi Zero-Leakage dan melakukan kuantisasi semantik.
+        """
+        target_ns = normalize_research_namespace(namespace)
+        content = result.get("answer", "")
+        if not content:
+            return {"success": False, "error": "Tidak ada konten answer untuk disimpan"}
+
+        query = result.get("query", "")
+        if query and not content.startswith("Kueri"):
+            content_to_save = f"Kueri Riset: {query}\n\nTemuan & Sintesis:\n{content}"
+        else:
+            content_to_save = content
+
+        try:
+            try:
+                from tools.agent_memory_tools import agent_remember
+            except ImportError:
+                from mcp_unified.tools.agent_memory_tools import agent_remember
+
+            remember_res = await agent_remember(
+                namespace=target_ns,
+                content=content_to_save,
+                importance=importance,
+                agent_id=agent_id,
+                memory_type=memory_type,
+            )
+
+            status = remember_res.get("status")
+            return {
+                "success": status in ("stored", "updated") or remember_res.get("memory_id") is not None,
+                "memory_id": remember_res.get("memory_id"),
+                "namespace": target_ns,
+                "importance": remember_res.get("importance", importance),
+                "quantized_content": remember_res.get("quantized_content"),
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            logger.error(f"Gagal menyimpan ke MemForge: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "namespace": target_ns,
+            }
+
+    def save_to_memforge(
+        self,
+        result: Dict[str, Any],
+        namespace: str = "puu:regulasi:pencari",
+        importance: float = 0.8,
+        agent_id: str = "puu:regulasi:pencari",
+        memory_type: str = "observation",
+    ) -> Dict[str, Any]:
+        """Wrapper sinkron untuk save_to_memforge_async."""
+        return self._run_sync(self.save_to_memforge_async(
+            result=result,
+            namespace=namespace,
+            importance=importance,
+            agent_id=agent_id,
+            memory_type=memory_type,
+        ))
+
+
+def normalize_research_namespace(namespace: Optional[str]) -> str:
+    """
+    Normalisasi namespace riset hukum sesuai taksonomi resmi Ditjen PUU/Bangda (TASK-116 & AGENTS.md §5).
+    Menjamin Zero-Leakage Policy:
+      - 'legal_research_deep', 'default', None -> 'puu:regulasi:pencari'
+      - 'puu:{domain}:{agent}' -> dipertahankan
+      - 'shared_{domain}' -> dipertahankan
+      - Lainnya -> 'shared_legal'
+    """
+    if not namespace or namespace.strip().lower() in ("legal_research_deep", "default", "legal"):
+        return "puu:regulasi:pencari"
+
+    ns = namespace.strip().lower()
+    if ns.startswith("puu:") or ns.startswith("shared_"):
+        return ns
+
+    return "shared_legal"
+
 
 
 # ============================================================

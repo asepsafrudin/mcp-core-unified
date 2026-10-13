@@ -42,10 +42,23 @@ class VaneResearchSkill(BaseSkill):
         
         try:
             from tools.research_tools import (
-                vane_search, vane_legal_search, vane_deep_research, vane_gap_fill
+                vane_search, vane_legal_search, vane_deep_research, vane_gap_fill, vane_7pillars_analyze
             )
             
-            if action == "gap_fill":
+            if action in ("7pillars", "7_pillars"):
+                title = payload.get("title", query)
+                draft_content = payload.get("draft_content", payload.get("draft_text", ""))
+                context = payload.get("context", payload.get("context_notes", None))
+                save_to_kb = bool(payload.get("save_to_kb", False))
+                namespace = str(payload.get("namespace", "puu:regulasi:pencari"))
+                result = await vane_7pillars_analyze(
+                    title=str(title),
+                    draft_content=str(draft_content),
+                    context=str(context) if context else None,
+                    save_to_kb=save_to_kb,
+                    namespace=namespace,
+                )
+            elif action == "gap_fill":
                 sub_urusan = payload.get("sub_urusan", query)
                 bidang = payload.get("bidang", "Umum")
                 result = await vane_gap_fill(str(sub_urusan), str(bidang))
@@ -53,7 +66,7 @@ class VaneResearchSkill(BaseSkill):
                 result = await vane_deep_research(
                     main_query=query, 
                     sub_queries=payload.get("sub_queries"),
-                    namespace=str(payload.get("namespace", "legal_research_deep"))
+                    namespace=str(payload.get("namespace", "puu:regulasi:pencari"))
                 )
             elif action == "legal":
                 result = await vane_legal_search(query, regulation=str(payload.get("regulation", "UU 23/2014")))
