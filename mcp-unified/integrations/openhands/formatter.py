@@ -4,9 +4,7 @@ Transforms OpenHands execution logs, diffs, metrics, and reasoning steps into ri
 """
 from __future__ import annotations
 
-import html
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +25,7 @@ class OpenHandsTaskReport:
     steps_executed: List[Dict[str, Any]] = field(default_factory=list)
     raw_logs: str = ""
     error_message: Optional[str] = None
+    execution_mode: Optional[str] = None  # docker | maf | skipped
 
 
 class OpenHandsArtifactFormatter:
@@ -43,6 +42,8 @@ class OpenHandsArtifactFormatter:
             return "🟠 **TIMEOUT**"
         elif s == "FAILED":
             return "🔴 **FAILED**"
+        elif s == "SKIPPED":
+            return "⚪ **SKIPPED**"
         return f"⚪ **{s}**"
 
     @classmethod
@@ -58,15 +59,24 @@ class OpenHandsArtifactFormatter:
         lines.append("")
 
         # Alert banner based on status
+        mode = (report.execution_mode or "").lower()
         if report.status.upper() in ("SUCCESS", "COMPLETED"):
             lines.append("> [!TIP]")
-            lines.append(f"> Task berhasil dieksekusi secara otonom oleh OpenHands Sandbox. Seluruh artefak dan perubahan file telah diverifikasi.")
+            if mode == "docker":
+                lines.append("> Task dieksekusi di OpenHands Docker sandbox. Perubahan diverifikasi dari git status/diff workspace.")
+            elif mode == "maf":
+                lines.append("> Task dieksekusi in-process via Microsoft Agent Framework (MAF).")
+            else:
+                lines.append("> Task dilaporkan selesai oleh runner yang benar-benar dijalankan (bukan fallback sintetis).")
+        elif report.status.upper() == "SKIPPED":
+            lines.append("> [!WARNING]")
+            lines.append(f"> Task DILEWATI (tidak dieksekusi): {report.error_message or 'prasyarat eksekusi tidak terpenuhi'}.")
         elif report.status.upper() == "RUNNING":
             lines.append("> [!NOTE]")
-            lines.append(f"> Task sedang berjalan di background. Dokumen ini diperbarui secara dinamis.")
+            lines.append("> Task sedang berjalan di background. Dokumen ini diperbarui secara dinamis.")
         elif report.status.upper() == "TIMEOUT":
             lines.append("> [!WARNING]")
-            lines.append(f"> Task melebihi batas waktu eksekusi (timeout). Hasil parsial disimpan.")
+            lines.append("> Task melebihi batas waktu eksekusi (timeout). Hasil parsial disimpan.")
         else:
             lines.append("> [!CAUTION]")
             lines.append(f"> Terjadi kendala saat eksekusi: {report.error_message or 'Unknown error'}")

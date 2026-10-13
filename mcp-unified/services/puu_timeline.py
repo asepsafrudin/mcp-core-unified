@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-\"\"\"PUU Timeline Service - Integrasi dengan correspondence_dashboard\"\"\"
+"""PUU Timeline Service - Integrasi dengan correspondence_dashboard"""
 
 import json
 import os
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, Any
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -34,7 +34,6 @@ def get_puu_timeline(limit: int = 20, delay_threshold: int = 3) -> Dict[str, Any
         masuk_str = row.get('tanggal', '')
         puu_date_str = row.get('puu_info', {}).get('latest_puu_date_str', '')
         
-        masuk_dt = datetime.strptime(masuk_str, '%d/%m/%Y') if masuk_str else datetime.min
         puu_info = row.get('puu_info', {})
         
         delay_days = puu_info.get('delay_days', 0)
@@ -73,7 +72,7 @@ def generate_puu_chart() -> str:
             masuk_dt = datetime.strptime(masuk_str, '%d/%m/%Y')
             dates.append(masuk_dt)
             delays.append(row.get('puu_info', {}).get('delay_days', 0))
-        except:
+        except (ValueError, TypeError):
             continue
     
     if not dates:
