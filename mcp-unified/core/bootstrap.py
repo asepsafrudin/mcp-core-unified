@@ -330,6 +330,14 @@ async def initialize_all_components():
     except Exception as e:
         logger.warning(f"Failed to register Media & Vision tools: {e}")
 
+    # 5x. Register Frontend Design tools (TASK-188: Impeccable detector gate)
+    try:
+        from tools.frontend import register_frontend_tools
+        n_frontend = register_frontend_tools(registry)
+        logger.info(f"Registered {n_frontend} Frontend Design tools (frontend_detect)")
+    except Exception as e:
+        logger.warning(f"Failed to register Frontend Design tools: {e}")
+
 
 
     # 6. Discover remote tools
