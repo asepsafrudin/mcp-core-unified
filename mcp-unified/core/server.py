@@ -638,10 +638,11 @@ def register_local_tools_for_sse():
     except Exception as e:
         logger.warning("sse_register_knowledge_tools_failed", error=str(e))
 
-    # Semantic tools (auto-registration)
+    # Semantic tools (class-based -> execution.registry via bridge)
     try:
-        import tools.code.semantic_tools  # noqa: F401
-        logger.info("sse_registered_semantic_tools")
+        from tools.code.semantic_bridge import register_semantic_tools
+        n_semantic = register_semantic_tools(registry)
+        logger.info("sse_registered_semantic_tools", count=n_semantic)
     except Exception as e:
         logger.warning("sse_register_semantic_tools_failed", error=str(e))
 

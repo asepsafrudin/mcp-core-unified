@@ -133,10 +133,11 @@ async def initialize_all_components():
     except Exception as e:
         logger.warning(f"Failed to register Knowledge tools: {e}")
 
-    # 5f. Register Semantic Analysis tools
+    # 5f. Register Semantic Analysis tools (class-based -> execution.registry via bridge)
     try:
-        import tools.code.semantic_tools  # Trigger auto-registration via @register_tool
-        logger.info("Registered Semantic Analysis tools")
+        from tools.code.semantic_bridge import register_semantic_tools
+        n_semantic = register_semantic_tools(registry)
+        logger.info(f"Registered {n_semantic} Semantic Analysis tools")
     except Exception as e:
         logger.warning(f"Failed to register Semantic Analysis tools: {e}")
 
