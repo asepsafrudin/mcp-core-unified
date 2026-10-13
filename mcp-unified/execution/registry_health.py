@@ -56,3 +56,16 @@ def verify_after_bootstrap(registry: Any) -> Dict[str, Any]:
     if (snap["enforce_registry"] or snap["orch_require_deps"]) and snap["expected_missing"]:
         raise RuntimeError(f"ENFORCE_REGISTRY/ORCH_REQUIRE_DEPS aktif: tool inti hilang: {snap['expected_missing']}")
     return snap
+
+
+def safe_snapshot(registry: Any) -> Dict[str, Any]:
+    """Snapshot yang tidak pernah raise — untuk endpoint /health (TASK-174).
+
+    Bila registry belum tersedia/bermasalah, kembalikan dict ringkas berisi
+    'error' (tanpa path/secret) agar health check tetap merespons.
+    """
+    try:
+        return snapshot(registry)
+    except Exception as exc:  # noqa: BLE001 — health check wajib selalu merespons
+        logger.warning("registry_health: snapshot gagal di /health: %s", exc)
+        return {"error": str(exc)}

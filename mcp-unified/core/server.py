@@ -273,7 +273,14 @@ async def add_correlation_id_middleware(request: Request, call_next):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "version": settings.VERSION}
+    payload = {"status": "ok", "version": settings.VERSION}
+    try:
+        # Lazy import: execution.registry bukan bagian layer core (hindari dependency melingkar)
+        from execution.registry_health import safe_snapshot
+        payload["registry"] = safe_snapshot(get_registry())
+    except Exception as exc:  # health check tidak boleh gagal karena ringkasan registry
+        payload["registry"] = {"error": str(exc)}
+    return payload
 
 
 @app.get("/ltm/latest")
