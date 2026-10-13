@@ -57,10 +57,10 @@ class CodeAgent(BaseAgent):
                 # === Self-Review Tools ===
                 "self_review",
                 "self_review_batch",
-                # === Semantic Analysis Tools ===
-                "semantic_analyze",
-                "semantic_find_references",
-                "semantic_get_context",
+                # === Semantic Analysis Tools (nama selaras registry, TASK-175) ===
+                "semantic_analyze_file",
+                "find_references",
+                "get_code_context",
                 "ai_semantic_analyze",
                 # === File Tools ===
                 "read_file",

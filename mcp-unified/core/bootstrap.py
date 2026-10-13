@@ -96,9 +96,14 @@ async def initialize_all_components():
     try:
         from integrations.whatsapp.tools import (
             whatsapp_get_status, whatsapp_send_message, whatsapp_get_qr,
-            whatsapp_list_chats, whatsapp_get_messages
+            whatsapp_list_chats, whatsapp_get_messages, read_activity_log,
+            generate_draft_naskah, search_web_realtime
         )
-        wa_tools = [whatsapp_get_status, whatsapp_send_message, whatsapp_get_qr, whatsapp_list_chats, whatsapp_get_messages]
+        wa_tools = [
+            whatsapp_get_status, whatsapp_send_message, whatsapp_get_qr, 
+            whatsapp_list_chats, whatsapp_get_messages, read_activity_log,
+            generate_draft_naskah, search_web_realtime
+        ]
         for tool_func in wa_tools:
             registry.register(tool_func)
         logger.info(f"Registered {len(wa_tools)} WhatsApp tools")
@@ -178,6 +183,23 @@ async def initialize_all_components():
         logger.warning("OCR tools (doctr) dependencies missing. Skipping OCR registration.")
     except Exception as e:
         logger.warning(f"Failed to register OCR tools: {e}")
+
+    # 5k1. Register Document Server tools (servers/document/ — OCR & PDF pipeline)
+    # These tools replace the Serena-era document processing with the hub-native
+    # servers.base.ToolRegistry auto-discovery mechanism.
+    try:
+        _mcp_root_path = "/home/aseps/MCP"
+        if _mcp_root_path not in sys.path:
+            sys.path.insert(0, _mcp_root_path)
+        from servers.base import discover_tools as discover_doc_tools
+        DOCUMENT_TOOL_MODULES = [
+            "servers.document.tools.ocr_extract_text",
+            "servers.document.tools.ocr_parse_document",
+        ]
+        discovered = await discover_doc_tools(DOCUMENT_TOOL_MODULES)
+        logger.info(f"Discovered {discovered} Document Server tools (replaces Serena document pipeline)")
+    except Exception as e:
+        logger.warning(f"Failed to register Document Server tools: {e}")
 
     # 5k2. Register Document AI tools (Optional)
     try:
@@ -273,6 +295,40 @@ async def initialize_all_components():
     except Exception as e:
         logger.warning(f"Failed to register Legal Agent tools: {e}")
 
+    # 5t. Register Office Suite tools (DOCX, XLSX, PDF, PPTX, Semantic Markdown, Templates)
+    try:
+        from tools.office import register_office_tools
+        n_office = register_office_tools(registry)
+        logger.info(f"Registered {n_office} Office Suite tools")
+    except Exception as e:
+        logger.warning(f"Failed to register Office tools: {e}")
+
+    # 5u. Register AI Research tools (Vane / SearxNG + Groq)
+    try:
+        from tools.research_tools import register_research_tools
+        n_research = register_research_tools(registry)
+        logger.info(f"Registered {n_research} AI Research tools (vane_search, vane_deep_research, vane_legal_search, vane_gap_fill)")
+    except Exception as e:
+        logger.warning(f"Failed to register Research tools: {e}")
+
+    # 5v. Register Srikandi E-Gov Browser Agent tools
+    try:
+        from tools.browser.registry_bridge import register_srikandi_tools
+        n_srikandi = register_srikandi_tools(registry)
+        logger.info(f"Registered {n_srikandi} Srikandi E-Gov tools")
+    except Exception as e:
+        logger.warning(f"Failed to register Srikandi tools: {e}")
+
+    # 5w. Register Vision & Media tools (Ollama Vision, Canva, Unsplash, Pexels, SVG, Vision Analytics)
+    try:
+        from tools.media import register_media_tools
+        from tools.vision_queries import register_vision_query_tools
+        n_media = register_media_tools(registry)
+        n_vision = register_vision_query_tools(registry)
+        logger.info(f"Registered {n_media} Media tools and {n_vision} Vision Query tools")
+    except Exception as e:
+        logger.warning(f"Failed to register Media & Vision tools: {e}")
+
 
 
     # 6. Discover remote tools
@@ -296,3 +352,13 @@ async def initialize_all_components():
         logger.info(f"Loaded {len(skill_registry.list_skills())} skills: {', '.join(skill_registry.list_skills())}")
     except Exception as e:
         logger.warning(f"Failed to load skills: {e}")
+
+    # 9. Registry health verification + optional fail-fast (TASK-174)
+    # Default permisif (hanya log). Raise hanya bila ENFORCE_REGISTRY/ORCH_REQUIRE_DEPS truthy.
+    try:
+        from execution.registry_health import verify_after_bootstrap
+        verify_after_bootstrap(registry)
+    except RuntimeError:
+        raise
+    except Exception as e:
+        logger.warning(f"registry_health verification skipped: {e}")

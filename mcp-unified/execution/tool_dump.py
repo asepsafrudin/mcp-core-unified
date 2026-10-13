@@ -53,11 +53,36 @@ IDE_CORE_DUMP_TOOLS: FrozenSet[str] = frozenset(
 
 _HIDDEN_SCHEMA_PARAMS = frozenset({"self", "ctx", "context"})
 
+# Coding / fullstack profile (TASK-176): tool inti loop fullstack agentic.
+CODING_DUMP_TOOLS: FrozenSet[str] = frozenset(
+    {
+        # Filesystem & shell
+        "read_file", "write_file", "list_dir", "run_shell",
+        "copy_file", "move_file", "delete_file", "grep_files",
+        # Code engine & runners (TASK-134/167/168/169/171/172)
+        "code_agent_execute", "report_agent_render", "script_pipeline_run",
+        "run_tests", "build_and_lint", "dependency_install",
+        "edit_file_patch", "fullstack_run",
+        # Analysis & symbols
+        "self_review", "self_review_batch",
+        "analyze_file", "analyze_code", "analyze_project",
+        "symbol_search", "symbol_get_definition",
+        # IDE orchestration
+        "run_ide_agent",
+        # Registry health (TASK-174)
+        "registry_health",
+        # Memory/knowledge ringkas untuk konteks
+        "memory_search", "knowledge_search",
+    }
+)
+
 
 def get_dump_profile() -> str:
     raw = os.getenv("MCP_TOOL_DUMP_PROFILE", "ide-core").strip().lower()
     if raw in {"full", "all", "off"}:
         return "full"
+    if raw in {"fullstack", "coding"}:
+        return "coding"
     return "ide-core"
 
 
@@ -65,6 +90,8 @@ def should_dump_tool(name: str, profile: Optional[str] = None) -> bool:
     resolved = profile or get_dump_profile()
     if resolved == "full":
         return True
+    if resolved == "coding":
+        return name in CODING_DUMP_TOOLS
     return name in IDE_CORE_DUMP_TOOLS
 
 
@@ -72,7 +99,8 @@ def filter_dumped_tools(tool_infos: List[Dict[str, str]]) -> List[Dict[str, str]
     profile = get_dump_profile()
     if profile == "full":
         return tool_infos
-    return [info for info in tool_infos if info.get("name") in IDE_CORE_DUMP_TOOLS]
+    allowed = CODING_DUMP_TOOLS if profile == "coding" else IDE_CORE_DUMP_TOOLS
+    return [info for info in tool_infos if info.get("name") in allowed]
 
 
 def build_input_schema(tool_func: Callable[..., Any]) -> Dict[str, Any]:
