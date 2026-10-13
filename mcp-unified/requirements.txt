@@ -31,6 +31,16 @@ redis[hiredis]
 # Diperlukan Docker untuk sandbox mode, atau set OPENHANDS_USE_SANDBOX=false
 openhands-ai>=1.6.0
 
+# Agentic Framework (TASK-172/173) — fullstack workflow & IDE router
+# smolagents: servers/orchestrator/workflows/fullstack_agents.py
+# langgraph/langchain: intelligence/ide_router.py & services/ai-orchestrator
+# Pin mengikuti versi yang terbukti jalan di .venv (2026-10-12).
+smolagents==1.26.0
+langgraph==1.2.9
+langchain==1.3.11
+langchain-core==1.5.2
+langchain-openai==1.3.4
+
 # HTTP Client
 httpx
 requests
