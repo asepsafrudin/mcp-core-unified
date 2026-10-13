@@ -358,6 +358,9 @@ def create_starlette_app() -> Starlette:
         2. ClosedResourceError → log INFO, jangan re-raise (normal disconnect)
         3. Exception lain → log ERROR, jangan re-raise (sudah terlambat kirim response)
         """
+        if request.method == "POST":
+            return await handle_messages(request)
+
         client = getattr(request, "client", None)
         client_repr = f"{client.host}:{client.port}" if client else "unknown"
         logger.info(f"SSE connect start from {client_repr}")
@@ -468,7 +471,8 @@ def create_starlette_app() -> Starlette:
     return Starlette(
         routes=[
             Route("/health", health_check, methods=["GET"]),
-            Route("/sse", handle_sse),
+            Route("/sse", handle_sse, methods=["GET", "POST"]),
+            Route("/messages", handle_messages, methods=["POST"]),
             Route("/messages/", handle_messages, methods=["POST"]),
             Route("/api/v1/agent", handle_agent, methods=["POST"]),
             Route("/services/{service_name}/{path:path}", reverse_proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]),

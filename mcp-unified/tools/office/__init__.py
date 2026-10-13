@@ -125,4 +125,24 @@ __all__ = [
     'defragment_docx_xml',
     # Template Tools - Fase 2
     'render_docx_template',
+    'register_office_tools',
 ]
+
+
+def register_office_tools(registry) -> int:
+    """Register all 42 Office suite tools into execution.registry."""
+    import sys
+    current_module = sys.modules[__name__]
+    registered = 0
+    for tool_name in __all__:
+        if tool_name == "register_office_tools":
+            continue
+        try:
+            fn = getattr(current_module, tool_name, None)
+            if callable(fn) and registry.get_tool(tool_name) is None:
+                registry.register(fn, name=tool_name, category="office")
+                registered += 1
+        except Exception:
+            pass
+    return registered
+

@@ -141,3 +141,41 @@ def register_browser_tools(registry) -> int:
 
     logger.info(f"Browser bridge: {registered} tools registered")
     return registered
+
+
+_SRIKANDI_TOOLS = {
+    "srikandi_list_profiles": "Mendapatkan daftar profil akun SRIKANDI yang terdaftar beserta status keaktifan dan path sesi.",
+    "srikandi_check_session": "Memeriksa apakah sesi browser untuk profil akun SRIKANDI tertentu masih aktif dan valid.",
+    "srikandi_fetch_surat": "Mengekstrak metadata surat masuk, surat keluar, disposisi, atau naskah dinas dari SRIKANDI.",
+    "srikandi_download_surat": "Mengunduh file PDF lampiran surat SRIKANDI ke direktori terisolasi storage/documents/srikandi/.",
+    "srikandi_sync_database": "Ekstraksi batch surat SRIKANDI dan langsung menyimpannya ke database PostgreSQL/SQLite.",
+}
+
+
+def register_srikandi_tools(registry) -> int:
+    """
+    Daftarkan semua tools Srikandi e-Gov ke execution.registry via bridge wrapper.
+    """
+    import tools.browser.srikandi_tools  # Trigger @register_tool in tool_registry
+    registered = 0
+    for tool_name, description in _SRIKANDI_TOOLS.items():
+        try:
+            if registry.get_tool(tool_name) is not None:
+                logger.info(f"Srikandi tool '{tool_name}' sudah terdaftar, skip")
+                continue
+
+            wrapper = _make_wrapper(tool_name)
+            wrapper.__doc__ = description
+            registry.register(
+                wrapper,
+                name=tool_name,
+                description_short=description[:200],
+                category="srikandi",
+            )
+            registered += 1
+            logger.info(f"Registered Srikandi tool: {tool_name}")
+        except Exception as e:
+            logger.error(f"Failed to register Srikandi tool '{tool_name}': {e}")
+
+    logger.info(f"Srikandi bridge: {registered} tools registered")
+    return registered

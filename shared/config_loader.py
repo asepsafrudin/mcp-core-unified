@@ -15,7 +15,13 @@ from typing import Any, Dict
 
 import yaml  # PyYAML is a dependency
 
-CONFIG_ROOT = Path(__file__).resolve().parents[1] / "config"
+# Resolve CONFIG_ROOT to repo root (parent of config/ directory), handling symlinks
+_file_path = Path(__file__).resolve()
+_repo_root = _file_path
+# Walk up until we find the directory containing config/
+while _repo_root.name and not (_repo_root / "config").exists():
+    _repo_root = _repo_root.parent
+CONFIG_ROOT = _repo_root
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:

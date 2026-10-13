@@ -58,4 +58,33 @@ __all__ = [
     "get_canva_token",
     "upload_canva_asset",
     "create_canva_design",
+    "register_media_tools",
 ]
+
+
+def register_media_tools(registry) -> int:
+    """Register all media tools into execution.registry."""
+    tools_list = [
+        analyze_image,
+        analyze_pdf_pages,
+        list_vision_results,
+        search_unsplash_image,
+        download_unsplash_image,
+        search_pexels_image,
+        download_pexels_image,
+        search_local_svg,
+        get_canva_token,
+        upload_canva_asset,
+        create_canva_design,
+    ]
+    registered = 0
+    for fn in tools_list:
+        try:
+            name = getattr(fn, "__name__", None)
+            if name and registry.get_tool(name) is None:
+                registry.register(fn, name=name, category="media")
+                registered += 1
+        except Exception:
+            pass
+    return registered
+

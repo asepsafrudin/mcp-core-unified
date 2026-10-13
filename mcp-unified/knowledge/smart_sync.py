@@ -19,10 +19,17 @@ from core.secrets import load_runtime_secrets
 
 load_runtime_secrets()
 
+# Add korespondensi-server/src/services to path for legacy_korespondensi_integration import
+import sys
+import os
+_korep_src = os.path.join('/home/aseps/MCP/workspace/korespondensi-server/src/services')
+if _korep_src not in sys.path:
+    sys.path.insert(0, _korep_src)
+
 from integrations.google_workspace.client import get_google_client
 from knowledge.tools import knowledge_ingest_googlesheet
 from observability.logger import logger
-from integrations.korespondensi.utils import send_telegram_notification, format_new_letter_message
+from legacy_korespondensi_integration.utils import send_telegram_notification, format_new_letter_message
 
 STORAGE_DIR = "/home/aseps/MCP/storage/admin_data/korespondensi"
 STATE_FILE = os.path.join(STORAGE_DIR, "sync_state.json")

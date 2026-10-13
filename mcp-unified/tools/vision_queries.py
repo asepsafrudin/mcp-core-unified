@@ -605,4 +605,24 @@ __all__ = [
     'update_vision_result_status',
     'cleanup_old_vision_results',
     'get_vision_config_info',
+    'register_vision_query_tools',
 ]
+
+
+def register_vision_query_tools(registry) -> int:
+    """Register all vision query and analytics tools into execution.registry."""
+    import sys
+    current_module = sys.modules[__name__]
+    registered = 0
+    for tool_name in __all__:
+        if tool_name == "register_vision_query_tools":
+            continue
+        try:
+            fn = getattr(current_module, tool_name, None)
+            if callable(fn) and registry.get_tool(tool_name) is None:
+                registry.register(fn, name=tool_name, category="vision")
+                registered += 1
+        except Exception as e:
+            logger.warning(f"Failed to register vision query tool {tool_name}: {e}")
+    return registered
+

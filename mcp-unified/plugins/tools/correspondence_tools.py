@@ -43,7 +43,13 @@ for _mod_name in list(sys.modules.keys()):
 
 from execution.registry import registry
 from services.correspondence_dashboard import CorrespondenceDashboard, format_search_results
-from integrations.korespondensi.utils import parse_posisi
+
+# Add korespondensi-server/src/services to path for legacy_korespondensi_integration import
+_korep_src = os.path.join('/home/aseps/MCP/workspace/korespondensi-server/src/services')
+if _korep_src not in sys.path:
+    sys.path.insert(0, _korep_src)
+
+from legacy_korespondensi_integration.utils import parse_posisi
 
 
 # Initialize shared dashboard service

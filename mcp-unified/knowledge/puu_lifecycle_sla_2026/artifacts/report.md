@@ -9,7 +9,7 @@ Sistem telah beralih dari status *hardcoded* menjadi status dinamis yang dipetak
     - `DONE` / `SELESAI` / `DJ` $\rightarrow$ **Arsip Final**
     - `PARAFA` / `KOREKSI` / `REVISI` $\rightarrow$ **Proses Koreksi / Paraf**
     - `PUU` $\rightarrow$ **Proses di Substansi PUU**
-- **Implementasi**: Fungsi `determine_refined_status` di `mcp-unified/integrations/korespondensi/utils.py`.
+- **Implementasi**: Fungsi `determine_refined_status` di `legacy_korespondensi_integration/utils.py`.
 
 ## 2. Pelacakan Posisi (Timeline) Terpadu
 Fitur "Lacak Posisi" yang sebelumnya hanya ada di Surat Masuk kini tersedia penuh di **Proses PUU** (Vault).

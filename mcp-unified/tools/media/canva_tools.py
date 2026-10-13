@@ -5,6 +5,7 @@ import requests
 import base64
 from urllib.parse import urlencode
 from dotenv import load_dotenv
+from scripts.load_env import load_env
 
 TOKEN_PATH = "/home/aseps/MCP/config/credentials/canva/token.json"
 
@@ -76,7 +77,6 @@ def upload_canva_asset(file_path: str, name: str = None) -> dict:
     }
     
     import mimetypes
-from scripts.load_env import load_env
     mime_type, _ = mimetypes.guess_type(file_path)
     if not mime_type:
         mime_type = "application/octet-stream"

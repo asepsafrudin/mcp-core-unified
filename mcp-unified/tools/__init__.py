@@ -109,17 +109,6 @@ def _register_all_tools():
     except ImportError:
         pass  # Vane connector may not be running
 
-    # Serena instance pool tools
-    try:
-        from .serena import (
-            serena_status,
-            serena_pool_spawn,
-            serena_pool_kill,
-            serena_pool_health,
-        )
-    except ImportError:
-        pass
-
     # Srikandi Browser Agent Tools
     try:
         from .browser.srikandi_tools import (
@@ -130,8 +119,19 @@ def _register_all_tools():
             SrikandiSyncDatabaseTool,
         )
     except ImportError:
-        pass
-        pass  # Serena may not be available in all environments
+        pass  # Srikandi may not be available in all environments
+
+    # TASK-116: MemForge Native Agent Memory Tools
+    try:
+        from .agent_memory_tools import (
+            agent_remember,
+            agent_recall,
+            agent_forget,
+            agent_memory_stats,
+        )
+    except ImportError as e:
+        import logging
+        logging.getLogger(__name__).warning(f"agent_memory_tools not loaded: {e}")
 
 # Trigger registration on first import of tools module
 _register_all_tools()
