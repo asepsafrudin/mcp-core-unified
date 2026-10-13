@@ -47,7 +47,7 @@ class SrikandiDbSync:
             from psycopg2.extras import RealDictCursor
 
             pg_host = os.getenv("POSTGRES_HOST", "localhost")
-            pg_port = os.getenv("POSTGRES_PORT", "5432")
+            pg_port = os.getenv("POSTGRES_PORT", "5433")
             pg_db = os.getenv("POSTGRES_DB", "mcp_knowledge")
             pg_user = os.getenv("POSTGRES_USER", "postgres")
             pg_pass = os.getenv("POSTGRES_PASSWORD", "postgres")

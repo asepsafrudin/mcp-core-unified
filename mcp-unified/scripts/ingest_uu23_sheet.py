@@ -43,7 +43,7 @@ RANGE_NAME = "'Form Responses 1'!A1:BF"  # All columns up to BF
 def get_db_connection_str() -> str:
     """Builds PostgreSQL connection string from central environment."""
     host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
+    port = os.getenv("POSTGRES_PORT", "5433")
     dbname = os.getenv("POSTGRES_DB", "mcp_knowledge")
     user = os.getenv("POSTGRES_USER", "postgres")
     password = os.getenv("POSTGRES_PASSWORD", "postgres")
@@ -104,7 +104,7 @@ def main():
     logger.info(f"Retrieved {len(values)} rows from Google Sheets (including header).")
 
     conn_str = get_db_connection_str()
-    logger.info(f"Connecting to PostgreSQL ({os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5432')})...")
+    logger.info(f"Connecting to PostgreSQL ({os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5433')})...")
 
     with psycopg.connect(conn_str) as conn:
         with conn.cursor() as cursor:

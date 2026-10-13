@@ -54,8 +54,10 @@ from mcp.types import (
 from observability.logger import configure_logger, logger
 configure_logger()
 
+from core.config import settings
+
 # MCP Server instance
-mcp_server = Server("mcp-unified")
+mcp_server = Server("mcp-unified", version=settings.VERSION)
 
 # Import registries after setting up path
 from execution import registry, resource_registry, prompt_registry

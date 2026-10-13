@@ -18,7 +18,7 @@ class KnowledgeConfig:
     
     # Database Configuration
     pg_host: str = "localhost"
-    pg_port: int = 5432
+    pg_port: int = 5433
     pg_database: str = "mcp_knowledge"
     pg_user: str = "mcp_user"
     pg_password: str = ""
@@ -51,9 +51,9 @@ class KnowledgeConfig:
 
         # Support both PG_* and POSTGRES_* environment variables
         pg_host = os.environ.get("POSTGRES_HOST") or os.environ.get("PG_HOST", "localhost")
-        pg_port = int(os.environ.get("POSTGRES_PORT") or os.environ.get("PG_PORT", "5432"))
-        pg_database = os.environ.get("POSTGRES_DB") or os.environ.get("PG_DATABASE", "mcp")
-        pg_user = os.environ.get("POSTGRES_USER") or os.environ.get("PG_USER", "aseps")
+        pg_port = int(os.environ.get("POSTGRES_PORT") or os.environ.get("PG_PORT", "5433"))
+        pg_database = os.environ.get("POSTGRES_DB") or os.environ.get("PG_DATABASE", "mcp_knowledge")
+        pg_user = os.environ.get("POSTGRES_USER") or os.environ.get("PG_USER", "mcp_user")
         pg_password = os.environ.get("POSTGRES_PASSWORD") or os.environ.get("PG_PASSWORD", "")
         
         return cls(

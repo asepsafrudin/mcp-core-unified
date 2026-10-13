@@ -49,6 +49,7 @@ from core.bootstrap import initialize_all_components
 from execution.registry import registry
 from execution.tool_dump import build_input_schema, filter_dumped_tools, get_dump_profile
 from core.gateway import reverse_proxy_gateway
+from core.config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -62,7 +63,7 @@ HOST = "127.0.0.1"
 PORT = int(os.getenv("MCP_TEST_PORT", "8000"))
 
 # MCP Server instance
-mcp_server = Server("mcp-unified")
+mcp_server = Server("mcp-unified", version=settings.VERSION)
 
 # Context var for slim mode
 is_slim_mode = contextvars.ContextVar("is_slim_mode", default=False)
@@ -154,6 +155,23 @@ class RobustSseServerTransport(SseServerTransport):
         except anyio.BrokenResourceError as e:
             # Bug 3 Fix: Writer broken (network issue), message dropped
             logger.warning(f"[RobustSSE] Session writer broken, message dropped: {e}")
+
+
+class ResponseAlreadySent(Response):
+    """
+    Response no-op untuk endpoint yang responsnya sudah dikirim langsung via
+    request._send oleh SseServerTransport.
+
+    Starlette mewajibkan route handler mengembalikan sebuah Response, tetapi
+    connect_sse() maupun handle_post_message() sudah mengirim respons ASGI
+    lengkap (stream SSE / 202 Accepted) melalui send yang sama. Mengirim ulang
+    di sini memicu RuntimeError: "Expected ASGI message 'http.response.body',
+    but got 'http.response.start'". Subclass ini membuat Starlette menganggap
+    respons sudah terkirim tanpa mengirim apa pun lagi.
+    """
+
+    async def __call__(self, scope, receive, send) -> None:
+        return
 
 
 async def initialize_components():
@@ -390,9 +408,9 @@ def create_starlette_app() -> Starlette:
         finally:
             logger.info(f"SSE connect closed for {client_repr}")
 
-        # Bug 1 Fix: Return empty Response() untuk satisfy Starlette routing
-        # SSE response sudah dikirim via request._send di dalam connect_sse
-        return Response()
+        # Starlette mewajibkan handler mengembalikan Response, tetapi SSE response
+        # sudah dikirim via request._send di dalam connect_sse → kembalikan no-op.
+        return ResponseAlreadySent()
 
     async def health_check(request):
         """Health check endpoint untuk monitoring dan service readiness."""
@@ -412,7 +430,7 @@ def create_starlette_app() -> Starlette:
         return JSONResponse({
             "status": status,
             "service": "mcp-unified",
-            "version": "1.0.0",
+            "version": settings.VERSION,
             "transport": "SSE",
             "host": HOST,
             "port": PORT,
@@ -445,7 +463,8 @@ def create_starlette_app() -> Starlette:
         
         # Call the underlying ASGI app
         await sse_transport.handle_post_message(request.scope, request.receive, request._send)
-        return Response()
+        # Respons 202/400/404 sudah dikirim via request._send oleh handle_post_message.
+        return ResponseAlreadySent()
 
     async def handle_agent(request):
         """TASK-120: IDE Hybrid Router endpoint untuk Agentic IDE."""

@@ -43,7 +43,7 @@ def get_json_path() -> Path:
 
 def get_db_connection_str() -> str:
     host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
+    port = os.getenv("POSTGRES_PORT", "5433")
     dbname = os.getenv("POSTGRES_DB", "mcp_knowledge")
     user = os.getenv("POSTGRES_USER", "postgres")
     password = os.getenv("POSTGRES_PASSWORD", "postgres")
@@ -61,7 +61,7 @@ def main():
         data = json.load(f)
 
     conn_str = get_db_connection_str()
-    logger.info(f"Connecting to PostgreSQL ({os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5432')})...")
+    logger.info(f"Connecting to PostgreSQL ({os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5433')})...")
 
     with psycopg.connect(conn_str) as conn:
         with conn.cursor() as cursor:

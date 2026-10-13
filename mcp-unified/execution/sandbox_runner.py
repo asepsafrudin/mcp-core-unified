@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
-from .middleware import EnforcementMiddleware, EnforcementError
+from execution.middleware import EnforcementMiddleware, EnforcementError
 
 PYTHON_VENV_BIN = Path("/home/aseps/MCP/.venv/bin/python").resolve()
 WORKSPACE_ROOT = Path("/home/aseps/MCP").resolve()

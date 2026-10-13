@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Database - [REVIEWER] Never hardcode credentials
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER") or os.getenv("PG_USER", "")
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER") or os.getenv("PG_USER", "mcp_user")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD") or os.getenv("PG_PASSWORD", "")
     POSTGRES_SERVER: str = (
         os.getenv("POSTGRES_SERVER")
@@ -40,9 +40,9 @@ class Settings(BaseSettings):
     )
     POSTGRES_PORT: int = int(
         os.getenv("POSTGRES_PORT")
-        or os.getenv("PG_PORT", "5432")
+        or os.getenv("PG_PORT", "5433")
     )
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB") or os.getenv("PG_DATABASE", "mcp")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB") or os.getenv("PG_DATABASE", "mcp_knowledge")
     
     # Redis - [REVIEWER] Use environment variable for connection URL
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")

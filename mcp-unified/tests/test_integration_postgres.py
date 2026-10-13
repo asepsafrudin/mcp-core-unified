@@ -23,9 +23,9 @@ from knowledge.stores.pgvector import PGVectorStore
 # Database config dari .env.postgresql
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_SERVER", "localhost"),
-    "port": int(os.getenv("POSTGRES_PORT", "5432")),
-    "database": os.getenv("POSTGRES_DB", "mcp"),
-    "user": os.getenv("POSTGRES_USER", "aseps"),
+    "port": int(os.getenv("POSTGRES_PORT", "5433")),
+    "database": os.getenv("POSTGRES_DB", "mcp_knowledge"),
+    "user": os.getenv("POSTGRES_USER", "mcp_user"),
     "password": os.getenv("POSTGRES_PASSWORD", "")
 }
 

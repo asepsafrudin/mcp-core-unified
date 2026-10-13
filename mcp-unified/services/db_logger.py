@@ -7,11 +7,11 @@ logger = logging.getLogger(__name__)
 # URL default berdasarkan environment sebelumnya
 DB_URL = os.environ.get("DATABASE_URL")
 if not DB_URL:
-    pg_user = os.environ.get("POSTGRES_USER") or os.environ.get("PG_USER") or "aseps"
+    pg_user = os.environ.get("POSTGRES_USER") or os.environ.get("PG_USER") or "mcp_user"
     pg_password = os.environ.get("POSTGRES_PASSWORD") or os.environ.get("PG_PASSWORD")
     pg_host = os.environ.get("POSTGRES_SERVER") or os.environ.get("PG_HOST") or "localhost"
-    pg_port = os.environ.get("POSTGRES_PORT") or os.environ.get("PG_PORT") or "5432"
-    pg_db = os.environ.get("POSTGRES_DB") or os.environ.get("PG_DATABASE") or "mcp"
+    pg_port = os.environ.get("POSTGRES_PORT") or os.environ.get("PG_PORT") or "5433"
+    pg_db = os.environ.get("POSTGRES_DB") or os.environ.get("PG_DATABASE") or "mcp_knowledge"
     if pg_password:
         DB_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}"
     else:

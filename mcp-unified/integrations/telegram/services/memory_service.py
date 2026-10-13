@@ -57,9 +57,9 @@ class MemoryService:
         self._ltm_db_checked = False
         self._ltm_db_config = {
             "host": os.getenv("POSTGRES_SERVER") or os.getenv("POSTGRES_HOST") or "localhost",
-            "port": int(os.getenv("POSTGRES_PORT") or "5432"),
-            "database": os.getenv("POSTGRES_DB") or "mcp",
-            "user": os.getenv("POSTGRES_USER") or "",
+            "port": int(os.getenv("POSTGRES_PORT") or "5433"),
+            "database": os.getenv("POSTGRES_DB") or "mcp_knowledge",
+            "user": os.getenv("POSTGRES_USER") or "mcp_user",
             "password": os.getenv("POSTGRES_PASSWORD") or "",
         }
 
