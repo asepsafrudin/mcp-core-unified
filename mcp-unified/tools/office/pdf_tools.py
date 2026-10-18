@@ -38,41 +38,58 @@ def convert_to_pdf(
         
         file_extension = input_file.suffix.lower()
         
-        if file_extension == '.docx':
-            # Try docx2pdf for DOCX conversion
-            try:
-                from docx2pdf import convert
-                convert(input_path, output_path)
-                return {
-                    'success': True,
-                    'input_path': input_path,
-                    'output_path': output_path,
-                    'conversion_type': 'DOCX to PDF',
-                    'method': 'docx2pdf'
-                }
-            except ImportError:
+        # Gunakan LibreOffice headless resmi untuk konversi multi-format berkualitas tinggi
+        import shutil
+        import subprocess
+        import tempfile
+
+        soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
+        if not soffice_bin:
+            return {
+                'success': False,
+                'error': 'LibreOffice tidak ditemukan pada sistem untuk konversi PDF.'
+            }
+
+        target_out = Path(output_path)
+        target_dir = target_out.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory(prefix="lo_pdf_conv_") as tmpdir:
+            cmd = [
+                soffice_bin,
+                f"-env:UserInstallation=file://{tmpdir}/profile",
+                "--headless",
+                "--convert-to", "pdf",
+                "--outdir", tmpdir,
+                str(input_file)
+            ]
+            res = subprocess.run(cmd, capture_output=True, timeout=120)
+            if res.returncode != 0:
+                err_msg = res.stderr.decode("utf-8", errors="replace").strip()
                 return {
                     'success': False,
-                    'error': 'docx2pdf not installed. Install with: pip install docx2pdf',
-                    'note': 'On Linux, docx2pdf may not work. Use LibreOffice instead.'
+                    'error': f'Konversi LibreOffice gagal: {err_msg}',
+                    'input_path': input_path
                 }
-                
-        elif file_extension in ['.xlsx', '.xls']:
-            # For Excel, we need external tools
-            return {
-                'success': False,
-                'error': 'Excel to PDF conversion requires external tools',
-                'solutions': [
-                    'Use LibreOffice: libreoffice --headless --convert-to pdf',
-                    'Use Microsoft Excel with COM automation',
-                    'Use online conversion services'
-                ]
-            }
-        else:
-            return {
-                'success': False,
-                'error': f'Unsupported file format: {file_extension}'
-            }
+
+            produced_pdf = Path(tmpdir) / f"{input_file.stem}.pdf"
+            if not produced_pdf.exists():
+                return {
+                    'success': False,
+                    'error': f'Hasil PDF tidak ditemukan setelah konversi: {input_file.name}',
+                    'input_path': input_path
+                }
+
+            # Pindahkan ke output_path target
+            shutil.copy2(produced_pdf, target_out)
+
+        return {
+            'success': True,
+            'input_path': str(input_file),
+            'output_path': str(target_out),
+            'conversion_type': f'{file_extension.upper().lstrip(".")} to PDF',
+            'method': 'LibreOffice Headless'
+        }
             
     except Exception as e:
         return {

@@ -612,8 +612,111 @@ def convert_xlsx_to_markdown(
         }
 
 
+@register_tool
+def libreoffice_convert_document(
+    input_path: str,
+    target_format: str,
+    output_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Konversi dokumen universal menggunakan LibreOffice Headless resmi.
+    Mendukung format legacy (.doc, .ppt, .xls) dan format modern (.docx, .pptx, .xlsx, .odt, .ods, .rtf)
+    ke format sasaran seperti: 'pdf', 'docx', 'pptx', 'xlsx', 'html', 'txt'.
+
+    Args:
+        input_path: Path absolut atau relatif ke dokumen sumber.
+        target_format: Format target (misal: 'pdf', 'docx', 'pptx', 'xlsx', 'html').
+        output_path: Path tujuan opsional (default: nama file sama dengan ekstensi baru).
+
+    Returns:
+        Dict status konversi, file target, ukuran berkas, dan metode konversi.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice_bin:
+        return {
+            'success': False,
+            'error': 'LibreOffice headless binary tidak ditemukan pada sistem.'
+        }
+
+    src = Path(input_path)
+    if not src.is_absolute():
+        src = Path("/home/aseps/MCP") / src
+
+    if not src.exists():
+        return {
+            'success': False,
+            'error': f'Berkas sumber tidak ditemukan: {src}'
+        }
+
+    target_fmt = target_format.lower().lstrip(".")
+    if output_path:
+        dest = Path(output_path)
+        if not dest.is_absolute():
+            dest = Path("/home/aseps/MCP") / dest
+    else:
+        dest = src.with_suffix(f".{target_fmt}")
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="mcp_lo_conv_") as tmpdir:
+            cmd = [
+                soffice_bin,
+                f"-env:UserInstallation=file://{tmpdir}/profile",
+                "--headless",
+                "--convert-to", target_fmt,
+                "--outdir", tmpdir,
+                str(src)
+            ]
+            res = subprocess.run(cmd, capture_output=True, timeout=120)
+            if res.returncode != 0:
+                err_msg = res.stderr.decode("utf-8", errors="replace").strip()
+                return {
+                    'success': False,
+                    'error': f'Konversi LibreOffice gagal: {err_msg}',
+                    'input_path': str(src)
+                }
+
+            produced = Path(tmpdir) / f"{src.stem}.{target_fmt}"
+            if not produced.exists():
+                # Cari berkas dengan ekstensi target jika nama sedikit berbeda
+                candidates = list(Path(tmpdir).glob(f"*.{target_fmt}"))
+                if candidates:
+                    produced = candidates[0]
+                else:
+                    return {
+                        'success': False,
+                        'error': f'Hasil konversi .{target_fmt} tidak ditemukan.',
+                        'input_path': str(src)
+                    }
+
+            shutil.copy2(produced, dest)
+
+        return {
+            'success': True,
+            'input_path': str(src),
+            'output_path': str(dest),
+            'target_format': target_fmt,
+            'file_size_bytes': dest.stat().st_size,
+            'method': 'LibreOffice Headless MCP Tool'
+        }
+
+    except Exception as exc:
+        return {
+            'success': False,
+            'error': str(exc),
+            'input_path': str(src)
+        }
+
+
 __all__ = [
     'convert_docx_to_markdown',
     'convert_xlsx_to_markdown',
     'defragment_docx_xml',
+    'libreoffice_convert_document',
 ]
+

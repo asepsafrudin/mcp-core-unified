@@ -183,6 +183,25 @@ try:
 except ImportError:
     pass  # Code module may have different structure
 
+# Import KL Revision tools (TASK-197)
+try:
+    from .kl_revision_tools import (
+        kl_extract_revision_document,
+        kl_audit_document_style,
+    )
+except ImportError:
+    pass
+
+# Import Universal Document Extractor tools (TASK-198)
+try:
+    from .universal_extractor_tools import (
+        universal_document_extract,
+        universal_document_triage,
+        universal_document_audit_gate,
+    )
+except ImportError:
+    pass
+
 # Extend __all__ with all tools
 __all__.extend([
     # File tools
@@ -229,6 +248,13 @@ __all__.extend([
     "vane_legal_search",
     "vane_deep_research",
     "vane_gap_fill",
+    # KL Revision Document Tools (TASK-197)
+    "kl_extract_revision_document",
+    "kl_audit_document_style",
+    # Universal Document Extractor Tools (TASK-198)
+    "universal_document_extract",
+    "universal_document_triage",
+    "universal_document_audit_gate",
 ])
 
 # Import workspace tools (separate module)
