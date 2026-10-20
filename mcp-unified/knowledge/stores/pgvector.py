@@ -5,6 +5,8 @@ Vector storage menggunakan PostgreSQL dengan pgvector extension.
 Supports namespace isolation untuk multi-project.
 """
 
+import json
+import os
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -72,26 +74,22 @@ class PGVectorStore:
                     )
                 """)
                 
-                # Create index untuk similarity search
+                # TASK-234: Pastikan index kanonik terpelihara tanpa membuat index duplikat
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_knowledge_namespace 
+                    CREATE INDEX IF NOT EXISTS idx_knowledge_documents_namespace
                     ON knowledge_documents(namespace)
                 """)
                 
-                # Create HNSW index untuk fast similarity search (jika pgvector >= 0.5.0)
+                # Index HNSW kanonik (m=16, ef_construction=64)
                 try:
                     await conn.execute(f"""
-                        CREATE INDEX IF NOT EXISTS idx_knowledge_embedding 
+                        CREATE INDEX IF NOT EXISTS idx_knowledge_documents_hnsw
                         ON knowledge_documents 
                         USING hnsw (embedding vector_cosine_ops)
+                        WITH (m = 16, ef_construction = 64)
                     """)
                 except Exception:
-                    # Fallback: ivfflat index untuk older pgvector versions
-                    await conn.execute(f"""
-                        CREATE INDEX IF NOT EXISTS idx_knowledge_embedding 
-                        ON knowledge_documents 
-                        USING ivfflat (embedding vector_cosine_ops)
-                    """)
+                    pass
             
             logger.info("pgvector_store_initialized", dimension=self.dimension)
             return True
@@ -188,18 +186,41 @@ class PGVectorStore:
                 filter_sql = " AND metadata @> $5::jsonb"
                 query_params.append(json.dumps(metadata_filters))
             
+            ef_search = int(os.getenv("PGVECTOR_EF_SEARCH", "200"))
+
             async with self._pool.acquire() as conn:
-                rows = await conn.fetch(f"""
-                    SELECT 
-                        id, content, embedding, metadata, namespace,
-                        1 - (embedding <=> $1::vector) as similarity
-                    FROM knowledge_documents
-                    WHERE namespace = $2
-                        AND 1 - (embedding <=> $1::vector) >= $3
-                        {filter_sql}
-                    ORDER BY embedding <=> $1::vector
-                    LIMIT $4
-                """, *query_params)
+                async with conn.transaction():
+                    await conn.execute(f"SET LOCAL hnsw.ef_search = {ef_search};")
+                    rows = await conn.fetch(f"""
+                        SELECT
+                            id, content, embedding, metadata, namespace,
+                            1 - (embedding <=> $1::vector) as similarity
+                        FROM knowledge_documents
+                        WHERE namespace = $2
+                            AND 1 - (embedding <=> $1::vector) >= $3
+                            {filter_sql}
+                        ORDER BY embedding <=> $1::vector
+                        LIMIT $4
+                    """, *query_params)
+
+                    # TASK-234: Fallback exact scan cerdas hanya bila hasil HNSW kosong (0 baris)
+                    if len(rows) == 0:
+                        await conn.execute("SET LOCAL enable_indexscan = off; SET LOCAL enable_bitmapscan = off;")
+                        rows = await conn.fetch(f"""
+                            SELECT
+                                id, content, embedding, metadata, namespace,
+                                1 - (embedding <=> $1::vector) as similarity
+                            FROM knowledge_documents
+                            WHERE namespace = $2
+                                AND 1 - (embedding <=> $1::vector) >= $3
+                                {filter_sql}
+                            ORDER BY embedding <=> $1::vector
+                            LIMIT $4
+                        """, *query_params)
+                        if len(rows) > 0:
+                            logger.warning("pgvector_zero_result_fallback_exact_triggered",
+                                           namespace=namespace,
+                                           retrieved=len(rows))
             
             documents = []
             for row in rows:
@@ -308,6 +329,3 @@ class PGVectorStore:
             await self._pool.close()
             self._pool = None
             logger.info("pgvector_store_closed")
-
-
-import json  # For metadata handling

@@ -738,16 +738,36 @@ def _retrieve_rag_legal_knowledge(query: str, namespace: Optional[str] = None, t
             if resp.status_code == 200:
                 emb = resp.json().get("embedding")
                 if emb:
-                    cur.execute("""
-                        SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content,
-                               embedding <=> %s::vector AS vec_distance
-                        FROM knowledge_documents
-                        WHERE namespace IN %s
-                          AND embedding IS NOT NULL
-                        ORDER BY embedding <=> %s::vector
-                        LIMIT %s;
-                    """, (emb, active_namespaces, emb, top_k * 2))
-                    v_rows = cur.fetchall()
+                    ef_search = int(os.getenv("PGVECTOR_EF_SEARCH", "200"))
+                    with conn:
+                        with conn.cursor() as sem_cur:
+                            sem_cur.execute(f"SET LOCAL hnsw.ef_search = {ef_search};")
+                            sem_cur.execute("""
+                                SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content,
+                                       embedding <=> %s::vector AS vec_distance
+                                FROM knowledge_documents
+                                WHERE namespace IN %s
+                                  AND embedding IS NOT NULL
+                                ORDER BY embedding <=> %s::vector
+                                LIMIT %s;
+                            """, (emb, active_namespaces, emb, top_k * 2))
+                            v_rows = sem_cur.fetchall()
+
+                            # TASK-234: Fallback exact scan cerdas hanya bila hasil HNSW kosong (0 baris)
+                            if len(v_rows) == 0:
+                                sem_cur.execute("SET LOCAL enable_indexscan = off; SET LOCAL enable_bitmapscan = off;")
+                                sem_cur.execute("""
+                                    SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content,
+                                           embedding <=> %s::vector AS vec_distance
+                                    FROM knowledge_documents
+                                    WHERE namespace IN %s
+                                      AND embedding IS NOT NULL
+                                    ORDER BY embedding <=> %s::vector
+                                    LIMIT %s;
+                                """, (emb, active_namespaces, emb, top_k * 2))
+                                v_rows = sem_cur.fetchall()
+                                if len(v_rows) > 0:
+                                    logger.warning(f"pgvector zero-result fallback exact triggered in whatsapp handler: found {len(v_rows)}")
                     if vector_distance_threshold is not None:
                         v_rows = [r for r in v_rows if r[2] is not None and float(r[2]) <= vector_distance_threshold]
                     # Diversifikasi namespace: maksimal 2 baris per namespace agar satu

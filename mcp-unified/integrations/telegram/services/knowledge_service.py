@@ -118,18 +118,20 @@ class KnowledgeService:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            # TASK-234: Pastikan index kanonik terpelihara tanpa membuat index duplikat
             await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_knowledge_namespace 
+                CREATE INDEX IF NOT EXISTS idx_knowledge_documents_namespace
                 ON knowledge_documents(namespace)
             """)
             try:
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_knowledge_embedding 
+                    CREATE INDEX IF NOT EXISTS idx_knowledge_documents_hnsw
                     ON knowledge_documents 
                     USING hnsw (embedding vector_cosine_ops)
+                    WITH (m = 16, ef_construction = 64)
                 """)
             except:
-                pass  # Index might already exist
+                pass
     
     async def _test_ollama(self):
         """Test Ollama connection."""
@@ -189,20 +191,41 @@ class KnowledgeService:
                 logger.warning("Failed to generate query embedding")
                 return []
             
+            ef_search = int(os.getenv("PGVECTOR_EF_SEARCH", "200"))
+
             # Search in database using vector similarity
             async with self.db_pool.acquire() as conn:
                 # Convert embedding to pgvector format
                 embedding_str = "[" + ",".join(str(f) for f in query_embedding) + "]"
                 
-                rows = await conn.fetch("""
-                    SELECT 
-                        id, content, metadata, namespace,
-                        1 - (embedding <=> $1::vector) as similarity
-                    FROM knowledge_documents
-                    WHERE 1 - (embedding <=> $1::vector) >= $2
-                    ORDER BY embedding <=> $1::vector
-                    LIMIT $3
-                """, embedding_str, min_similarity, top_k)
+                async with conn.transaction():
+                    await conn.execute(f"SET LOCAL hnsw.ef_search = {ef_search};")
+                    rows = await conn.fetch("""
+                        SELECT
+                            id, content, metadata, namespace,
+                            1 - (embedding <=> $1::vector) as similarity
+                        FROM knowledge_documents
+                        WHERE ($4::text IS NULL OR namespace = $4)
+                          AND 1 - (embedding <=> $1::vector) >= $2
+                        ORDER BY embedding <=> $1::vector
+                        LIMIT $3
+                    """, embedding_str, min_similarity, top_k, ns)
+
+                    # TASK-234: Fallback exact scan cerdas hanya bila hasil HNSW kosong (0 baris)
+                    if len(rows) == 0:
+                        await conn.execute("SET LOCAL enable_indexscan = off; SET LOCAL enable_bitmapscan = off;")
+                        rows = await conn.fetch("""
+                            SELECT
+                                id, content, metadata, namespace,
+                                1 - (embedding <=> $1::vector) as similarity
+                            FROM knowledge_documents
+                            WHERE ($4::text IS NULL OR namespace = $4)
+                              AND 1 - (embedding <=> $1::vector) >= $2
+                            ORDER BY embedding <=> $1::vector
+                            LIMIT $3
+                        """, embedding_str, min_similarity, top_k, ns)
+                        if len(rows) > 0:
+                            logger.warning(f"pgvector zero-result fallback exact triggered for namespace '{ns}': found {len(rows)}")
                 
                 search_results = []
                 import json
