@@ -113,6 +113,9 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, List[str]] = {
         "disposisi_check",
         "nd_laporan_generate",
         "general_consultation"
+    ],
+    "WEB_VIEWER": [
+        "web_access"
     ]
 }
 
@@ -204,6 +207,9 @@ def normalize_phone_number(phone: str) -> str:
         return "+" + digits
     elif digits.startswith("+628"):
         return digits
+    elif digits.startswith("8") and 9 <= len(digits) <= 13:
+        # Nomor Indonesia tanpa awalan 0 (mis. 8157...).
+        return "+62" + digits
     elif digits.endswith("@c.us") or digits.endswith("@s.whatsapp.net"):
         clean = digits.split("@")[0]
         if clean.startswith("628"):
@@ -238,6 +244,17 @@ def get_whitelist_user(phone: str) -> Optional[Dict[str, Any]]:
             if clean_phone == norm_a or clean_id == raw_a or raw_query == str(a):
                 return user
                 
+    return None
+
+
+def get_whitelist_user_by_nip(nip: str) -> Optional[Dict[str, Any]]:
+    """Mencari pengguna whitelist berdasarkan NIP (digit dinormalisasi)."""
+    clean = re.sub(r"\D", "", str(nip or ""))
+    if len(clean) < 9:
+        return None
+    for user in _load_whitelist().get("users", []):
+        if re.sub(r"\D", "", str(user.get("nip", ""))) == clean:
+            return user
     return None
 
 

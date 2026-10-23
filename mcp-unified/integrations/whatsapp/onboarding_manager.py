@@ -13,9 +13,15 @@ Features:
 import os
 import re
 import difflib
+import json
 import logging
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
+
+import httpx
 
 from integrations.whatsapp.whitelist_guard import (
     get_whitelist_user,
@@ -26,6 +32,25 @@ from integrations.whatsapp.whitelist_guard import (
 )
 
 logger = logging.getLogger("onboarding_manager")
+
+STATE_DB_PATH = Path(
+    os.getenv(
+        "SATRIA_ONBOARDING_DB",
+        "/home/aseps/MCP/storage/admin_data/satria_onboarding/state.db",
+    )
+)
+AUDIT_PATH = Path(
+    os.getenv(
+        "SATRIA_ONBOARDING_AUDIT",
+        "/home/aseps/MCP/storage/admin_data/satria_onboarding/audit.jsonl",
+    )
+)
+STATE_TTL_SEC = int(os.getenv("SATRIA_ONBOARDING_STATE_TTL", "1800"))
+LOCK_TTL_SEC = int(os.getenv("SATRIA_ONBOARDING_LOCK_TTL", "86400"))
+MAX_NIP_ATTEMPTS = int(os.getenv("SATRIA_ONBOARDING_MAX_NIP", "3"))
+MAX_NAME_ATTEMPTS = int(os.getenv("SATRIA_ONBOARDING_MAX_NAME", "5"))
+ACCESS_URL = os.getenv("SATRIA_ACCESS_URL", "http://127.0.0.1:8105").rstrip("/")
+PUBLIC_ACCESS_URL = os.getenv("ACCESS_PUBLIC_BASE", "https://uu23.supd2.net").rstrip("/")
 
 # In-memory storage for pending queries during onboarding
 _PENDING_QUERIES: Dict[str, Dict[str, Any]] = {}
@@ -312,6 +337,330 @@ def extract_nip_from_text(text: str) -> Optional[str]:
         return all_digits
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# TASK-273 Fase 2 — Onboarding terpandu: NIP -> nama -> handoff web
+# ---------------------------------------------------------------------------
+
+STATE_DDL = """
+CREATE TABLE IF NOT EXISTS onboarding_state (
+  phone          TEXT PRIMARY KEY,
+  state          TEXT NOT NULL,
+  nip            TEXT,
+  name           TEXT,
+  nip_attempts   INTEGER NOT NULL DEFAULT 0,
+  name_attempts  INTEGER NOT NULL DEFAULT 0,
+  updated_at     TEXT NOT NULL,
+  expires_at     TEXT NOT NULL
+);
+"""
+
+_MSG_NIP = (
+    "Nomor Anda belum terdaftar. Kirim NIP 18 digit Anda untuk registrasi.\n"
+    "Contoh: 197711122006141001"
+)
+_MSG_NAME = (
+    "NIP diterima. Sekarang kirim NAMA LENGKAP sesuai data kepegawaian "
+    "(tanpa gelar)."
+)
+_MSG_NIP_NOT_FOUND = (
+    "NIP tidak ditemukan di data kepegawaian. Periksa kembali NIP 18 digit Anda."
+)
+_MSG_NAME_MISMATCH = (
+    "Nama belum cocok dengan data kepegawaian. Kirim nama lengkap tanpa gelar."
+)
+_MSG_LOCKED = "Terlalu banyak percobaan. Coba lagi 24 jam atau hubungi admin."
+_MSG_SUCCESS = (
+    "✅ Verifikasi berhasil. Nomor WhatsApp ini sudah terdaftar.\n"
+    f"Buka {PUBLIC_ACCESS_URL}/akses dan login dengan nomor ini + OTP."
+)
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _mask_phone(phone: str) -> str:
+    digits = "".join(c for c in str(phone or "") if c.isdigit() or c == "+")
+    if len(digits) <= 7:
+        return "***"
+    return f"{digits[:4]}***{digits[-3:]}"
+
+
+def _mask_nip(nip: str) -> str:
+    clean = "".join(c for c in str(nip or "") if c.isdigit())
+    if len(clean) <= 7:
+        return "***"
+    return f"{clean[:4]}***{clean[-3:]}"
+
+
+def _audit(action: str, phone: str, nip: Optional[str], result: str,
+           detail: str = "") -> None:
+    try:
+        AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        line = {
+            "at": _iso(_now()),
+            "action": action,
+            "phone_mask": _mask_phone(phone),
+            "nip_mask": _mask_nip(nip) if nip else None,
+            "result": result,
+            "detail": detail,
+        }
+        with open(AUDIT_PATH, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("Audit onboarding gagal: %s", exc)
+
+
+@contextmanager
+def _state_conn():
+    STATE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(STATE_DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.executescript(STATE_DDL)
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_state(phone: str) -> Optional[Dict[str, Any]]:
+    with _state_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM onboarding_state WHERE phone=?", (phone,)
+        ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        if data["expires_at"] < _iso(_now()):
+            conn.execute("DELETE FROM onboarding_state WHERE phone=?", (phone,))
+            return None
+        return data
+
+
+def _set_state(
+    phone: str,
+    state: str,
+    nip: Optional[str] = None,
+    name: Optional[str] = None,
+    nip_attempts: int = 0,
+    name_attempts: int = 0,
+    ttl: int = STATE_TTL_SEC,
+) -> None:
+    now = _now()
+    with _state_conn() as conn:
+        conn.execute(
+            "INSERT INTO onboarding_state(phone, state, nip, name, nip_attempts,"
+            " name_attempts, updated_at, expires_at) VALUES(?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(phone) DO UPDATE SET state=excluded.state, nip=excluded.nip,"
+            " name=excluded.name, nip_attempts=excluded.nip_attempts,"
+            " name_attempts=excluded.name_attempts, updated_at=excluded.updated_at,"
+            " expires_at=excluded.expires_at",
+            (phone, state, nip, name, nip_attempts, name_attempts, _iso(now),
+             _iso(now + timedelta(seconds=ttl))),
+        )
+
+
+def _clear_state(phone: str) -> None:
+    with _state_conn() as conn:
+        conn.execute("DELETE FROM onboarding_state WHERE phone=?", (phone,))
+
+
+def _bump_attempt(phone: str, field: str) -> Optional[Dict[str, Any]]:
+    if field not in ("nip_attempts", "name_attempts"):
+        raise ValueError("field tidak valid")
+    now = _now()
+    with _state_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM onboarding_state WHERE phone=?", (phone,)
+        ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        data[field] = int(data.get(field, 0)) + 1
+        locked = (
+            data["nip_attempts"] >= MAX_NIP_ATTEMPTS
+            or data["name_attempts"] >= MAX_NAME_ATTEMPTS
+        )
+        state = "LOCKED" if locked else data["state"]
+        ttl = LOCK_TTL_SEC if locked else STATE_TTL_SEC
+        conn.execute(
+            "UPDATE onboarding_state SET state=?, nip_attempts=?, name_attempts=?,"
+            " updated_at=?, expires_at=? WHERE phone=?",
+            (state, data["nip_attempts"], data["name_attempts"], _iso(now),
+             _iso(now + timedelta(seconds=ttl)), phone),
+        )
+        data["state"] = state
+        data["expires_at"] = _iso(now + timedelta(seconds=ttl))
+        return data
+
+
+def check_name_similarity_strict(input_name: str, db_name: str) -> Tuple[bool, float, str]:
+    """Kemiripan nama yang lebih ketat untuk onboarding web.
+
+    Minimal dua token nama (>=3 huruf) cocok, atau rasio teks >= 0,8.
+    Nama tunggal harus hampir persis.
+    """
+    tokens_input = clean_name_tokens(input_name)
+    tokens_db = clean_name_tokens(db_name)
+    if not tokens_input or not tokens_db:
+        return False, 0.0, "Nama tidak dapat diurai"
+    str_input = " ".join(tokens_input)
+    str_db = " ".join(tokens_db)
+    if str_input == str_db:
+        return True, 1.0, "Kecocokan nama sempurna"
+    if len(tokens_db) == 1:
+        ratio = difflib.SequenceMatcher(None, str_input, str_db).ratio()
+        return ratio >= 0.9, ratio, f"Skor nama tunggal: {ratio:.2f}"
+    matched = {t for t in tokens_input if len(t) >= 3 and t in tokens_db}
+    if len(matched) >= 2:
+        return True, 0.9, f"Kecocokan {len(matched)} token nama"
+    ratio = difflib.SequenceMatcher(None, str_input, str_db).ratio()
+    if ratio >= 0.8:
+        return True, ratio, f"Skor kemiripan: {ratio:.2f}"
+    return False, ratio, f"Kemiripan kurang ({ratio:.2f})"
+
+
+def _extract_name(text: str, nip: Optional[str]) -> Optional[str]:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    if "#" in raw:
+        parts = [p.strip() for p in raw.split("#") if p.strip()]
+        for idx, part in enumerate(parts):
+            if clean_nip_digits(part) == nip and idx + 1 < len(parts):
+                candidate = parts[idx + 1]
+                if clean_nip_digits(candidate) != nip:
+                    return candidate
+    match = re.search(
+        r"(?:nama|nama\s+lengkap)\s*[:=]\s*([A-Za-z .,'\-]+)", raw, re.IGNORECASE
+    )
+    if match:
+        return match.group(1).strip()
+    if nip and clean_nip_digits(raw) == nip:
+        return None
+    remainder = re.sub(r"[\d.\-]+", " ", raw).strip(" #:,-")
+    if len(remainder) >= 3 and not remainder.lower().startswith(
+        ("daftar", "registrasi", "nip")
+    ):
+        return remainder
+    return None
+
+
+async def _call_satria_register(phone: str, nip: str, name: str) -> bool:
+    secret = os.getenv("ACCESS_SHARED_SECRET", "")
+    if not ACCESS_URL or not secret:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{ACCESS_URL}/api/v1/access/register/complete",
+                json={"phone": phone, "nip": nip, "name": name},
+                headers={"X-Access-Secret": secret},
+            )
+        return resp.status_code == 200
+    except Exception as exc:
+        logger.warning("Satria access register gagal: %s", exc)
+        return False
+
+
+def _provision_fallback(phone: str, nip: str, name: str) -> bool:
+    try:
+        ok, message, _ = save_whitelist_user(
+            identifier=phone,
+            full_name=name,
+            role="WEB_VIEWER",
+            permissions=["web_access"],
+            nip=nip,
+        )
+        if not ok:
+            logger.warning("Fallback whitelist gagal: %s", message)
+        return ok
+    except Exception as exc:
+        logger.warning("Fallback whitelist error: %s", exc)
+        return False
+
+
+async def handle_onboarding_message(
+    sender_phone: str, sender_name: Optional[str], message_text: str
+) -> Tuple[bool, str]:
+    """State machine onboarding WhatsApp (TASK-273 Fase 2).
+
+    Mengembalikan (handled, reply). `sender_name` tidak dipakai sebagai bukti;
+    nama harus diketik pengguna.
+    """
+    phone = normalize_phone_number(sender_phone)
+    if not phone:
+        return False, ""
+
+    state = _get_state(phone)
+    if state and state["state"] == "LOCKED":
+        return True, _MSG_LOCKED
+
+    nip = extract_nip_from_text(message_text)
+    name: Optional[str] = None
+    if state and state["state"] == "AWAIT_NAME" and not nip:
+        nip = state.get("nip")
+        name = (message_text or "").strip() or None
+    else:
+        name = _extract_name(message_text, nip) if nip else None
+
+    if not nip:
+        _set_state(phone, "AWAIT_NIP")
+        _audit("prompt_nip", phone, None, "prompt")
+        return True, _MSG_NIP
+
+    if not name:
+        current_nip_attempts = int(state.get("nip_attempts", 0)) if state else 0
+        _set_state(
+            phone,
+            "AWAIT_NAME",
+            nip=nip,
+            nip_attempts=current_nip_attempts,
+            name_attempts=0,
+        )
+        _audit("prompt_name", phone, nip, "prompt")
+        return True, _MSG_NAME
+
+    # Pastikan ada state agar percobaan satu-pesan tetap tercatat/rate-limited.
+    if not _get_state(phone):
+        _set_state(phone, "AWAIT_NAME", nip=nip)
+
+    employee = lookup_employee_by_nip(nip)
+    if not employee:
+        updated = _bump_attempt(phone, "nip_attempts")
+        if updated and updated["state"] == "LOCKED":
+            _audit("locked", phone, nip, "nip_attempts")
+            return True, _MSG_LOCKED
+        _audit("nip_not_found", phone, nip, "fail")
+        return True, _MSG_NIP_NOT_FOUND
+
+    ok, _score, _reason = check_name_similarity_strict(name, employee["nama"])
+    if not ok:
+        updated = _bump_attempt(phone, "name_attempts")
+        if updated and updated["state"] == "LOCKED":
+            _audit("locked", phone, nip, "name_attempts")
+            return True, _MSG_LOCKED
+        _audit("name_mismatch", phone, nip, "fail")
+        return True, _MSG_NAME_MISMATCH
+
+    web_ok = await _call_satria_register(phone, nip, employee["nama"])
+    if not web_ok:
+        if not _provision_fallback(phone, nip, employee["nama"]):
+            _audit("provision_failed", phone, nip, "fail")
+            return True, "❌ Registrasi gagal disimpan. Hubungi admin."
+        _audit("onboarded", phone, nip, "fallback")
+    else:
+        _audit("onboarded", phone, nip, "satria")
+
+    _clear_state(phone)
+    return True, _MSG_SUCCESS
 
 
 def determine_user_role(employee: Dict[str, Any]) -> str:
