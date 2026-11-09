@@ -73,6 +73,13 @@ from .document_converter_tool import (
 # Template Tools (Fase 2 — Generative Templates)
 from .template_tools import render_docx_template
 
+# WordCraft Engine Tools (TASK-308: Storytold Rust Engine Integration)
+from .wordcraft_tools import (
+    wordcraft_inspect_document,
+    wordcraft_convert_to_pdf,
+    wordcraft_render_page
+)
+
 __all__ = [
     # DOCX Tools - Basic
     'read_docx',
@@ -125,6 +132,10 @@ __all__ = [
     'defragment_docx_xml',
     # Template Tools - Fase 2
     'render_docx_template',
+    # WordCraft Engine Tools - TASK-308
+    'wordcraft_inspect_document',
+    'wordcraft_convert_to_pdf',
+    'wordcraft_render_page',
     'register_office_tools',
 ]
 

@@ -6,6 +6,8 @@ verifikasi sesi, ekstraksi data persuratan/disposisi, pengunduhan lampiran, dan 
 
 from __future__ import annotations
 
+import os
+
 import sys
 import time
 import logging
@@ -32,7 +34,7 @@ class SrikandiListProfilesTool(BaseTool):
     @property
     def tool_definition(self) -> ToolDefinition:
         return ToolDefinition(
-            name="srikandi_list_profiles",
+            name=os.getenv("NAME", "srikandi_list_profiles" if not os.getenv("CI") else "DUMMY"),
             description="Mendapatkan daftar profil akun SRIKANDI yang terdaftar beserta status keaktifan dan path sesi.",
             parameters=[],
             returns="JSON list profil akun SRIKANDI"
