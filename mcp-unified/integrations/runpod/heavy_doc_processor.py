@@ -6,7 +6,6 @@ Capable of processing 100-500+ page documents in seconds.
 from __future__ import annotations
 
 import os
-import io
 import time
 import base64
 import asyncio
@@ -89,7 +88,54 @@ class HeavyDocumentProcessor:
         start_page: int,
         timeout_seconds: int = 180,
     ) -> Dict[str, Any]:
-        """Kirim satu chunk PDF ke RunPod GPU worker dan tunggu hasilnya."""
+        """
+        Memproses satu chunk PDF halaman scan sesuai Protokol §13 (Cost-Optimized Multi-Tier):
+        - Tier 1/2: Google Cloud Vision / Local docTR (:8090) per halaman scan.
+        - Tier 3 (Fallback Terakhir): RunPod Serverless GPU (s1dfdtqol2p7ix).
+        """
+        force_runpod = os.getenv("RUNPOD_FORCE_PRIMARY", "0").strip() == "1"
+
+        if not force_runpod:
+            try:
+                import tempfile
+                from services.ocr.service import OCREngine
+                ocr_engine = OCREngine.get_instance()
+                doc = fitz.open(stream=chunk_bytes, filetype="pdf")
+                pages_out = []
+                md_parts = []
+                loop = asyncio.get_running_loop()
+
+                for idx in range(len(doc)):
+                    p_num = start_page + idx
+                    page = doc[idx]
+                    pix = page.get_pixmap(matrix=fitz.Matrix(150 / 72.0, 150 / 72.0), alpha=False)
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        tmp.write(pix.tobytes("png"))
+                        tmp_path = tmp.name
+                    try:
+                        res_ocr = await loop.run_in_executor(None, lambda p=tmp_path: ocr_engine.run_ocr(p, mode="fast"))
+                        txt = res_ocr.get("full_text", "") if isinstance(res_ocr, dict) else ""
+                    finally:
+                        if os.path.exists(tmp_path):
+                            try:
+                                os.remove(tmp_path)
+                            except OSError:
+                                pass
+                    pages_out.append({"page_number": p_num, "text": txt})
+                    md_parts.append(txt)
+
+                doc.close()
+                if any(p["text"] for p in pages_out):
+                    return {
+                        "success": True,
+                        "start_page": start_page,
+                        "pages": pages_out,
+                        "full_markdown": "\n\n".join(md_parts),
+                        "provider": "cost_optimized_tier12",
+                    }
+            except Exception as t12_err:
+                logger.warning(f"Tier 1/2 chunk OCR gagal pada halaman {start_page} ({t12_err}), fallback ke Tier 3 RunPod GPU.")
+
         b64_str = base64.b64encode(chunk_bytes).decode("utf-8")
         payload = {
             "pdf_base64": b64_str,

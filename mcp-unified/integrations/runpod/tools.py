@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import logging
 
-from .client import get_runpod_client, RunPodClient
+from .client import get_runpod_client
 
 logger = logging.getLogger("mcp-unified.runpod.tools")
 
@@ -148,6 +148,58 @@ async def runpod_ocr_process(
 
     if not b64_data:
         return {"success": False, "error": "image_base64 atau file_path wajib diisi."}
+
+    force_runpod = bool(endpoint_id) or os.getenv("RUNPOD_FORCE_PRIMARY", "0").strip() == "1"
+
+    # Sesuai Protokol §13 (Cost-Optimized Multi-Tier): utamakan Tier 1 (Google Cloud Vision) & Tier 2 (docTR :8090)
+    # sebelum membangunkan worker GPU RunPod (Tier 3 Fallback Terakhir).
+    if not force_runpod:
+        import tempfile
+        tmp_img = None
+        try:
+            target_path = file_path
+            if not target_path or not Path(target_path).exists():
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                    tmp.write(base64.b64decode(b64_data))
+                    tmp_img = tmp.name
+                    target_path = tmp_img
+
+            from services.ocr.service import OCREngine
+            ocr_res = OCREngine.get_instance().run_ocr(target_path, mode="fast")
+            if ocr_res.get("status") == "success" and ocr_res.get("full_text"):
+                engine_used = ocr_res.get("engine", "google_vision")
+                output = {
+                    "status": "success",
+                    "raw_text": ocr_res.get("full_text", ""),
+                    "lines": ocr_res.get("lines", []),
+                    "nlp_quality": ocr_res.get("nlp_quality", {}),
+                }
+                if save_to_memory:
+                    try:
+                        from memory.longterm import memory_save
+                        content_str = json.dumps(output, ensure_ascii=False)
+                        await memory_save(
+                            key=f"ocr_tier12:{hash(b64_data[:100])}",
+                            content=content_str[:2000],
+                            metadata={"source": "cost_optimized_ocr", "engine": engine_used, "file_path": file_path or "inline_base64"},
+                            namespace=namespace,
+                        )
+                    except Exception as me:
+                        logger.warning("ocr_memory_save_failed", error=str(me))
+                return {
+                    "success": True,
+                    "endpoint_id": f"cost_optimized:{engine_used}",
+                    "job_id": "local_or_cloud_tier12",
+                    "data": output,
+                }
+        except Exception as tier_err:
+            logger.warning(f"Tier 1/2 OCR gagal ({tier_err}), beralih ke Tier 3 RunPod Serverless GPU...")
+        finally:
+            if tmp_img and os.path.exists(tmp_img):
+                try:
+                    os.remove(tmp_img)
+                except OSError:
+                    pass
 
     ep_id = (
         endpoint_id

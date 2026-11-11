@@ -73,29 +73,95 @@ class VLLMVisionProcessor:
             return True
 
     def _call_openrouter_vision_sync(self, image_base64: str, prompt: str, timeout: int = 45) -> str:
-        """Fallback cloud VLM via OpenRouter (google/gemini-2.5-flash) or Google Cloud Vision."""
-        or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-        if not or_key:
-            try:
-                from dotenv import load_dotenv
-                for name in (".env.ai", ".env.workspace", ".env.core"):
-                    p = Path("/home/aseps/MCP/config/env") / name
-                    if p.exists():
-                        load_dotenv(p, override=False)
-                or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-            except Exception:
-                pass
+        """
+        Cost-Optimized Multi-Tier Vision & OCR Chain (Protokol §13):
+        - Tier 1 (Primary VLM): OpenRouter Multimodal (google/gemini-2.5-flash)
+        - Tier 2 (Cloud/Local OCR): Google Cloud Vision API -> Mindee docTR (:8090 / in-process)
+        - Tier 3 (Last-Resort Fallback): RunPod Serverless GPU (vLLM qi2tml56v6cf1p -> OCR s1dfdtqol2p7ix)
+        """
+        import tempfile
 
-        if or_key:
-            or_model = os.getenv("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")
-            resp = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {or_key}",
+        force_runpod = os.getenv("RUNPOD_FORCE_PRIMARY", "0").strip() == "1"
+
+        # Tier 1: OpenRouter Multimodal Vision (Primary)
+        if not force_runpod:
+            or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+            if not or_key:
+                try:
+                    from dotenv import load_dotenv
+                    for name in (".env.ai", ".env.workspace", ".env.core"):
+                        p = Path("/home/aseps/MCP/config/env") / name
+                        if p.exists():
+                            load_dotenv(p, override=False)
+                    or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+                except Exception:
+                    pass
+
+            if or_key:
+                or_model = os.getenv("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")
+                try:
+                    resp = requests.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {or_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": or_model,
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "text", "text": prompt},
+                                        {
+                                            "type": "image_url",
+                                            "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                                        },
+                                    ],
+                                }
+                            ],
+                            "max_tokens": 3000,
+                            "temperature": 0.1,
+                        },
+                        timeout=timeout,
+                    )
+                    if resp.status_code == 200:
+                        self.last_provider_used = f"openrouter:{or_model}"
+                        return resp.json()["choices"][0]["message"]["content"]
+                    logger.warning(f"Tier 1 OpenRouter returned {resp.status_code}, falling back to Tier 2.")
+                except Exception as or_err:
+                    logger.warning(f"Tier 1 OpenRouter failed ({or_err}), falling back to Tier 2.")
+
+            # Tier 2: Google Cloud Vision API -> Local docTR (:8090 / in-process)
+            tmp_img_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                    tmp.write(base64.b64decode(image_base64))
+                    tmp_img_path = tmp.name
+                from services.ocr.service import OCREngine
+                ocr_res = OCREngine.get_instance().run_ocr(tmp_img_path, mode="fast")
+                if ocr_res.get("status") == "success" and ocr_res.get("full_text"):
+                    eng = ocr_res.get("engine", "ocr_tier2")
+                    self.last_provider_used = f"tier2:{eng}"
+                    return ocr_res["full_text"]
+            except Exception as t2_err:
+                logger.warning(f"Tier 2 Google Vision/docTR failed ({t2_err}), falling back to Tier 3 RunPod.")
+            finally:
+                if tmp_img_path and os.path.exists(tmp_img_path):
+                    try:
+                        os.remove(tmp_img_path)
+                    except OSError:
+                        pass
+
+        # Tier 3 (Last-Resort Fallback): RunPod vLLM Vision -> RunPod OCR Worker
+        if not self._is_endpoint_throttled_or_unavailable():
+            try:
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
-                },
-                json={
-                    "model": or_model,
+                }
+                payload = {
+                    "model": self.model_name,
                     "messages": [
                         {
                             "role": "user",
@@ -110,14 +176,14 @@ class VLLMVisionProcessor:
                     ],
                     "max_tokens": 3000,
                     "temperature": 0.1,
-                },
-                timeout=timeout,
-            )
-            if resp.status_code == 200:
-                self.last_provider_used = f"openrouter:{or_model}"
-                return resp.json()["choices"][0]["message"]["content"]
+                }
+                r_vllm = requests.post(self.api_url, headers=headers, json=payload, timeout=min(timeout, 20))
+                if r_vllm.status_code == 200:
+                    self.last_provider_used = f"runpod_vllm:{self.endpoint_id}"
+                    return r_vllm.json()["choices"][0]["message"]["content"]
+            except Exception as rp_err:
+                logger.warning(f"Tier 3 RunPod vLLM failed ({rp_err}), trying RunPod OCR worker.")
 
-        # Tier 3 fallback: RunPod OCR Worker (s1dfdtqol2p7ix)
         ocr_ep = os.getenv("RUNPOD_OCR_ENDPOINT_ID", "s1dfdtqol2p7ix").strip()
         ocr_key = (os.getenv("RUNPOD_API_KEY") or self.api_key).strip()
         if ocr_ep and ocr_key:
@@ -133,7 +199,7 @@ class VLLMVisionProcessor:
                     self.last_provider_used = f"runpod_ocr:{ocr_ep}"
                     return out["raw_text"]
 
-        raise RuntimeError("RunPod vLLM Vision serta fallback OpenRouter/RunPod OCR gagal dieksekusi.")
+        raise RuntimeError("Seluruh rantai Tier 1 (OpenRouter), Tier 2 (Google Vision/docTR), dan Tier 3 (RunPod) gagal dieksekusi.")
 
     def _extract_page_image_base64(self, page: fitz.Page, dpi: int = 150) -> str:
         """Render a PyMuPDF PDF page to base64 PNG."""
@@ -157,41 +223,9 @@ class VLLMVisionProcessor:
             "tanpa ada yang terlewat."
         )
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        payload = {
-            "model": self.model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{image_base64}"},
-                        },
-                    ],
-                }
-            ],
-            "max_tokens": 3000,
-            "temperature": 0.1,
-        }
-
         loop = asyncio.get_running_loop()
 
         def _request_with_fallback() -> str:
-            if not self._is_endpoint_throttled_or_unavailable():
-                try:
-                    resp = requests.post(self.api_url, headers=headers, json=payload, timeout=min(timeout, 12))
-                    if resp.status_code == 200:
-                        self.last_provider_used = f"runpod_vllm:{self.endpoint_id}"
-                        return resp.json()["choices"][0]["message"]["content"]
-                    logger.warning(f"RunPod vLLM returned {resp.status_code}, failing over to OpenRouter/OCR.")
-                except Exception as exc:
-                    logger.warning(f"RunPod vLLM request error ({exc}), failing over to OpenRouter/OCR.")
             return self._call_openrouter_vision_sync(image_base64, prompt, timeout=min(timeout, 45))
 
         return await loop.run_in_executor(None, _request_with_fallback)
@@ -234,40 +268,9 @@ class VLLMVisionProcessor:
         else:
             prompt = base_prompt
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        payload = {
-            "model": self.model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{image_base64}"},
-                        },
-                    ],
-                }
-            ],
-            "max_tokens": 3000,
-            "temperature": 0.1,
-        }
-
         loop = asyncio.get_running_loop()
 
         def _request_conf_with_fallback() -> str:
-            if not self._is_endpoint_throttled_or_unavailable():
-                try:
-                    resp = requests.post(self.api_url, headers=headers, json=payload, timeout=min(timeout, 35))
-                    if resp.status_code == 200:
-                        self.last_provider_used = f"runpod_vllm:{self.endpoint_id}"
-                        return resp.json()["choices"][0]["message"]["content"]
-                except Exception as exc:
-                    logger.warning(f"RunPod vLLM confidence request error ({exc}), failing over.")
             return self._call_openrouter_vision_sync(image_base64, prompt, timeout=min(timeout, 45))
 
         raw_response = await loop.run_in_executor(None, _request_conf_with_fallback)
