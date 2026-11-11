@@ -45,33 +45,85 @@ async def knowledge_search(query: str, namespace: str = "default", top_k: int = 
         logger.error(f"knowledge_search_tool_failed: {e}")
         return json.dumps({"success": False, "error": str(e)})
 
-async def knowledge_ingest_text(content: str, doc_id: str, namespace: str = "default", metadata: Dict[str, Any] = None) -> str:
+async def knowledge_ingest_text(
+    content: str,
+    doc_id: str,
+    namespace: str = "shared_tech",
+    metadata: Dict[str, Any] = None,
+    approval_token: Optional[str] = None
+) -> str:
     """
-    Ingest plain text into the knowledge base.
+    Ingest plain text into the knowledge base (Two-step staging gate).
+    Requires explicit approval_token='APPROVED' to embed into pgvector.
+    Namespace 'default' is strictly prohibited.
     """
     try:
+        ns = (namespace or "").strip()
+        if not ns or ns.lower() == "default":
+            return json.dumps({
+                "success": False,
+                "error": "AKSES DITOLAK: Namespace 'default' dilarang keras sesuai Zero-Leakage Policy (Invariant #7). Gunakan namespace identitas resmi 'puu:{domain}:{agent}' atau 'shared_*'."
+            }, indent=2)
+
+        # Gate Staging Sisi Server (Pertahanan Lapis Ganda)
+        if approval_token != "APPROVED":
+            return json.dumps({
+                "success": False,
+                "status": "STAGING_PENDING_APPROVAL",
+                "doc_id": doc_id,
+                "namespace": ns,
+                "character_count": len(content),
+                "preview": content[:300] + ("..." if len(content) > 300 else ""),
+                "message": "Dokumen ditahan di buffer staging. DILARANG meng-embed ke pgvector tanpa konfirmasi eksplisit pengguna di chat. Tampilkan pratinjau ini ke pengguna, minta persetujuan, lalu panggil kembali dengan parameter approval_token='APPROVED' jika disetujui."
+            }, indent=2)
+
         rag = await get_rag_engine()
         success = await rag.add_document(
             doc_id=doc_id,
             content=content,
             metadata=metadata or {},
-            namespace=namespace
+            namespace=ns
         )
-        return json.dumps({"success": success, "doc_id": doc_id, "namespace": namespace})
+        return json.dumps({"success": success, "doc_id": doc_id, "namespace": ns})
     except Exception as e:
         logger.error(f"knowledge_ingest_text_failed: {e}")
         return json.dumps({"success": False, "error": str(e)})
 
-async def knowledge_ingest_spreadsheet(file_path: str, namespace: str = "default") -> str:
+async def knowledge_ingest_spreadsheet(
+    file_path: str,
+    namespace: str = "shared_tech",
+    approval_token: Optional[str] = None
+) -> str:
     """
-    Ingest an Excel (.xlsx) file into the knowledge base.
+    Ingest an Excel (.xlsx) file into the knowledge base (Two-step staging gate).
+    Requires explicit approval_token='APPROVED' to embed into pgvector.
+    Namespace 'default' is strictly prohibited.
     """
     try:
+        ns = (namespace or "").strip()
+        if not ns or ns.lower() == "default":
+            return json.dumps({
+                "success": False,
+                "error": "AKSES DITOLAK: Namespace 'default' dilarang keras sesuai Zero-Leakage Policy (Invariant #7). Gunakan namespace identitas resmi 'puu:{domain}:{agent}' atau 'shared_*'."
+            }, indent=2)
+
         extractor = XlsxExtractor()
         extracted = await extractor.extract(file_path)
+
+        if approval_token != "APPROVED":
+            return json.dumps({
+                "success": False,
+                "status": "STAGING_PENDING_APPROVAL",
+                "file_path": file_path,
+                "namespace": ns,
+                "sheet_count": extracted["metadata"]["sheet_count"],
+                "character_count": len(extracted["text"]),
+                "preview": extracted["text"][:300] + ("..." if len(extracted["text"]) > 300 else ""),
+                "message": "Data spreadsheet ditahan di staging buffer. DILARANG meng-embed ke pgvector tanpa konfirmasi eksplisit pengguna di chat. Tampilkan pratinjau ini ke pengguna, minta persetujuan, lalu panggil kembali dengan parameter approval_token='APPROVED' jika disetujui."
+            }, indent=2)
         
         rag = await get_rag_engine()
-        doc_id = f"xlsx_{Path(file_path).stem}_{namespace}"
+        doc_id = f"xlsx_{Path(file_path).stem}_{ns}"
         
         success = await rag.add_document(
             doc_id=doc_id,
@@ -81,25 +133,38 @@ async def knowledge_ingest_spreadsheet(file_path: str, namespace: str = "default
                 "file_type": "xlsx",
                 "sheets": extracted["metadata"]["sheets"]
             },
-            namespace=namespace
+            namespace=ns
         )
         
         return json.dumps({
             "success": success,
             "doc_id": doc_id,
-            "namespace": namespace,
+            "namespace": ns,
             "sheet_count": extracted["metadata"]["sheet_count"]
         }, indent=2)
     except Exception as e:
         logger.error(f"knowledge_ingest_spreadsheet_failed: {e}")
         return json.dumps({"success": False, "error": str(e)})
 
-async def knowledge_ingest_googlesheet(spreadsheet_id: str, range_name: str, namespace: str = "default") -> str:
+async def knowledge_ingest_googlesheet(
+    spreadsheet_id: str,
+    range_name: str,
+    namespace: str = "shared_tech",
+    approval_token: Optional[str] = None
+) -> str:
     """
-    Ingest data from a Google Spreadsheet into the knowledge base.
-    Each row is ingested as a separate document for better granularity.
+    Ingest data from a Google Spreadsheet into the knowledge base (Two-step staging gate).
+    Requires explicit approval_token='APPROVED' to embed into pgvector.
+    Namespace 'default' is strictly prohibited.
     """
     try:
+        ns = (namespace or "").strip()
+        if not ns or ns.lower() == "default":
+            return json.dumps({
+                "success": False,
+                "error": "AKSES DITOLAK: Namespace 'default' dilarang keras sesuai Zero-Leakage Policy (Invariant #7). Gunakan namespace identitas resmi 'puu:{domain}:{agent}' atau 'shared_*'."
+            }, indent=2)
+
         client = get_google_client()
         sheets = client.sheets
         
@@ -113,6 +178,17 @@ async def knowledge_ingest_googlesheet(spreadsheet_id: str, range_name: str, nam
             return json.dumps({"success": False, "error": "No data found in sheet (need at least header and one data row)"})
 
         headers = values[0]
+
+        if approval_token != "APPROVED":
+            return json.dumps({
+                "success": False,
+                "status": "STAGING_PENDING_APPROVAL",
+                "spreadsheet_id": spreadsheet_id,
+                "namespace": ns,
+                "row_count": len(values) - 1,
+                "headers": headers,
+                "message": "Data Google Sheet ditahan di staging buffer. DILARANG meng-embed ke pgvector tanpa konfirmasi eksplisit pengguna di chat. Tampilkan pratinjau ini ke pengguna, minta persetujuan, lalu panggil kembali dengan parameter approval_token='APPROVED' jika disetujui."
+            }, indent=2)
         rag = await get_rag_engine()
         ingested_count = 0
         
