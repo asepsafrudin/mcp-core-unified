@@ -33,7 +33,7 @@ class DoctrUniversalAdapter:
                 if len(reader.pages) > 5:
                     is_large_pdf = True
                     num_pages = len(reader.pages)
-            except Exception as e:
+            except Exception:
                 pass # fallback to normal
                 
         if is_large_pdf:
@@ -80,7 +80,7 @@ class DoctrUniversalAdapter:
             with open(file_path, "rb") as f:
                 files = {"file": (os.path.basename(file_path), f)}
                 data = {"mode": mode}
-                response = requests.post(f"{self.base_url}/extract", files=files, data=data)
+                response = requests.post(f"{self.base_url}/extract", files=files, data=data, timeout=30)
             
             response.raise_for_status()
             result = response.json()
@@ -91,9 +91,49 @@ class DoctrUniversalAdapter:
                 raise Exception(f"API returned error: {result}")
         except Exception as e:
             try:
-                logger.error("doctr_api_call_failed", file=file_path, mode=mode, error=str(e))
+                logger.warning("doctr_api_call_failed_trying_inprocess", file=file_path, mode=mode, error=str(e))
             except TypeError:
                 pass
+            return self._run_inprocess_fallback(file_path, mode, original_error=e)
+
+    def _run_inprocess_fallback(self, file_path: str, mode: str, original_error: Exception = None):
+        """Fallback ke python-doctr in-process jika HTTP daemon :8090 sedang tidak aktif."""
+        try:
+            from doctr.io import DocumentFile
+            from doctr.models import ocr_predictor
+            if not hasattr(self, "_predictor") or self._predictor is None:
+                self._predictor = ocr_predictor(pretrained=True)
+
+            if file_path.lower().endswith(".pdf"):
+                doc = DocumentFile.from_pdf(file_path)
+            else:
+                doc = DocumentFile.from_images(file_path)
+
+            res = self._predictor(doc)
+            if mode == "geometry":
+                items = []
+                for page in res.pages:
+                    h, w = page.dimensions
+                    for block in page.blocks:
+                        for line in block.lines:
+                            line_text = " ".join(word.value for word in line.words)
+                            avg_conf = (
+                                sum(word.confidence for word in line.words) / len(line.words)
+                                if line.words else 0.9
+                            )
+                            (xmin, ymin), (xmax, ymax) = line.geometry
+                            box = [
+                                [int(xmin * w), int(ymin * h)],
+                                [int(xmax * w), int(ymin * h)],
+                                [int(xmax * w), int(ymax * h)],
+                                [int(xmin * w), int(ymax * h)],
+                            ]
+                            items.append({"text": line_text, "confidence": float(avg_conf), "box": box})
+                return items
+            return res.render()
+        except Exception:
+            if original_error is not None:
+                raise original_error
             raise
 
     def extract_flat_text(self, file_path: str) -> str:

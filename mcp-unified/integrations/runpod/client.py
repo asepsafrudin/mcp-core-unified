@@ -19,16 +19,42 @@ class RunPodClient:
     """Async Client for RunPod Serverless v2 REST API."""
 
     def __init__(self, api_key: Optional[str] = None):
+        self._ensure_cloud_env_loaded()
         self.api_key = api_key or os.getenv("RUNPOD_API_KEY", "").strip()
+
+    @staticmethod
+    def _ensure_cloud_env_loaded() -> None:
+        if os.getenv("RUNPOD_VLLM_API_KEY") and os.getenv("RUNPOD_API_KEY"):
+            return
+        try:
+            from pathlib import Path
+            from dotenv import load_dotenv
+            env_dir = Path("/home/aseps/MCP/config/env")
+            for name in (".env.workspace", ".env.cloud"):
+                p = env_dir / name
+                if p.exists():
+                    load_dotenv(p, override=False)
+        except Exception:
+            pass
 
     def _get_headers(
         self, custom_key: Optional[str] = None, endpoint_id: Optional[str] = None
     ) -> Dict[str, str]:
-        heavy_ep = os.getenv("RUNPOD_HEAVY_OCR_ENDPOINT_ID", "lhpduw3m4ro1w1").strip()
+        self._ensure_cloud_env_loaded()
+        heavy_ep = (os.getenv("RUNPOD_HEAVY_OCR_ENDPOINT_ID") or "lhpduw3m4ro1w1").strip()
+        vllm_vis_ep = (os.getenv("RUNPOD_VLLM_VISION_ENDPOINT_ID") or "qi2tml56v6cf1p").strip()
+        vllm_txt_ep = (os.getenv("RUNPOD_VLLM_TEXT_ENDPOINT_ID") or "m1arai9rnwwau7").strip()
         ep = (endpoint_id or "").strip()
 
         if custom_key:
             key = custom_key.strip()
+        elif ep and ep in (vllm_vis_ep, vllm_txt_ep):
+            key = (
+                os.getenv("RUNPOD_VLLM_API_KEY")
+                or os.getenv("RUNPOD_ENDPOINT_API_KEY_vLLM_v2")
+                or os.getenv("RUNPOD_ENDPOINT_API_KEY_vLLM_v25")
+                or os.getenv("RUNPOD_API_KEY", "")
+            ).strip()
         elif ep and ep == heavy_ep:
             key = (
                 os.getenv("RUNPOD_HEAVY_OCR_API_KEY")
@@ -39,6 +65,7 @@ class RunPodClient:
             key = (
                 self.api_key
                 or os.getenv("RUNPOD_API_KEY", "")
+                or os.getenv("RUNPOD_VLLM_API_KEY", "")
                 or os.getenv("RUNPOD_HEAVY_OCR_API_KEY", "")
                 or os.getenv("RUNPOD_API_KEY_SURYA_OCR", "")
             ).strip()

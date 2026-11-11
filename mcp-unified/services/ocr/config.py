@@ -6,10 +6,15 @@ GOOGLE_VISION_ENABLED = os.getenv("GOOGLE_VISION_ENABLED", "true").lower() == "t
 GOOGLE_VISION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # Fallback ke path spesifik jika env tidak diset secara eksplisit
-if not GOOGLE_VISION_CREDENTIALS:
-    creds_dir = os.getenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH", "/home/aseps/MCP/config/credentials/google")
+if not GOOGLE_VISION_CREDENTIALS or not Path(GOOGLE_VISION_CREDENTIALS).exists():
+    creds_dir = Path(os.getenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH", "/home/aseps/MCP/config/credentials/google"))
     creds_file = os.getenv("GOOGLE_WORKSPACE_SERVICE_ACCOUNT_FILE", "mcp-gmail-482015-682b788ee191.json")
-    GOOGLE_VISION_CREDENTIALS = str(Path(creds_dir) / creds_file)
+    candidate = creds_dir / creds_file
+    if not candidate.exists():
+        alt_candidate = creds_dir / "asepsafrudin" / "sa-new-mcp-unified.json"
+        if alt_candidate.exists():
+            candidate = alt_candidate
+    GOOGLE_VISION_CREDENTIALS = str(candidate)
 
 # docTR Configuration (Unified OCR)
 DOCTR_ENABLED = os.getenv("DOCTR_ENABLED", "true").lower() == "true"

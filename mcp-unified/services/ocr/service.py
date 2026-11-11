@@ -1,6 +1,5 @@
 # service.py
 import threading
-import tempfile
 import os
 import sys
 import json
@@ -117,45 +116,72 @@ class OCREngine:
         self, image_path: str, prompt: str, mode: str = "vision", model: str = None
     ) -> dict:
         """
-        Execute visual OCR and reasoning using remote Ollama VLM (MiniCPM-V 8B).
+        Execute visual OCR and reasoning using Cloud-First VLM (RunPod Qwen2.5-VL -> OpenRouter Gemini 2.5 Flash)
+        with fallback to remote/local Ollama VLM.
         """
         from .config import VISION_VLM_MODEL, VISION_VLM_TIMEOUT, get_ollama_base_url
-        
-        target_model = model or VISION_VLM_MODEL
-        base_url = get_ollama_base_url()
-        endpoint = f"{base_url}/api/generate"
-        
+
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"File gambar tidak ditemukan: {image_path}")
-            
+
         with open(image_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            
+
+        t0 = time.time()
+        target_model = model or VISION_VLM_MODEL
+        base_url = get_ollama_base_url()
+
+        # Sesuai Protokol §13 (Cloud-First): jika base_url adalah localhost (bukan remote GPU Colab),
+        # prioritaskan VLLMVisionProcessor (RunPod vLLM -> OpenRouter Gemini 2.5 Flash) agar tidak membebani CPU lokal.
+        if "localhost" in base_url or "127.0.0.1" in base_url:
+            try:
+                from integrations.runpod.vllm_vision import VLLMVisionProcessor
+                proc = VLLMVisionProcessor()
+                response_text = proc._call_openrouter_vision_sync(img_b64, prompt, timeout=min(VISION_VLM_TIMEOUT, 45)).strip()
+                elapsed = round(time.time() - t0, 3)
+                lines = [
+                    {"text": line_str.strip(), "score": 0.99, "bbox": []}
+                    for line_str in response_text.split("\n")
+                    if line_str.strip()
+                ]
+                return {
+                    "status": "success",
+                    "full_text": response_text,
+                    "mode_requested": mode,
+                    "engine": f"vlm_cloud_{proc.last_provider_used}",
+                    "elapsed_seconds": elapsed,
+                    "lines": lines,
+                    "refined_data": {"vlm_raw_response": response_text},
+                    "nlp_quality": {"avg_confidence": 0.99, "corrected_lines": 0, "quality_score": 0.99},
+                }
+            except Exception as cloud_err:
+                logger.warning(f"Cloud VLM fallback skipped ({cloud_err}), trying Ollama VLM...")
+
+        endpoint = f"{base_url}/api/generate"
         payload = {
             "model": target_model,
             "prompt": prompt,
             "images": [img_b64],
             "stream": False,
         }
-        
-        t0 = time.time()
+
         req = urllib.request.Request(
             endpoint,
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
-        
+
         with urllib.request.urlopen(req, timeout=VISION_VLM_TIMEOUT) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             elapsed = round(time.time() - t0, 3)
             response_text = data.get("response", "").strip()
-            
+
             lines = [
-                {"text": l.strip(), "score": 0.99, "bbox": []}
-                for l in response_text.split("\n")
-                if l.strip()
+                {"text": line_str.strip(), "score": 0.99, "bbox": []}
+                for line_str in response_text.split("\n")
+                if line_str.strip()
             ]
-            
+
             return {
                 "status": "success",
                 "full_text": response_text,
@@ -255,11 +281,8 @@ class OCREngine:
             # Use document_text_detection for structured/deep mode to get rich layout data
             if mode in ["structured", "deep"]:
                 response = client.document_text_detection(image=image)
-                # Store full raw response for downstream spatial analysis
-                raw_response = response
             else:
                 response = client.text_detection(image=image)
-                raw_response = response
                 
             annotations = response.text_annotations
             
@@ -273,7 +296,8 @@ class OCREngine:
                 
             result = self._format_ocr_result(formatted_lines)
             result["mode_requested"] = mode
-            result["raw_response"] = raw_response # Pass the rich object
+            result["engine"] = "google_vision"
+            result["raw_annotations_count"] = len(annotations)
             
             # B. SEMANTIC REFINEMENT & STRUCTURED EXTRACTION (Penghematan Token)
             from .config import SEMANTIC_REFINER_CONFIG
@@ -335,7 +359,8 @@ class OCREngine:
         
         try:
             adapter = self.get_ocr()
-            if not adapter: return {"status": "error", "message": "docTR Engine not initialized"}
+            if not adapter:
+                return {"status": "error", "message": "docTR Engine not initialized"}
             
             # Extract absolute geometry to maintain compatibility with _format_ocr_result
             raw_items = adapter.extract_absolute_geometry(clean_path)
@@ -386,18 +411,21 @@ class OCREngine:
         all_confidences = []
 
         for line in raw:
-            if not isinstance(line, list) or len(line) < 2: continue
+            if not isinstance(line, list) or len(line) < 2:
+                continue
             poly = line[0]
             text_info = line[1]
-            if not isinstance(text_info, (tuple, list)) or len(text_info) < 2: continue
+            if not isinstance(text_info, (tuple, list)) or len(text_info) < 2:
+                continue
             text = text_info[0]
             score = float(text_info[1])
             corrected_text = nlp.normalize(text)
-            if corrected_text != text: corrected_count += 1
+            if corrected_text != text:
+                corrected_count += 1
             lines.append({"text": corrected_text, "score": score, "bbox": poly, "original_text": text})
             all_confidences.append(score)
 
-        all_text = "\n".join([str(l["text"]) for l in lines])
+        all_text = "\n".join([str(item["text"]) for item in lines])
         avg_conf = sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
         quality_score = avg_conf * (1.0 - (corrected_count / max(len(lines), 1) * 0.2))
 

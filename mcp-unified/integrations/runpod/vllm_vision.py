@@ -6,7 +6,6 @@ for government letters, legal documents, and multi-page PDFs.
 from __future__ import annotations
 
 import os
-import io
 import time
 import base64
 import asyncio
@@ -29,6 +28,8 @@ class VLLMVisionProcessor:
         api_key: Optional[str] = None,
         model_name: Optional[str] = None,
     ):
+        from .client import RunPodClient
+        RunPodClient._ensure_cloud_env_loaded()
         self.endpoint_id = (
             endpoint_id
             or os.getenv("RUNPOD_VLLM_VISION_ENDPOINT_ID")
@@ -37,6 +38,7 @@ class VLLMVisionProcessor:
         self.api_key = (
             api_key
             or os.getenv("RUNPOD_VLLM_API_KEY")
+            or os.getenv("RUNPOD_ENDPOINT_API_KEY_vLLM_v2")
             or os.getenv("llm-vllm-key")
             or os.getenv("RUNPOD_API_KEY", "")
         ).strip()
@@ -46,6 +48,92 @@ class VLLMVisionProcessor:
             or "qwen/qwen2.5-vl-7b-instruct"
         ).strip()
         self.api_url = f"https://api.runpod.ai/v2/{self.endpoint_id}/openai/v1/chat/completions"
+        self.last_provider_used: str = "runpod_vllm"
+
+    def _is_endpoint_throttled_or_unavailable(self) -> bool:
+        """Fast pre-check (3s) to detect if RunPod GPU worker is throttled with 0 ready workers."""
+        if not self.api_key:
+            return True
+        try:
+            r = requests.get(
+                f"https://api.runpod.ai/v2/{self.endpoint_id}/health",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=4,
+            )
+            if r.status_code != 200:
+                return True
+            w = r.json().get("workers", {})
+            if w.get("ready", 0) == 0 and w.get("idle", 0) == 0 and w.get("running", 0) == 0 and w.get("throttled", 0) > 0:
+                logger.warning(
+                    f"RunPod vLLM endpoint {self.endpoint_id} is throttled (workers={w}); failing over to cloud VLM."
+                )
+                return True
+            return False
+        except Exception:
+            return True
+
+    def _call_openrouter_vision_sync(self, image_base64: str, prompt: str, timeout: int = 45) -> str:
+        """Fallback cloud VLM via OpenRouter (google/gemini-2.5-flash) or Google Cloud Vision."""
+        or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        if not or_key:
+            try:
+                from dotenv import load_dotenv
+                for name in (".env.ai", ".env.workspace", ".env.core"):
+                    p = Path("/home/aseps/MCP/config/env") / name
+                    if p.exists():
+                        load_dotenv(p, override=False)
+                or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+            except Exception:
+                pass
+
+        if or_key:
+            or_model = os.getenv("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")
+            resp = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {or_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": or_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                                },
+                            ],
+                        }
+                    ],
+                    "max_tokens": 3000,
+                    "temperature": 0.1,
+                },
+                timeout=timeout,
+            )
+            if resp.status_code == 200:
+                self.last_provider_used = f"openrouter:{or_model}"
+                return resp.json()["choices"][0]["message"]["content"]
+
+        # Tier 3 fallback: RunPod OCR Worker (s1dfdtqol2p7ix)
+        ocr_ep = os.getenv("RUNPOD_OCR_ENDPOINT_ID", "s1dfdtqol2p7ix").strip()
+        ocr_key = (os.getenv("RUNPOD_API_KEY") or self.api_key).strip()
+        if ocr_ep and ocr_key:
+            r_ocr = requests.post(
+                f"https://api.runpod.ai/v2/{ocr_ep}/runsync",
+                headers={"Authorization": f"Bearer {ocr_key}", "Content-Type": "application/json"},
+                json={"input": {"image": image_base64}},
+                timeout=timeout,
+            )
+            if r_ocr.status_code == 200:
+                out = r_ocr.json().get("output", {})
+                if isinstance(out, dict) and out.get("raw_text"):
+                    self.last_provider_used = f"runpod_ocr:{ocr_ep}"
+                    return out["raw_text"]
+
+        raise RuntimeError("RunPod vLLM Vision serta fallback OpenRouter/RunPod OCR gagal dieksekusi.")
 
     def _extract_page_image_base64(self, page: fitz.Page, dpi: int = 150) -> str:
         """Render a PyMuPDF PDF page to base64 PNG."""
@@ -93,17 +181,20 @@ class VLLMVisionProcessor:
         }
 
         loop = asyncio.get_running_loop()
-        
-        def _request():
-            return requests.post(self.api_url, headers=headers, json=payload, timeout=timeout)
 
-        resp = await loop.run_in_executor(None, _request)
+        def _request_with_fallback() -> str:
+            if not self._is_endpoint_throttled_or_unavailable():
+                try:
+                    resp = requests.post(self.api_url, headers=headers, json=payload, timeout=min(timeout, 12))
+                    if resp.status_code == 200:
+                        self.last_provider_used = f"runpod_vllm:{self.endpoint_id}"
+                        return resp.json()["choices"][0]["message"]["content"]
+                    logger.warning(f"RunPod vLLM returned {resp.status_code}, failing over to OpenRouter/OCR.")
+                except Exception as exc:
+                    logger.warning(f"RunPod vLLM request error ({exc}), failing over to OpenRouter/OCR.")
+            return self._call_openrouter_vision_sync(image_base64, prompt, timeout=min(timeout, 45))
 
-        if resp.status_code != 200:
-            raise RuntimeError(f"vLLM Vision request failed ({resp.status_code}): {resp.text}")
-
-        res_json = resp.json()
-        return res_json["choices"][0]["message"]["content"]
+        return await loop.run_in_executor(None, _request_with_fallback)
 
     async def _call_vllm_vision_with_confidence(
         self,
@@ -167,17 +258,19 @@ class VLLMVisionProcessor:
         }
 
         loop = asyncio.get_running_loop()
-        
-        def _request():
-            return requests.post(self.api_url, headers=headers, json=payload, timeout=timeout)
 
-        resp = await loop.run_in_executor(None, _request)
+        def _request_conf_with_fallback() -> str:
+            if not self._is_endpoint_throttled_or_unavailable():
+                try:
+                    resp = requests.post(self.api_url, headers=headers, json=payload, timeout=min(timeout, 35))
+                    if resp.status_code == 200:
+                        self.last_provider_used = f"runpod_vllm:{self.endpoint_id}"
+                        return resp.json()["choices"][0]["message"]["content"]
+                except Exception as exc:
+                    logger.warning(f"RunPod vLLM confidence request error ({exc}), failing over.")
+            return self._call_openrouter_vision_sync(image_base64, prompt, timeout=min(timeout, 45))
 
-        if resp.status_code != 200:
-            raise RuntimeError(f"vLLM Vision request failed ({resp.status_code}): {resp.text}")
-
-        res_json = resp.json()
-        raw_response = res_json["choices"][0]["message"]["content"]
+        raw_response = await loop.run_in_executor(None, _request_conf_with_fallback)
         
         # Parse confidence score from response
         confidence = 0.5  # default

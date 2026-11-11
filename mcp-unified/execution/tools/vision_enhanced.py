@@ -1,4 +1,3 @@
-import os
 """
 Enhanced Vision Tools — Extended capabilities for MCP Vision System
 
@@ -20,6 +19,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -827,7 +827,7 @@ OCR Text Extraction:
                 success=True,
                 content=combined_content,
                 confidence=avg_confidence,
-                model=os.getenv("MODEL", "hybrid_vision_google_ocr" if not os.getenv("CI") else "DUMMY"),
+                model="hybrid_vision_google_ocr",
                 processing_time=vision_result.processing_time,
                 image_path=image_path,
                 metadata={
