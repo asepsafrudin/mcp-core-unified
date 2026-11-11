@@ -5,7 +5,19 @@ import requests
 import base64
 from urllib.parse import urlencode
 from dotenv import load_dotenv
-from scripts.load_env import load_env
+
+try:
+    from scripts.load_env import load_env
+except ImportError:
+    import sys
+    from pathlib import Path
+    _mcp_root = Path(__file__).resolve().parent.parent.parent.parent
+    if str(_mcp_root) not in sys.path:
+        sys.path.insert(0, str(_mcp_root))
+    try:
+        from scripts.load_env import load_env
+    except ImportError:
+        def load_env(): pass
 
 TOKEN_PATH = "/home/aseps/MCP/config/credentials/canva/token.json"
 
