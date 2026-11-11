@@ -66,10 +66,11 @@ class DynamicMCPRegistry:
         if profile in ("legal", "legal_full"):
             allowed = [
                 "query_db", "describe_table", "knowledge_search",
-                "ocr_extract_text", "ocr_parse_document", "legal_evaluate_doctrine",
-                "legal_ast_parse", "legal_lint_editorial", "legal_transform_clause",
-                "legal_disposition_matrix", "legal_verify_hierarchy", "legal_verify_jurisdiction",
-                "legal_mandate_check", "legal_governance_loop",
+                "ocr_extract_text", "ocr_parse_document", "universal_document_extract",
+                "universal_document_triage", "read_file", "vane_legal_search", "vane_search",
+                "legal_evaluate_doctrine", "legal_ast_parse", "legal_lint_editorial",
+                "legal_transform_clause", "legal_disposition_matrix", "legal_verify_hierarchy",
+                "legal_verify_jurisdiction", "legal_mandate_check", "legal_governance_loop",
                 "legal_deontic_verify", "legal_anatomy_validate", "legal_naskah_akademik_generate",
                 "legal_harmonization_matrix", "legal_opinion_irac", "legal_contract_vetting",
                 "legal_litigation_advocacy"
@@ -77,7 +78,8 @@ class DynamicMCPRegistry:
             return [self.get_unified_stdio_tool(allowed_tools=allowed)]
         elif profile == "legal_drafting":
             allowed = [
-                "query_db", "knowledge_search", "legal_ast_parse", "legal_lint_editorial",
+                "query_db", "knowledge_search", "universal_document_extract", "read_file",
+                "legal_ast_parse", "legal_lint_editorial",
                 "legal_transform_clause", "legal_disposition_matrix", "legal_verify_hierarchy",
                 "legal_deontic_verify", "legal_anatomy_validate", "legal_naskah_akademik_generate",
                 "legal_harmonization_matrix"
@@ -85,7 +87,8 @@ class DynamicMCPRegistry:
             return [self.get_unified_stdio_tool(allowed_tools=allowed)]
         elif profile == "legal_counsel":
             allowed = [
-                "query_db", "knowledge_search", "legal_evaluate_doctrine", "legal_verify_jurisdiction",
+                "query_db", "knowledge_search", "universal_document_extract", "read_file",
+                "vane_legal_search", "legal_evaluate_doctrine", "legal_verify_jurisdiction",
                 "legal_mandate_check", "legal_opinion_irac", "legal_contract_vetting",
                 "legal_litigation_advocacy"
             ]

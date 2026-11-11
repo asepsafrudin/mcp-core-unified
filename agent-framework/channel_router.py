@@ -385,9 +385,25 @@ class MultiChannelRouter:
             agent = build_specialist_agent("coding")
 
         else:
+            # Kurasi tools dinamis berdasarkan track / persona wewenang ASN (Kategori A & J)
+            agent_tools: list[Any] = []
+            try:
+                from core.agent_framework.mcp_registry import DynamicMCPRegistry
+                mcp_reg = DynamicMCPRegistry()
+                if resolved_track == "TRACK_A_PERANCANG":
+                    agent_tools = mcp_reg.get_tools_for_profile("legal_drafting")
+                elif resolved_track == "TRACK_B_ANALIS":
+                    agent_tools = mcp_reg.get_tools_for_profile("legal_counsel")
+                elif resolved_persona or user_meta.get("media_path"):
+                    agent_tools = mcp_reg.get_tools_for_profile("legal")
+            except Exception as mcp_err:
+                logger.warning(f"[MAF Router] Gagal memuat tools MCP untuk agent: {mcp_err}")
+                agent_tools = []
+
             agent = ModelClientFactory.create_agent(
                 name=f"Unified_{resolved_persona or 'ChannelAgent'}",
                 instructions=dynamic_instructions,
+                tools=agent_tools,
                 model_name=model_name,
             )
 
