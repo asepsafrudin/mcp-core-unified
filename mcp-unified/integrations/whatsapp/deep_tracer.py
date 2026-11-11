@@ -8,12 +8,18 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 
-# gpt-4o-mini official pricing per 1M tokens (2025-2026 standard)
+# Official pricing per 1M tokens (2025-2026 standard)
 PRICING_PER_MILLION = {
-    "gpt-4o-mini": {
-        "prompt": 0.150,      # $0.150 per 1M prompt tokens
-        "completion": 0.600    # $0.600 per 1M completion tokens
-    },
+    "gpt-4o-mini": {"prompt": 0.150, "completion": 0.600},
+    "openai/gpt-4o-mini": {"prompt": 0.150, "completion": 0.600},
+    "gpt-4o": {"prompt": 2.500, "completion": 10.000},
+    "openai/gpt-4o": {"prompt": 2.500, "completion": 10.000},
+    "deepseek-chat": {"prompt": 0.270, "completion": 1.100},
+    "deepseek-reasoner": {"prompt": 0.550, "completion": 2.190},
+    "deepseek/deepseek-chat-v3-0324": {"prompt": 0.270, "completion": 1.100},
+    "google/gemini-2.5-flash": {"prompt": 0.150, "completion": 0.600},
+    "openai/gpt-oss-120b": {"prompt": 0.150, "completion": 0.600},
+    "qwen/qwen3.6-27b": {"prompt": 0.100, "completion": 0.300},
     "default": {
         "prompt": 0.150,
         "completion": 0.600
@@ -59,18 +65,20 @@ class TokenUsage:
 
 @dataclass
 class LatencyBreakdown:
-    """Pemecahan latensi per komponen pipeline SATRIA."""
+    """Pemecahan latensi per komponen pipeline SATRIA (termasuk metrik cache TASK-160)."""
     classification_ms: float = 0.0
     retrieval_ms: float = 0.0
     llm_inference_ms: float = 0.0
     total_response_ms: float = 0.0
+    cache_hit: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "classification_ms": round(self.classification_ms, 2),
             "retrieval_ms": round(self.retrieval_ms, 2),
             "llm_inference_ms": round(self.llm_inference_ms, 2),
-            "total_response_ms": round(self.total_response_ms, 2)
+            "total_response_ms": round(self.total_response_ms, 2),
+            "cache_hit": self.cache_hit
         }
 
 

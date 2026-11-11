@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 
 def _clean_and_format_reply(
     user: Dict[str, Any], 
@@ -14,22 +14,16 @@ def _clean_and_format_reply(
     """
     cleaned = text.strip()
 
-    # 1. Bersihkan semua variasi header yang mungkin dicetak model
+    # 1. Bersihkan header kaku yang mungkin dicetak model (mis. 🏛️ PENDAPAT RESMI...)
     header_pattern = r"(?:[🏛📮📄📋📚💡🛠️⚙️⚖️]\s*\*?[^\n]*(?:PENDAPAT|SATRIA|LAPORAN|TELAAH|ASISTEN|ADMINISTRASI|PERSURATAN|DATA RESMI|INFORMASI|RESUME|KESIMPULAN)[^\n]*\n+[━─=-—]+\n*)+"
     cleaned = re.sub(header_pattern, "", cleaned, flags=re.IGNORECASE).strip()
 
-    # 2. Bersihkan SEMUA baris sapaan di awal (Yth..., Selamat pagi/siang..., Halo..., Salam...)
-    salutation_pattern = r"^(?:(?:Yth\.|Selamat\s+(?:pagi|siang|sore|malam)|Halo|Salam\s+hangat|Salam\s+hormat)[^\n]*\n*)+"
-    cleaned = re.sub(salutation_pattern, "", cleaned, flags=re.IGNORECASE).strip()
+    # TASK-304: Hanya bersihkan sapaan kaku birokratis ekstrim (Yth. Bapak/Ibu...), 
+    # tetapi TETAP PERTAHANKAN sapaan ramah manusiawi (Halo, Selamat pagi, Siap Pak, dll)
+    formal_salutation_pattern = r"^(?:Yth\.\s*(?:Bapak|Ibu|Bpk|Sdr)[^\n]*\n*)+"
+    cleaned = re.sub(formal_salutation_pattern, "", cleaned, flags=re.IGNORECASE).strip()
 
-    # 3. Bersihkan kalimat filler pengantar model di awal pesan
-    filler_pattern = r"^(?:Baik,?\s*(?:saya|kami|Pak|Ibu|Bapak|Bapak/Ibu)?\s+[^\n]*\n*)+"
-    cleaned = re.sub(filler_pattern, "", cleaned, flags=re.IGNORECASE).strip()
-
-    # 4. Bersihkan sapaan lagi jika muncul setelah filler
-    cleaned = re.sub(salutation_pattern, "", cleaned, flags=re.IGNORECASE).strip()
-
-    # 5. Bersihkan pemisah horizontal yang menggantung di paling awal teks
+    # Bersihkan pemisah horizontal yang menggantung di paling awal teks
     cleaned = re.sub(r"^(?:[-—─=━]{3,}\n*)+", "", cleaned).strip()
 
     user_name = user.get("full_name") or "Bapak/Ibu"
@@ -45,32 +39,89 @@ def _clean_and_format_reply(
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"Yth. Bapak/Ibu *{user_name}*,\n\n"
             )
-        else:
+        elif persona == "legal_madya":
             header = (
                 f"🏛️ *RESUME & KESIMPULAN — SATRIA AHLI MADYA BANGDA*\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"Yth. Bapak/Ibu *{user_name}*,\n\n"
             )
+        else:
+            header = (
+                f"📋 *RINGKASAN CATATAN — SATRIA*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Yth. *{user_name}*,\n\n"
+            )
         return header + cleaned
     else:
-        # Mode Interaksi Berjalan (Ongoing): Langsung ke substansi + Footer inisial minimalis
-        if persona == "admin_persuratan":
-            footer = "\n\n_— 📮 SATRIA Persuratan Bangda_"
-        elif persona == "system":
-            footer = "\n\n_— ⚙️ SATRIA System_"
-        else:
-            footer = "\n\n_— 🏛️ SATRIA Ahli Madya_"
-
-        # Pastikan tidak ada double footer jika model sudah mencetak footer serupa di akhir
+        # Mode Interaksi Berjalan (Ongoing):
+        # TASK-304: Untuk personal_assistant, biarkan percakapan bersih & organik tanpa footer kaku atau survey spam
         cleaned = re.sub(r"\n*(?:_|\b)[-—─\s🏛📮⚙️]*SATRIA[^\n_]*_?\s*$", "", cleaned, flags=re.IGNORECASE).strip()
 
-        # TASK-162: Tambahkan mekanisme feedback jempol (👍/👎) pada akhir pesan
-        feedback_prompt = "\n\n_Apakah respons ini membantu? Balas 👍 atau 👎_"
-        return cleaned + footer + feedback_prompt
+        if persona == "admin_persuratan":
+            footer = "\n\n_— 📮 SATRIA Persuratan_"
+            return cleaned + footer
+        elif persona == "legal_madya":
+            footer = "\n\n_— 🏛️ SATRIA Ahli Madya_"
+            feedback_prompt = "\n_Apakah kajian ini membantu? Balas 👍 atau 👎_"
+            return cleaned + footer + "\n" + feedback_prompt
+        elif persona == "system":
+            footer = "\n\n_— ⚙️ SATRIA System_"
+            return cleaned + footer
+        else:
+            # persona == "personal_assistant": Bersih, natural, tanpa footer robotik!
+            return cleaned
 
-def _is_summary_or_wrapup_request(text: str) -> bool:
+def check_and_generate_overflow_document(
+    user: Dict[str, Any],
+    text: str,
+    title: Optional[str] = None,
+    category: str = "Catatan Kedinasan"
+) -> Tuple[str, Optional[str]]:
+    """
+    TASK-304 Subtask 304-C:
+    Memeriksa apakah balasan melebihi batas nyaman chat WhatsApp (> 2.500 karakter atau tabel kompleks).
+    Jika ya:
+    1. Hasilkan file HTML editorial bersih anti-slop di storage/reports/whatsapp_previews/.
+    2. Kembalikan (ringkasan_chat, file_path_html).
+    Jika tidak:
+    Kembalikan (text_asli, None).
+    """
+    if len(text) < 2500 and not ("| ---" in text or "|:---" in text):
+        return text, None
+
+    from integrations.whatsapp.handlers.document_generator import generate_editorial_html_document
+
+    doc_title = title or "Dokumen Catatan & Telaahan Lengkap"
+    doc_id, file_path = generate_editorial_html_document(
+        title=doc_title,
+        content_markdown=text,
+        category=category
+    )
+
+    # Buat intisari chat ringkas untuk WhatsApp
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    brief_paragraphs = []
+    total_len = 0
+    for p in paragraphs:
+        if total_len + len(p) > 1200:
+            break
+        brief_paragraphs.append(p)
+        total_len += len(p)
+
+    summary_text = "\n\n".join(brief_paragraphs) if brief_paragraphs else text[:800]
+    
+    notice = (
+        f"\n\n📄 *Dokumen Lengkap Tersedia*\n"
+        f"Uraian lengkap serta tabel terstruktur telah saya susun rapi dalam dokumen ringkas:\n"
+        f"📎 *Berkas:* `{file_path.name}`\n"
+        f"_(File dokumen HTML terlampir untuk dibaca atau dicetak secara utuh)_"
+    )
+
+    return summary_text + notice, str(file_path)
+
+def _is_summary_or_wrapup_request(text: str, intent: str = None, **kwargs) -> bool:
     """Deteksi jika pengguna meminta ringkasan, kesimpulan, atau ingin menutup sesi."""
-    t_lower = text.lower()
+    t_lower = (text or "").lower()
     wrapup_keywords = [
         "kesimpulan", "resume", "simpulkan", "ringkasan", "rangkuman",
         "rekapitulasi", "rekap", "cukup sekian", "terima kasih satria",

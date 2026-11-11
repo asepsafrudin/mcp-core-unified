@@ -26,13 +26,16 @@ class DynamicMCPRegistry:
 
     def get_unified_stdio_tool(self, allowed_tools: Optional[List[str]] = None) -> MCPStdioTool:
         """Create an MCPStdioTool instance connected to core/mcp-unified."""
-        server_script = str(self.repo_root / "core" / "mcp-unified" / "mcp_server.py")
+        launcher = self.repo_root / "scripts" / "run_mcp_unified_stdio.py"
+        server_script = launcher if launcher.exists() else (
+            self.repo_root / "core" / "mcp-unified" / "mcp_server.py"
+        )
         env = dict(os.environ)
 
         tool = MCPStdioTool(
             name="mcp-unified",
             command=self.python_bin,
-            args=[server_script, "--stdio"],
+            args=[str(server_script), "--stdio"],
             env=env,
             allowed_tools=allowed_tools,
             description="Universal MCP toolset for database, memory, search, and document tasks",
@@ -56,6 +59,7 @@ class DynamicMCPRegistry:
         Profiles:
             - 'legal': Database, knowledge search, legal doctrine evaluator
             - 'coding': Filesystem, bash runner, symbol search, git
+            - 'gdrive-index': Drive/OCR/index generator + filesystem edit
             - 'admin': Memory, scheduler, status, database
             - 'full': All tools available
         """
@@ -89,6 +93,16 @@ class DynamicMCPRegistry:
         elif profile == "coding":
             allowed = [
                 "memory_search", "memory_save", "query_db"
+            ]
+            return [self.get_unified_stdio_tool(allowed_tools=allowed)]
+        elif profile in ("gdrive-index", "gdrive_index", "gdrive"):
+            allowed = [
+                "list_dir", "read_file", "write_file", "edit_file_patch",
+                "script_pipeline_run", "run_tests", "build_and_lint",
+                "runpod_ocr_process", "runpod_process_heavy_document",
+                "runpod_vllm_vision_process", "ocr_parse_document",
+                "agent_remember", "agent_recall", "query_db", "memory_search",
+                "gdrive_list_files", "gdrive_get_file_info", "gdrive_download_file",
             ]
             return [self.get_unified_stdio_tool(allowed_tools=allowed)]
         elif profile == "admin":

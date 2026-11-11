@@ -103,6 +103,20 @@ def build_specialist_agent(
         tools = registry.get_tools_for_profile("coding")
         name = "MAFCodeSpecialistAgent"
 
+    elif agent_type in ("gdrive", "gdrive-index", "gdrive_index"):
+        instructions = (
+            "Anda adalah GDrive Index Specialist di ekosistem MCP Unified. "
+            "Tugas Anda memperbarui indeks peraturan/kebijakan pada README folder "
+            "Dokumentasi Produk Hukum dan Kebijakan. "
+            "Gunakan script_pipeline_run untuk menjalankan "
+            "/home/aseps/MCP/scripts/run_gdrive_index.py; jangan memakai run_shell. "
+            "Jalankan mode --dry-run lebih dahulu, lalu tanpa --dry-run setelah hasilnya sesuai. "
+            "Jangan mengedit README secara manual: biarkan generator menulis blok indeks. "
+            "Verifikasi tree tetap utuh, jumlah baris indeks benar, dan laporan validasi tersedia."
+        )
+        tools = registry.get_tools_for_profile("gdrive-index")
+        name = "GDriveIndexAgent"
+
     else:
         instructions = "Anda adalah General Assistant di ekosistem MCP Unified."
         tools = registry.get_tools_for_profile("full")
@@ -136,7 +150,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="MAF Bidirectional MCP Agent Server")
     parser.add_argument(
         "--agent",
-        choices=["legal", "memory", "coding", "general"],
+        choices=["legal", "memory", "coding", "general", "gdrive"],
         default="legal",
         help="Specialist agent type to expose as MCP server",
     )

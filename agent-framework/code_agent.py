@@ -46,10 +46,12 @@ class MAFCodeAgent:
         workspace_dir: Optional[Path] = None,
         provider: Optional[str] = None,
         model_name: Optional[str] = None,
+        profile: Optional[str] = None,
     ):
         self.workspace_dir = workspace_dir or REPO_ROOT
         self.provider = provider
         self.model_name = model_name
+        self.profile = profile or "coding"
         self.registry = DynamicMCPRegistry(self.workspace_dir)
         self.guardrails = MAFTelemetryGuardrails()
         self._tasks: Dict[str, CodingTaskState] = {}
@@ -90,12 +92,20 @@ class MAFCodeAgent:
         # Create MAF agent instance
         instructions = (
             f"You are a Senior Software Engineer executing a coding task in workspace: {self.workspace_dir}.\n"
+            f"Active tool profile: {self.profile}.\n"
             f"Rule 1: NEVER run sudo or elevate privileges.\n"
             f"Rule 2: Keep code clean, preserve documentation, follow existing patterns.\n"
             f"Rule 3: Adhere to storage isolation (write data/reports to storage/ only)."
         )
+        if self.profile in ("gdrive-index", "gdrive_index", "gdrive"):
+            instructions += (
+                "\nRule 4: For GDrive index tasks, execute "
+                "/home/aseps/MCP/scripts/run_gdrive_index.py via script_pipeline_run. "
+                "Run --dry-run first, then apply. Do not use run_shell and do not edit "
+                "the README index block manually."
+            )
         
-        tools = self.registry.get_tools_for_profile("coding")
+        tools = self.registry.get_tools_for_profile(self.profile)
         agent = ModelClientFactory.create_agent(
             name=f"MAF-Coder-{task_id}",
             instructions=instructions,

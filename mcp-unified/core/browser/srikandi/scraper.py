@@ -16,6 +16,7 @@ from urllib.parse import urljoin
 from playwright.async_api import async_playwright, Page
 
 from .auth_manager import srikandi_auth_manager, SRIKANDI_BASE_URL
+from .db_sync import srikandi_db_sync
 
 logger = logging.getLogger("srikandi_scraper")
 
@@ -23,12 +24,12 @@ logger = logging.getLogger("srikandi_scraper")
 MODULE_ROUTES = {
     "verifikasi_naskah": "/pembuatan-naskah-keluar/verifikasi-naskah",
     "pembuatan_naskah_keluar": "/pembuatan-naskah-keluar/verifikasi-naskah",
-    "surat_masuk": "/surat-masuk",
-    "naskah_masuk": "/registrasi-naskah-masuk",
-    "surat_keluar": "/surat-keluar",
+    "surat_masuk": "/penerimaan-naskah-masuk/naskah-dinas-masuk",
+    "naskah_masuk": "/penerimaan-naskah-masuk/naskah-dinas-masuk",
+    "surat_keluar": "/naskah-keluar",
     "naskah_keluar": "/naskah-keluar",
-    "disposisi": "/disposisi",
-    "disposisi_masuk": "/kotak-masuk-disposisi",
+    "disposisi": "/penerimaan-naskah-masuk/disposisi",
+    "disposisi_masuk": "/penerimaan-naskah-masuk/disposisi",
     "naskah_dinas": "/naskah-dinas",
     "arsip_aktif": "/arsip-aktif",
 }
@@ -53,6 +54,7 @@ class SrikandiScraper:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         fetch_details: bool = True,
+        incremental: bool = True,
     ) -> Dict[str, Any]:
         """
         Mengekstrak daftar dokumen/surat dari modul tertentu dengan profil akun yang ditentukan.
@@ -84,27 +86,61 @@ class SrikandiScraper:
                 # 1. Buka /beranda terlebih dahulu untuk inisialisasi state sesi React SPA
                 beranda_url = f"{SRIKANDI_BASE_URL}/beranda"
                 logger.info(f"Membuka {beranda_url} untuk inisialisasi sesi profil '{profile_id}'...")
-                await page.goto(beranda_url, wait_until="networkidle", timeout=40000)
+                await page.goto(beranda_url, wait_until="networkidle", timeout=30000)
                 await asyncio.sleep(2)
 
-                # 2. Navigasi ke modul target
-                logger.info(f"Navigasi ke {target_url}...")
-                if page.url != target_url:
-                    await page.goto(target_url, wait_until="networkidle", timeout=40000)
+                # 2. Navigasi ke modul target (Gunakan klik sidebar natural untuk menjaga SPA context & token state)
+                logger.info(f"Navigasi ke {target_url} (Modul: {module})...")
+                nav_success = False
+
+                if module in ("verifikasi_naskah", "pembuatan_naskah_keluar"):
+                    try:
+                        # Tunggu item sidebar 'Naskah Keluar' siap
+                        nk = page.locator('div.MuiListItem-root, li.MuiListItem-root').filter(has_text='Naskah Keluar').first
+                        await nk.wait_for(state="visible", timeout=15000)
+                        await nk.click()
+                        await asyncio.sleep(1)
+
+                        vn = page.locator('.MuiListItem-root').filter(has_text='Verifikasi Naskah').first
+                        await vn.wait_for(state="visible", timeout=10000)
+                        await vn.click()
+                        nav_success = True
+                        logger.info("Navigasi via menu sidebar Naskah Keluar -> Verifikasi Naskah berhasil.")
+                    except Exception as e:
+                        logger.warning(f"Navigasi klik sidebar verifikasi gagal, fallback: {e}")
+
+                elif module in ("surat_masuk", "naskah_masuk"):
+                    try:
+                        nm = page.locator('div.MuiListItem-root, li.MuiListItem-root').filter(has_text='Naskah Masuk').first
+                        await nm.wait_for(state="visible", timeout=15000)
+                        await nm.click()
+                        await asyncio.sleep(1)
+
+                        dm = page.locator('.MuiListItem-root').filter(has_text='Daftar Naskah Masuk').first
+                        await dm.wait_for(state="visible", timeout=10000)
+                        await dm.click()
+                        nav_success = True
+                        logger.info("Navigasi via menu sidebar Naskah Masuk -> Daftar Naskah Masuk berhasil.")
+                    except Exception as e:
+                        logger.warning(f"Navigasi klik sidebar naskah masuk gagal, fallback: {e}")
+
+                if not nav_success and page.url != target_url:
+                    await page.goto(target_url, wait_until="networkidle", timeout=25000)
                     
                 # Tunggu React merender komponen utama (table atau list)
                 try:
-                    await page.wait_for_selector('table, .MuiTable-root, .MuiDataGrid-root, [role="grid"], .card-surat, .MuiCard-root, .list-item', state="visible", timeout=20000)
+                    await page.wait_for_selector("table", timeout=20000)
                 except Exception as e:
-                    logger.warning(f"Elemen tabel tidak segera muncul, kemungkinan kosong atau timeout: {e}")
+                    logger.warning(f"Elemen table belum muncul: {e}")
                 await asyncio.sleep(2)
 
+                logger.info(f"URL saat ini: {page.url}")
                 # Jika dialihkan kembali ke login, sesi kedaluwarsa
                 if "/auth/login" in page.url:
                     return {
                         "success": False,
                         "profile_id": profile_id,
-                        "error": "Sesi kedaluwarsa setelah redirect. Perlu re-login/interactive seeding."
+                        "error": f"Sesi kedaluwarsa setelah redirect ({page.url}). Perlu re-login/interactive seeding."
                     }
 
                 # 1. Coba klik tombol "HITUNG TOTAL" jika tersedia untuk estimasi volume data
@@ -129,8 +165,16 @@ class SrikandiScraper:
                             break
 
                 # 4. Deteksi dan lakukan Infinite Scrolling otomatis jika tabel menggunakan mekanisme gulir terus menerus
-                logger.info("Memeriksa dan mengeksekusi infinite scroll otomatis jika tersedia...")
-                await self._scroll_infinite_table(page, max_scroll_turns=60)
+                # Dalam mode incremental harian, batasi turns agar tidak memuat seluruh riwayat berbulan-bulan yang lalu
+                scroll_turns = 10 if incremental else 60
+                logger.info(f"Memeriksa dan mengeksekusi infinite scroll otomatis (Max Turns: {scroll_turns}, Incremental: {incremental})...")
+                await self._scroll_infinite_table(page, max_scroll_turns=scroll_turns)
+
+                # Muat naskah yang sudah tersimpan di database untuk deduplikasi detail
+                existing_naskah: set[str] = set()
+                if incremental:
+                    existing_naskah = srikandi_db_sync.get_existing_nomor_naskah_set(profile_id=profile_id, module=module)
+                    logger.info(f"ℹ️ Mode Incremental aktif: {len(existing_naskah)} naskah terdaftar di DB akan diskip penelusuran detailnya.")
 
                 current_page_idx = 1
                 while current_page_idx <= max_pages:
@@ -139,9 +183,25 @@ class SrikandiScraper:
 
                     # Jika deep detail diaktifkan, telusuri link di kolom Aksi
                     if fetch_details:
+                        consecutive_existing = 0
+                        new_docs_count = 0
                         for r in rows:
+                            nomor = (r.get("nomor_naskah") or "").strip()
+                            
+                            # Cek apakah naskah ini sudah pernah tersimpan di database
+                            if incremental and nomor and nomor in existing_naskah:
+                                consecutive_existing += 1
+                                logger.info(f"⏩ [Skip] Naskah '{nomor}' sudah ada di database.")
+                                # Jika mendeteksi 4 naskah berurutan yang sudah tersimpan, hentikan penelusuran detail
+                                if consecutive_existing >= 4:
+                                    logger.info("🛑 Mendeteksi 4 naskah lama berturut-turut. Menghentikan penelusuran deep detail (Incremental Complete).")
+                                    break
+                                continue
+                            
+                            consecutive_existing = 0
                             if r.get("detail_url") and r["detail_url"].startswith("http"):
-                                logger.info(f"Mengambil detail naskah: {r.get('nomor_naskah', 'doc')}...")
+                                new_docs_count += 1
+                                logger.info(f"✨ Mengambil detail naskah baru (#{new_docs_count}): {r.get('nomor_naskah', 'doc')}...")
                                 detail_data = await self._fetch_single_detail(context, r["detail_url"])
                                 if detail_data:
                                     r["detail_data"] = detail_data

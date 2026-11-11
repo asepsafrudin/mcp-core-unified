@@ -54,3 +54,8 @@ mcp_unified
 agent_framework
 *.sqlite
 *.db
+
+
+# Auto-remediated state files
+.serena/
+*_messages.json

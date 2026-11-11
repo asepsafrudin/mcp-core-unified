@@ -312,13 +312,15 @@ async def initialize_all_components():
     except Exception as e:
         logger.warning(f"Failed to register Research tools: {e}")
 
-    # 5v. Register Srikandi E-Gov Browser Agent tools
+    # 5v. Register Srikandi E-Gov Browser Agent tools & Universal CAPTCHA Solver
     try:
-        from tools.browser.registry_bridge import register_srikandi_tools
+        from tools.browser.registry_bridge import register_srikandi_tools, register_sikerja_tools, register_captcha_tools
         n_srikandi = register_srikandi_tools(registry)
-        logger.info(f"Registered {n_srikandi} Srikandi E-Gov tools")
+        n_sikerja = register_sikerja_tools(registry)
+        n_captcha = register_captcha_tools(registry)
+        logger.info(f"Registered {n_srikandi} Srikandi tools, {n_sikerja} SIKERJA tools, and {n_captcha} Universal CAPTCHA tools")
     except Exception as e:
-        logger.warning(f"Failed to register Srikandi tools: {e}")
+        logger.warning(f"Failed to register Srikandi/SIKERJA/CAPTCHA tools: {e}")
 
     # 5w. Register Vision & Media tools (Ollama Vision, Canva, Unsplash, Pexels, SVG, Vision Analytics)
     try:

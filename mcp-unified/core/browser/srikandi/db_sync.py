@@ -141,6 +141,29 @@ class SrikandiDbSync:
             logger.error(f"Gagal inisialisasi skema PostgreSQL arsip.srikandi_surat: {e}")
             conn.rollback()
 
+    def get_existing_nomor_naskah_set(self, profile_id: str = "default", module: Optional[str] = None) -> set[str]:
+        """Mengambil set nomor_naskah yang sudah tersimpan di SQLite untuk deduplikasi cepat."""
+        existing: set[str] = set()
+        if not self.sqlite_db.exists():
+            return existing
+        try:
+            conn = sqlite3.connect(f"file:{self.sqlite_db}?mode=ro", uri=True)
+            cur = conn.cursor()
+            if module:
+                cur.execute(
+                    "SELECT nomor_naskah FROM srikandi_surat WHERE nomor_naskah IS NOT NULL AND nomor_naskah != '' AND (module_source = ? OR module_source IS NULL)",
+                    (module,)
+                )
+            else:
+                cur.execute("SELECT nomor_naskah FROM srikandi_surat WHERE nomor_naskah IS NOT NULL AND nomor_naskah != ''")
+            for row in cur.fetchall():
+                if row[0]:
+                    existing.add(row[0].strip())
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Gagal mengambil existing nomor_naskah dari SQLite: {e}")
+        return existing
+
     def sync_records(
         self,
         records: List[Dict[str, Any]],
@@ -197,6 +220,27 @@ class SrikandiDbSync:
                     r.get("extracted_at", datetime.now().isoformat()),
                 ))
                 saved_sqlite += 1
+
+                # Sinkronkan juga ke tabel srikandi_lampiran jika ada file lokal yang diunduh
+                local_path_val = r.get("local_file_path")
+                if local_path_val and Path(local_path_val).exists():
+                    try:
+                        fp = Path(local_path_val)
+                        fsize = fp.stat().st_size
+                        cur_sql.execute("""
+                            INSERT OR IGNORE INTO srikandi_lampiran (
+                                nomor_naskah, filename, file_type, file_size, local_path, downloaded_at
+                            ) VALUES (?, ?, ?, ?, ?, ?)
+                        """, (
+                            r.get("nomor_naskah", ""),
+                            fp.name,
+                            fp.suffix.lstrip("."),
+                            fsize,
+                            str(fp),
+                            datetime.now().isoformat()
+                        ))
+                    except Exception:
+                        pass
             conn_sql.commit()
             conn_sql.close()
         except Exception as e:

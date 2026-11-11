@@ -26,6 +26,12 @@ import httpx
 
 from core.secrets import load_runtime_secrets
 
+try:
+    from core.browser.adapters.lightpanda_adapter import lightpanda_adapter
+    _lightpanda_available = True
+except Exception:
+    _lightpanda_available = False
+
 logger = logging.getLogger(__name__)
 
 # ============================================================
@@ -517,6 +523,71 @@ class VaneConnector:
     def _synthesize_ollama(self, messages: List[Dict]) -> Optional[Dict[str, Any]]:
         return self._run_sync(self._synthesize_ollama_async(messages))
 
+    async def scrape_url_async(self, url: str, timeout: int = 15) -> Dict[str, Any]:
+        """
+        Mengekstrak konten halaman web menjadi Markdown bersih menggunakan Lightpanda (V8 Zig).
+        Fallback ke HTTP fetch biasa jika Lightpanda tidak tersedia.
+        """
+        if _lightpanda_available and lightpanda_adapter.is_available():
+            res = await lightpanda_adapter.fetch_markdown_async(url, timeout=timeout)
+            if res.get("success"):
+                return res
+
+        # Fallback jika Lightpanda belum aktif: httpx async request
+        try:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                if resp.status_code == 200:
+                    text = resp.text
+                    clean_text = re.sub(r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', text, flags=re.I)
+                    clean_text = re.sub(r'<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>', '', clean_text, flags=re.I)
+                    clean_text = re.sub(r'<[^>]+>', ' ', clean_text)
+                    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                    return {
+                        "success": True,
+                        "url": url,
+                        "markdown": clean_text[:3000],
+                        "chars_count": len(clean_text),
+                        "engine": "httpx-fallback"
+                    }
+        except Exception as e:
+            logger.debug(f"Fallback scraper error ({url}): {e}")
+
+        return {"success": False, "url": url, "error": "Scraping gagal"}
+
+    async def enrich_search_results_async(
+        self,
+        search_results: List[Dict],
+        max_urls: int = 3
+    ) -> List[Dict]:
+        """
+        Memperkaya hasil pencarian (SearxNG) dengan mengekstrak isi Markdown naskah asli
+        dari N URL teratas menggunakan Lightpanda secara paralel.
+        """
+        if not search_results or not (_lightpanda_available and lightpanda_adapter.is_available()):
+            return search_results
+
+        tasks = []
+        targets = search_results[:max_urls]
+
+        for r in targets:
+            url = r.get("url")
+            if url and url.startswith("http"):
+                tasks.append(self.scrape_url_async(url))
+            else:
+                tasks.append(asyncio.sleep(0, result={"success": False}))
+
+        scraped_outputs = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for idx, out in enumerate(scraped_outputs):
+            if isinstance(out, dict) and out.get("success") and out.get("markdown"):
+                md = out["markdown"][:2500]  # Maks 2500 karakter per sumber agar hemat token
+                targets[idx]["full_content"] = md
+                targets[idx]["engine_scraper"] = out.get("engine", "lightpanda")
+                logger.info(f"Enriched source [{idx+1}] via {out.get('engine')}: {targets[idx].get('title', '')[:40]}")
+
+        return search_results
+
     async def synthesize_async(
         self,
         query: str,
@@ -524,15 +595,28 @@ class VaneConnector:
         system_prompt: Optional[str] = None,
         model: Optional[str] = None,
         client: Optional[httpx.AsyncClient] = None,
+        enrich_with_lightpanda: bool = True,
     ) -> Dict[str, Any]:
         """
         Sintesis asinkron jawaban dengan sitasi dari hasil pencarian.
         Secara otomatis mencoba Groq -> RunPod GPU -> Ollama Lokal.
+        Mendukung pengayaan naskah asli via Lightpanda Turbo Scraper.
         """
-        context = "\n\n".join(
-            f"[{i}] {r.get('title', '')}\nURL: {r.get('url', '')}\nSnippet: {r.get('snippet', '')}"
-            for i, r in enumerate(search_results, 1)
-        )
+        # Pengayaan sumber teratas dengan naskah asli via Lightpanda
+        if enrich_with_lightpanda:
+            try:
+                search_results = await self.enrich_search_results_async(search_results, max_urls=3)
+            except Exception as e:
+                logger.debug(f"Gagal enrich dengan Lightpanda: {e}")
+
+        context_items = []
+        for i, r in enumerate(search_results, 1):
+            title = r.get("title", "")
+            url = r.get("url", "")
+            content = r.get("full_content") or r.get("snippet", "")
+            context_items.append(f"[{i}] {title}\nURL: {url}\nKonten/Kutipan:\n{content}")
+
+        context = "\n\n".join(context_items)
 
         sys_prompt = system_prompt or (
             "Anda adalah asisten riset hukum yang ahli dalam regulasi Indonesia. "

@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 
 from observability.logger import logger
 from tools.file.path_utils import is_safe_path
-from execution import registry
+from utils.process_guard import ProcessGuard
 
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
 IMPECCABLE_BIN = os.environ.get("IMPECCABLE_BIN") or str(
@@ -148,9 +148,64 @@ async def frontend_detect(
     }
 
 
+async def run_project_audit(
+    target_path: str,
+    url: str = "",
+    semantic_review: bool = False,
+    timeout_seconds: int = 240,
+) -> Dict[str, Any]:
+    """
+    Jalankan Dual-Audit proyek: Audit Kode (TypeScript tsc/build, Python ruff, higiene workspace
+    sudo/secret/namespace, opsional review semantik LLM) dan Audit Tampilan Anti-"AI Slop"
+    (gate frontend_detect 59 aturan + opsional screenshot desktop/mobile).
+
+    Args:
+        target_path: Path absolut ke direktori proyek di dalam workspace.
+        url: URL preview HTTP (mis. http://127.0.0.1:3008/) untuk screenshot desktop+mobile.
+        semantic_review: True untuk mengaktifkan pass review semantik LLM (Groq/OpenRouter).
+        timeout_seconds: Batas waktu eksekusi runner (default 240s).
+
+    Returns:
+        Dict hasil audit JSON terstruktur { success, exit_code, verdict, hygiene, typescript,
+        python, semantic, ui }.
+    """
+    if not target_path.startswith("/"):
+        return {"success": False, "error": "target_path harus absolut.", "target": target_path}
+    if not is_safe_path(target_path):
+        return {"success": False, "error": f"Path ditolak oleh keamanan: {target_path}", "target": target_path}
+    p = Path(target_path)
+    if not p.is_dir():
+        return {"success": False, "error": f"Direktori tidak ditemukan: {target_path}", "target": target_path}
+
+    py_bin = _WORKSPACE_ROOT / ".venv" / "bin" / "python"
+    runner = _WORKSPACE_ROOT / "scripts" / "run_project_dual_audit.py"
+    cmd = [str(py_bin), str(runner), str(p), "--json"]
+    if url:
+        cmd.extend(["--url", url])
+    if semantic_review:
+        cmd.append("--semantic")
+
+    logger.info("run_project_audit_invoke", target=target_path, url=url, semantic=semantic_review)
+    res = await ProcessGuard.run_async(cmd, timeout=float(timeout_seconds), cwd=str(_WORKSPACE_ROOT))
+    if res.timed_out:
+        return {"success": False, "error": f"Audit timeout setelah {timeout_seconds}s", "target": target_path}
+    try:
+        payload = json.loads(res.stdout or "{}")
+    except json.JSONDecodeError:
+        return {
+            "success": False,
+            "exit_code": res.returncode,
+            "error": "Output JSON runner tidak terbaca",
+            "stderr": (res.stderr or "")[:1000],
+        }
+    payload["success"] = res.returncode in (0, 2)
+    payload["exit_code"] = res.returncode
+    return payload
+
+
 def register_frontend_tools(registry_obj) -> int:
-    """Daftarkan frontend tools ke execution.registry. Idempoten."""
-    tools_list = [frontend_detect]
+    """Daftarkan frontend & dual-audit tools ke execution.registry. Idempoten."""
+    tools_list = [frontend_detect, run_project_audit]
     registered = 0
     for fn in tools_list:
         try:
@@ -163,4 +218,4 @@ def register_frontend_tools(registry_obj) -> int:
     return registered
 
 
-__all__ = ["frontend_detect", "register_frontend_tools", "IMPECCABLE_BIN"]
+__all__ = ["frontend_detect", "run_project_audit", "register_frontend_tools", "IMPECCABLE_BIN"]

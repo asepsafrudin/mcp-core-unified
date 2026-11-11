@@ -334,9 +334,10 @@ class SrikandiAuthManager:
                 await context.close()
                 await browser.close()
 
-    async def login_headless(self, profile_id: str = "default") -> Dict[str, Any]:
+    async def login_headless(self, profile_id: str = "default", otp_code: Optional[str] = None) -> Dict[str, Any]:
         """
         Melakukan login otomatis headless menggunakan username & password profil.
+        Mendukung pemecahan CAPTCHA otomatis dan injeksi OTP kode jika diberikan.
         Menyimpan session state ke JSON jika berhasil.
         """
         profile = self.get_profile(profile_id)
@@ -362,11 +363,11 @@ class SrikandiAuthManager:
 
             try:
                 logger.info(f"Membuka halaman login SRIKANDI: {SRIKANDI_LOGIN_URL}")
-                await page.goto(SRIKANDI_LOGIN_URL, wait_until="networkidle", timeout=35000)
+                await page.goto(SRIKANDI_LOGIN_URL, wait_until="domcontentloaded", timeout=25000)
                 
                 # Wait for SPA to render the login form inputs
                 try:
-                    await page.wait_for_selector('input[type="text"], input[name="username"], input[placeholder*="Username" i]', state="visible", timeout=20000)
+                    await page.wait_for_selector('input[name="username"], input[type="text"]', state="visible", timeout=10000)
                 except Exception:
                     pass
                 
@@ -377,20 +378,21 @@ class SrikandiAuthManager:
                     logger.info(f"Mencoba login headless (Attempt {attempt}/{max_attempts})...")
                     await asyncio.sleep(2)
     
-                    # Target input username / email / NIK (MUI & standard inputs)
+                    # Target input username / email / NIK (MUI & standard inputs, visible only)
                     user_selectors = [
-                        'input[name="username"]',
-                        'input[name="email"]',
-                        'input[name="nik"]',
-                        'input[id="username"]',
-                        'input[type="text"]',
-                        'input[placeholder*="Username" i]',
-                        'input[placeholder*="NIK" i]'
+                        'input[name="username"] >> visible=true',
+                        'input[placeholder*="Nama Pengguna" i] >> visible=true',
+                        'input[name="email"] >> visible=true',
+                        'input[name="nik"] >> visible=true',
+                        'input[id="username"] >> visible=true',
+                        'input[type="text"] >> visible=true',
                     ]
                     user_filled = False
                     for sel in user_selectors:
-                        if await page.locator(sel).first.is_visible(timeout=1000):
-                            await page.locator(sel).first.fill(profile.username)
+                        loc = page.locator(sel).first
+                        if await loc.is_visible(timeout=1000):
+                            await loc.click()
+                            await loc.fill(profile.username)
                             user_filled = True
                             break
     
@@ -398,28 +400,29 @@ class SrikandiAuthManager:
                         # Fallback evaluation
                         await page.evaluate(f"""() => {{
                             const inputs = Array.from(document.querySelectorAll('input'));
-                            const userInp = inputs.find(i => i.type === 'text' || i.name.includes('user') || i.id.includes('user'));
+                            const userInp = inputs.find(i => (i.type === 'text' || i.name.includes('user') || i.id.includes('user')) && i.offsetParent !== null);
                             if (userInp) {{ userInp.value = "{profile.username}"; userInp.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
                         }}""")
     
-                    # Target input password
+                    # Target input password (visible only)
                     pass_selectors = [
-                        'input[name="password"]',
-                        'input[id="password"]',
-                        'input[type="password"]',
-                        'input[placeholder*="Password" i]',
-                        'input[placeholder*="Kata Sandi" i]'
+                        'input[name="password"] >> visible=true',
+                        'input[placeholder*="Kata Sandi" i] >> visible=true',
+                        'input[id="password"] >> visible=true',
+                        'input[type="password"] >> visible=true',
                     ]
                     pass_filled = False
                     for sel in pass_selectors:
-                        if await page.locator(sel).first.is_visible(timeout=1000):
-                            await page.locator(sel).first.fill(profile.password)
+                        loc = page.locator(sel).first
+                        if await loc.is_visible(timeout=1000):
+                            await loc.click()
+                            await loc.fill(profile.password)
                             pass_filled = True
                             break
     
                     if not pass_filled:
                         await page.evaluate(f"""() => {{
-                            const passInp = document.querySelector('input[type="password"]');
+                            const passInp = Array.from(document.querySelectorAll('input[type="password"]')).find(i => i.offsetParent !== null);
                             if (passInp) {{ passInp.value = "{profile.password}"; passInp.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
                         }}""")
                         
@@ -429,31 +432,54 @@ class SrikandiAuthManager:
                         logger.info("CAPTCHA terdeteksi di halaman login. Mengekstrak dari canvas...")
                         captcha_found = True
                         b64_data = await page.evaluate('''() => {
-                            const canvas = document.querySelector('canvas');
-                            return canvas ? canvas.toDataURL('image/png').split(',')[1] : null;
+                            const canvases = Array.from(document.querySelectorAll("canvas"));
+                            const canvas = canvases.find(c => c.offsetParent !== null) || canvases[0];
+                            if (!canvas) return null;
+                            const tempCanvas = document.createElement("canvas");
+                            tempCanvas.width = canvas.width;
+                            tempCanvas.height = canvas.height;
+                            const ctx = tempCanvas.getContext("2d");
+                            ctx.fillStyle = "#FFFFFF";
+                            ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                            ctx.drawImage(canvas, 0, 0);
+                            return tempCanvas.toDataURL("image/png").split(",")[1];
                         }''')
                         captcha_text = ""
                         if b64_data:
+                            # Solver utama untuk cuplikan canvas: EasyOCR Universal Singleton (cepat < 0.05s warm & presisi)
                             try:
-                                logger.info("Mengirim CAPTCHA ke RunPod OCR untuk diselesaikan...")
-                                from integrations.runpod.tools import runpod_ocr_process
-                                ocr_res = await runpod_ocr_process(image_base64=b64_data, save_to_memory=False)
-                                captcha_text = ocr_res.get("raw_text", "")
-                                
-                                if captcha_text:
-                                    captcha_text = re.sub(r'[^a-zA-Z0-9]', '', captcha_text).strip()
-                                    logger.info(f"Hasil RunPod OCR CAPTCHA: '{captcha_text}'")
+                                from core.browser.captcha_solver import solve_text_captcha
+                                solved = solve_text_captcha(
+                                    b64_data,
+                                    allowlist="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                                )
+                                if solved:
+                                    captcha_text = solved
+                                    logger.info(f"Hasil EasyOCR CAPTCHA (Universal Singleton): '{captcha_text}'")
                                     await captcha_input.first.fill(captcha_text)
-                                else:
-                                    logger.warning("RunPod OCR mengembalikan hasil kosong untuk CAPTCHA.")
                             except Exception as e:
-                                import traceback
-                                logger.warning(f"Gagal memecahkan CAPTCHA dengan RunPod OCR: {traceback.format_exc()}")
-                            
-                            # Fallback 1: RunPod VLLMVision (Qwen2.5-VL via RunPod vLLM endpoint) - menggantikan Ollama
+                                logger.warning(f"EasyOCR universal solver gagal: {e}")
+
+                            # Fallback 1: RunPod OCR jika EasyOCR belum membuahkan hasil
                             if not captcha_text:
                                 try:
-                                    from integrations.runpod.vllm_vision import VLLMVisionProcessor
+                                    logger.info("Mengirim CAPTCHA ke RunPod OCR untuk diselesaikan...")
+                                    from integrations.runpod.tools import runpod_ocr_process
+                                    ocr_res = await runpod_ocr_process(image_base64=b64_data, save_to_memory=False)
+                                    ocr_val = ocr_res.get("raw_text", "")
+                                    if ocr_val:
+                                        captcha_text = re.sub(r'[^a-zA-Z0-9]', '', ocr_val).strip()
+                                        logger.info(f"Hasil RunPod OCR CAPTCHA: '{captcha_text}'")
+                                        await captcha_input.first.fill(captcha_text)
+                                    else:
+                                        logger.warning("RunPod OCR mengembalikan hasil kosong untuk CAPTCHA.")
+                                except Exception as e:
+                                    import traceback
+                                    logger.warning(f"Gagal memecahkan CAPTCHA dengan RunPod OCR: {traceback.format_exc()}")
+                            
+                            # Fallback 2: RunPod VLLMVision (dengan timeout singkat agar tidak memblokir loop)
+                            if not captcha_text and VLLMVisionProcessor:
+                                try:
                                     vlm_processor = VLLMVisionProcessor()
                                     
                                     vlm_prompt = (
@@ -467,7 +493,8 @@ class SrikandiAuthManager:
                                     )
                                     vision_result = await vlm_processor._call_vllm_vision(
                                         image_base64=b64_data,
-                                        custom_prompt=vlm_prompt
+                                        custom_prompt=vlm_prompt,
+                                        timeout=10
                                     )
                                     
                                     if vision_result and vision_result.strip():
@@ -499,16 +526,16 @@ class SrikandiAuthManager:
                                 await captcha_input.first.fill(captcha_text)
                             except Exception as e:
                                 logger.warning(f"Gagal memecahkan CAPTCHA dengan OCR: {e}")
-                        elif not VLLMVisionProcessor and not pytesseract:
-                            logger.warning("Semua OCR method (RunPod OCR, VLLMVision, Pytesseract) tidak tersedia untuk menyelesaikan CAPTCHA. RunPod OCR mengembalikan hasil kosong.")
+                        elif not captcha_text:
+                            logger.warning("Semua OCR method tidak menghasilkan teks untuk CAPTCHA.")
     
                     # Submit button
                     submit_selectors = [
-                        'button[type="submit"]',
-                        'button:has-text("Masuk")',
-                        'button:has-text("Login")',
-                        '.btn-primary',
-                        '.MuiButton-containedPrimary'
+                        'button:has-text("Masuk") >> visible=true',
+                        'button[type="submit"] >> visible=true',
+                        'button:has-text("Login") >> visible=true',
+                        '.btn-primary >> visible=true',
+                        '.MuiButton-containedPrimary >> visible=true'
                     ]
                     btn_clicked = False
                     for sel in submit_selectors:
@@ -527,6 +554,93 @@ class SrikandiAuthManager:
                     except Exception:
                         pass
     
+                    # Cek apakah akun memerlukan kode OTP (MFA)
+                    otp_inp = page.locator('input[placeholder*="Kode OTP" i], input[name="code"] >> visible=true').first
+                    if await otp_inp.is_visible(timeout=3000):
+                        if otp_code:
+                            logger.info(f"Mengisi kode OTP ({otp_code}) untuk akun '{profile_id}'...")
+                            await otp_inp.click()
+                            await otp_inp.press_sequentially(otp_code, delay=40)
+                            
+                            # Centang checkbox 'Ingat perangkat ini' jika ada
+                            try:
+                                cb = page.locator('input[type="checkbox"] >> visible=true').first
+                                if await cb.is_visible(timeout=1000):
+                                    await cb.check()
+                            except Exception:
+                                pass
+                                
+                            await asyncio.sleep(0.5)
+                            lanjut_btn = page.locator('button:has-text("LANJUTKAN") >> visible=true').first
+                            try:
+                                await lanjut_btn.click(timeout=3000)
+                            except Exception:
+                                await page.evaluate("""() => {
+                                    const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('LANJUTKAN') && b.offsetParent !== null);
+                                    if (btn) btn.click();
+                                }""")
+                                
+                            # Poll up to 12 detik untuk verifikasi & redirect dashboard / token
+                            for _ in range(12):
+                                await asyncio.sleep(1)
+                                has_token = await page.evaluate("""() => {
+                                    return !!(localStorage.getItem('@secure.s.access_token') || localStorage.getItem('token') || localStorage.getItem('access_token'));
+                                }""")
+                                if "/auth/login" not in page.url or has_token:
+                                    session_file = self.get_session_file(profile_id)
+                                    await context.storage_state(path=str(session_file))
+                                    logger.info(f"Login headless dengan OTP berhasil. Sesi tersimpan di: {session_file}")
+                                    return {
+                                        "success": True,
+                                        "profile_id": profile_id,
+                                        "current_url": page.url,
+                                        "session_file": str(session_file),
+                                        "message": f"Login berhasil untuk profil '{profile_id}'."
+                                    }
+                            
+                            otp_err = await page.evaluate("""() => {
+                                const el = document.querySelector('.MuiAlert-message, .error, [role="alert"]');
+                                return el ? el.innerText : '';
+                            }""")
+                            logger.warning(f"Gagal verifikasi OTP: {otp_err or 'Timeout menunggu redirect'}")
+                            return {
+                                "success": False,
+                                "requires_otp": True,
+                                "profile_id": profile_id,
+                                "current_url": page.url,
+                                "error": f"Verifikasi OTP gagal atau kedaluwarsa ({otp_err or 'Periksa kembali kode OTP terbaru'})."
+                            }
+
+                        logger.warning(f"Akun '{profile_id}' memerlukan verifikasi kode OTP (MFA)!")
+
+                        # Kirim notifikasi real-time via WhatsApp SATRIA ke Super Admin jika kredensial & modul tersedia
+                        try:
+                            from integrations.whatsapp.client import get_whatsapp_client
+                            from integrations.whatsapp.whitelist_guard import get_whitelist_user
+                            wa_client = get_whatsapp_client()
+                            admin_user = get_whitelist_user("+6285717223889")
+                            recipient_jid = "6285717223889@s.whatsapp.net"
+                            notif_msg = (
+                                f"🔐 *PERINGATAN AUTENTIKASI SRIKANDI (MFA/OTP)*\n\n"
+                                f"Halo Pak {admin_user.get('full_name', 'Asep Safrudin') if admin_user else 'Asep'},\n"
+                                f"Cron scraper/otomasi Srikandi mendeteksi sesi untuk akun *{profile.label}* ({profile.username}) memerlukan kode verifikasi OTP.\n\n"
+                                f"Silakan jalankan perintah berikut untuk mengaktifkan sesi 30 hari ke depan:\n"
+                                f"```python3 scripts/scrape_srikandi.py --profile {profile_id} --login --otp <6-digit-otp>```\n\n"
+                                f"_(Opsi 'Ingat perangkat ini selama 30 hari' otomatis aktif)_"
+                            )
+                            await wa_client.send_message(recipient_jid, notif_msg)
+                            logger.info(f"Notifikasi kebutuhan OTP berhasil dikirim ke WhatsApp {recipient_jid}.")
+                        except Exception as wa_err:
+                            logger.warning(f"Gagal mengirim notifikasi OTP via WhatsApp: {wa_err}")
+
+                        return {
+                            "success": False,
+                            "requires_otp": True,
+                            "profile_id": profile_id,
+                            "current_url": page.url,
+                            "error": "Akun memerlukan kode OTP dari aplikasi autentikator. Masukkan dengan: python3 scripts/scrape_srikandi.py --profile default --otp <6-digit-otp>"
+                        }
+    
                     current_url = page.url
                     if "/auth/login" not in current_url:
                         # Berhasil login! Simpan storage state
@@ -544,7 +658,7 @@ class SrikandiAuthManager:
                         logger.warning(f"Attempt {attempt} gagal, url masih di login page.")
                         # Reload page to refresh captcha for next attempt if not the last one
                         if attempt < max_attempts:
-                            await page.goto(SRIKANDI_LOGIN_URL, wait_until="networkidle", timeout=35000)
+                            await page.goto(SRIKANDI_LOGIN_URL, wait_until="domcontentloaded", timeout=25000)
 
                 # Cek pesan error di halaman setelah semua percobaan habis
                 error_msg = await page.evaluate("""() => {

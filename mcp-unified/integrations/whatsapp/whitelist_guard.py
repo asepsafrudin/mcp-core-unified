@@ -56,7 +56,9 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, List[str]] = {
         "spm_verification",
         "nd_laporan_generate",
         "system_health",
-        "general_consultation"
+        "general_consultation",
+        "pdf_archive_canvas_preview",
+        "pdf_archive_approve_request"
     ],
     "LEGAL_REVIEWER_LEAD": [
         "full_audit",
@@ -284,6 +286,46 @@ def is_admin_user(phone: str) -> bool:
     if user.get("role") == "SUPER_ADMIN":
         return True
     return "admin_manage" in user.get("permissions", [])
+
+
+SUPER_ADMIN_DISPOSITION_PHONE = "+6285717223889"
+
+
+def can_preview_pdf_canvas(phone: str) -> bool:
+    """Memeriksa apakah pengguna memiliki izin langsung In-App Canvas Preview PDF sumber."""
+    if is_admin_user(phone):
+        return True
+    return is_authorized(phone, "pdf_archive_canvas_preview")
+
+
+def can_approve_pdf_request(phone: str) -> bool:
+    """Memeriksa apakah pengguna berwenang menyetujui permohonan preview PDF sumber."""
+    if is_admin_user(phone):
+        return True
+    return is_authorized(phone, "pdf_archive_approve_request")
+
+
+def get_pdf_disposition_admin() -> Dict[str, Any]:
+    """Mengembalikan profil Administrator penerima notifikasi disposisi otomatis permohonan PDF."""
+    wl = _load_whitelist()
+    admin_phone = wl.get("pdf_disposition_admin_phone") or SUPER_ADMIN_DISPOSITION_PHONE
+    for u in wl.get("users", []):
+        if u.get("is_pdf_disposition_recipient") or u.get("role") == "SUPER_ADMIN":
+            return u
+    user = get_whitelist_user(admin_phone)
+    if user:
+        return user
+    return {
+        "user_id": "asep_safrudin",
+        "phone_number": SUPER_ADMIN_DISPOSITION_PHONE,
+        "full_name": "Asep Safrudin, S.Kom",
+        "nip": "197809112025211014",
+        "jabatan": "Penata Layanan Operasional / Administrator Sistem MCP",
+        "unit_kerja": "Sekretariat / TU SUPD II",
+        "role": "SUPER_ADMIN",
+        "is_pdf_disposition_recipient": True,
+        "permissions": DEFAULT_ROLE_PERMISSIONS["SUPER_ADMIN"],
+    }
 
 
 def _sync_to_postgres(user_profile: Dict[str, Any]) -> bool:

@@ -277,5 +277,70 @@ class NaskahDinasGenerator:
         logger.info(f"Surat Dinas Eksternal successfully generated at {out_file}")
         return str(out_file)
 
+    def generate_telaah_docx_from_markdown(
+        self,
+        title: str,
+        markdown_body: str,
+        prefix: str = "Telaah_SATRIA",
+        output_filename: Optional[str] = None,
+    ) -> str:
+        """
+        TASK-161: Menghasilkan berkas Word (.docx) berstandar Permendagri No. 1 Tahun 2023
+        (Font Arial 11pt, Margin 3-1-3-2 cm) dari draf markdown (Legal Opinion IRAC,
+        Naskah Akademik, Matriks Harmonisasi, atau Telaahan Staf).
+        """
+        from docx.shared import Cm
+
+        doc = docx.Document()
+        for section in doc.sections:
+            section.top_margin = Cm(3.0)
+            section.bottom_margin = Cm(3.0)
+            section.left_margin = Cm(3.0)
+            section.right_margin = Cm(2.0)
+
+        # Header judul
+        h_para = doc.add_paragraph()
+        h_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        h_run = h_para.add_run(title.upper())
+        h_run.font.name = "Arial"
+        h_run.font.size = Pt(12)
+        h_run.bold = True
+
+        sub_para = doc.add_paragraph()
+        sub_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        sub_run = sub_para.add_run(f"Ditjen Bina Pembangunan Daerah — Tanggal: {format_date_id()}")
+        sub_run.font.name = "Arial"
+        sub_run.font.size = Pt(10)
+        sub_run.italic = True
+
+        doc.add_paragraph()  # spasi
+
+        for raw_line in (markdown_body or "").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("━━━"):
+                continue
+            # Bersihkan markdown bold/heading sederhana
+            is_heading = line.startswith("#") or (line.startswith("*") and line.endswith("*") and len(line) < 90)
+            clean_line = re.sub(r"^#+\s*", "", line)
+            clean_line = re.sub(r"\*+([^*]+)\*+", r"\1", clean_line)
+            clean_line = re.sub(r"_+([^_]+)_+", r"\1", clean_line)
+
+            p = doc.add_paragraph()
+            run = p.add_run(clean_line)
+            run.font.name = "Arial"
+            run.font.size = Pt(11)
+            if is_heading:
+                run.bold = True
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_prefix = re.sub(r"[^A-Za-z0-9_]+", "_", prefix).strip("_") or "Dokumen_SATRIA"
+        fname = output_filename or f"{safe_prefix}_{ts}.docx"
+        if not fname.endswith(".docx"):
+            fname += ".docx"
+        out_file = self.output_dir / fname
+        doc.save(str(out_file))
+        logger.info(f"Telaah DOCX successfully generated at {out_file}")
+        return str(out_file)
+
 # Singleton Instance
 satria_naskah_generator = NaskahDinasGenerator()

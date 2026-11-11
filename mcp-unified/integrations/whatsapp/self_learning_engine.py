@@ -66,17 +66,41 @@ class SelfLearningEngine:
         mean_lat = statistics.mean(latencies) if latencies else 0.0
         p95_lat = statistics.quantiles(latencies, n=20)[18] if len(latencies) >= 20 else (max(latencies) if latencies else 0.0)
 
-        # 4. Penggunaan Tools & Fallback Rate
+        # 4. Penggunaan Tools, Fallback Rate, Cache Hit, Sitasi & Feedback (TASK-158 / TASK-160 / TASK-162)
         tool_counts: Dict[str, int] = {}
         fallback_invocations = 0
+        cache_hits = 0
+        citation_checks = 0
+        citation_ok_count = 0
+        positive_feedback = 0
+        negative_feedback = 0
+        negative_intents: Dict[str, int] = {}
+
         for i in interactions:
             tools = i.get("tools_called", [])
             for t in tools:
                 tool_counts[t] = tool_counts.get(t, 0) + 1
             if i.get("fallback_used"):
                 fallback_invocations += 1
+            if i.get("cache_hit") or (isinstance(i.get("latency_breakdown"), dict) and i["latency_breakdown"].get("cache_hit")):
+                cache_hits += 1
+            if "citation_ok" in i:
+                citation_checks += 1
+                if i.get("citation_ok"):
+                    citation_ok_count += 1
+            fb_r = i.get("feedback_rating")
+            if fb_r == "positive":
+                positive_feedback += 1
+            elif fb_r == "negative":
+                negative_feedback += 1
+                neg_it = str(i.get("intent") or "unknown")
+                negative_intents[neg_it] = negative_intents.get(neg_it, 0) + 1
 
         fallback_rate = round(fallback_invocations / max(1, total_count), 3)
+        cache_hit_rate = round(cache_hits / max(1, service_count), 3)
+        citation_compliance_rate = round(citation_ok_count / max(1, citation_checks), 3) if citation_checks else 1.0
+        total_feedback = positive_feedback + negative_feedback
+        csat_rate = round(positive_feedback / max(1, total_feedback), 3) if total_feedback else 1.0
 
         # 5. Rekomendasi Perbaikan Otomatis
         recommendations = []
@@ -93,6 +117,11 @@ class SelfLearningEngine:
         if p95_lat > 8000:
             recommendations.append(
                 f"Latensi P95 ({p95_lat:.0f}ms) mendekati 8 detik. Disarankan auto-tuning timeout atau optimalisasi Fast-Path."
+            )
+        if total_feedback >= 3 and csat_rate < 0.80:
+            recommendations.append(
+                f"Skor kepuasan pengguna (CSAT) {csat_rate*100:.1f}% ({positive_feedback} 👍 vs {negative_feedback} 👎). "
+                f"Evaluasi intent dengan umpan balik negatif: {negative_intents}."
             )
 
         report = {
@@ -112,6 +141,15 @@ class SelfLearningEngine:
             },
             "tool_usage": tool_counts,
             "fallback_rate": fallback_rate,
+            "cache_hit_rate": cache_hit_rate,
+            "citation_compliance_rate": citation_compliance_rate,
+            "feedback_metrics": {
+                "positive": positive_feedback,
+                "negative": negative_feedback,
+                "total": total_feedback,
+                "csat_rate": csat_rate,
+                "negative_by_intent": negative_intents,
+            },
             "recommendations": recommendations
         }
 

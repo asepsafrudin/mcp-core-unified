@@ -17,7 +17,7 @@ import signal
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, Optional, Sequence, Union
 
 
 @dataclass
@@ -45,7 +45,12 @@ class ProcessGuard:
         env = dict(os.environ)
         # Cegah stdout/stderr buffering di Python child processes
         env["PYTHONUNBUFFERED"] = "1"
+        # Cegah pager / prompt interaktif menggantung proses
         env["PAGER"] = "cat"
+        env["GIT_PAGER"] = "cat"
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        env["DEBIAN_FRONTEND"] = "noninteractive"
+        env["TERM"] = "dumb"
         if custom_env:
             env.update(custom_env)
         return env
@@ -99,7 +104,7 @@ class ProcessGuard:
                 cmd_args,
                 cwd=cwd,
                 env=effective_env,
-                stdin=subprocess.PIPE if stdin_bytes is not None else None,
+                stdin=subprocess.PIPE if stdin_bytes is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=shell,
@@ -202,7 +207,7 @@ class ProcessGuard:
                     cmd_str,
                     cwd=cwd,
                     env=effective_env,
-                    stdin=asyncio.subprocess.PIPE if stdin_bytes is not None else None,
+                    stdin=asyncio.subprocess.PIPE if stdin_bytes is not None else asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,
@@ -213,7 +218,7 @@ class ProcessGuard:
                     *cmd_args[1:],
                     cwd=cwd,
                     env=effective_env,
-                    stdin=asyncio.subprocess.PIPE if stdin_bytes is not None else None,
+                    stdin=asyncio.subprocess.PIPE if stdin_bytes is not None else asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,

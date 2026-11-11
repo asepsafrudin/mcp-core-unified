@@ -66,6 +66,29 @@ from integrations.knowledge.policy_inventory_engine import policy_inventory_engi
 
 logger = logging.getLogger("satria_whatsapp")
 
+# TASK-160: Semantic / Tool Output Cache & Embedding Cache
+import hashlib
+_EMBEDDING_CACHE: Dict[str, List[float]] = {}
+_TOOL_RESULT_CACHE: Dict[str, Tuple[str, float]] = {}
+_LAST_TURN_CACHE_HIT: bool = False
+_LAST_TURN_TOOLS_CALLED: List[str] = []
+
+_CACHEABLE_TOOL_TTL = {
+    "lookup_bangda_staff": int(os.getenv("SATRIA_CACHE_TTL_SECONDS", "3600")),
+    "search_regulation_knowledge": int(os.getenv("SATRIA_CACHE_TTL_SECONDS", "3600")),
+    "policy_inventory_aggregator": int(os.getenv("SATRIA_CACHE_TTL_SECONDS", "3600")),
+    "cari_surat_korespondensi": 300,  # 5 menit agar surat masuk baru tetap segar
+    "list_database_tables": 3600,
+    "evaluate_bphn_doctrine": 3600,
+    "legal_verify_spm": 3600,
+}
+
+
+def _make_tool_cache_key(tool_name: str, clean_args: Dict[str, Any]) -> str:
+    norm_args = json.dumps(clean_args or {}, sort_keys=True, ensure_ascii=False).lower().strip()
+    digest = hashlib.sha256(f"{tool_name}:{norm_args}".encode("utf-8")).hexdigest()[:24]
+    return f"{tool_name}:{digest}"
+
 def _get_db_url() -> str:
     """Mengembalikan URL database dengan sanitasi host ke 127.0.0.1 untuk mencegah TCP hanging di Linux."""
     url = os.getenv("DATABASE_URL")
@@ -79,101 +102,14 @@ def _get_db_url() -> str:
     return url.replace("@localhost:", "@127.0.0.1:")
 
 
-SATRIA_LEGAL_MADYA_PROMPT = """
-Anda adalah SATRIA (Sistem Analisis Tata Kelola, Regulasi, & Insan Aparatur), berperan khusus sebagai ASISTEN AHLI MADYA BANGDA di lingkungan Direktorat Jenderal Bina Pembangunan Daerah, Kementerian Dalam Negeri RI.
-Anda beroperasi sebagai Agen Cerdas ditenagai oleh MICROSOFT AGENT FRAMEWORK (MAF) sebagai Core Orchestration Engine generasi terbaru, yang terhubung secara bidirectional dengan Model Context Protocol (MCP) Universal Hub.
-
-ARSITEKTUR & INTEGRASI TEKNOLOGI (RESMI & AKTIF):
-1. Core Orchestration Engine: Microsoft Agent Framework (MAF - agent-framework-core v1.19.0) — mengelola penalaran otonom, Multi-Channel Session Persistence, dan Multi-Agent collaboration.
-2. Protokol Komunikasi & Perkakas: Model Context Protocol (MCP) — standar protokol terbuka yang menghubungkan MAF Agent ke basis data internal (RAG pgvector peraturan, SK Tim Kerja Ditjen Bangda 2026, dan korespondensi surat).
-3. Status Integrasi: 🟢 TERINTEGRASI PENUH DENGAN MICROSOFT AGENT FRAMEWORK (MAF ENGINE). Jika ditanya apakah Anda sudah terintegrasi dengan Microsoft Agent Framework, nyatakan secara TEGAS dan JELAS bahwa Anda SUDAH TERINTEGRASI PENUH dengan Microsoft Agent Framework (MAF) sebagai engine backend utama bersama MCP Universal Hub.
-
-SPESIALISASI PERAN: ASISTEN AHLI MADYA (SUBSTANSI HUKUM, REGULASI & KEPEGAWAIAN)
-Fokus Utama & Kerangka Analisis Multi-Dimensi:
-1. Uji Doktrin Multi-Dimensi & Harmonisasi PUU:
-   Dalam menelaah produk hukum (Perda, Perbup/Perkada, SK, SE, Permen, atau naskah dinas), Anda menerapkan 6 Sudut Pandang Doktrin Tokoh & Pedoman BPHN:
-   a. Uji Kewenangan & Anti-Ultra Vires (Prof. Dr. Jimly Asshiddiqie & Ps. 24A UUD 1945): Uji apakah materi muatan didukung mandat delegasi eksplisit UU induk atau melampaui wewenang (cacat ultra vires yang rentan dibatalkan di MA/MK).
-   b. Uji 5 Faktor Efektivitas Hukum Sosiologis (Prof. Dr. Soerjono Soekanto): Apakah hukum dapat bekerja nyata di lapangan? Cek kejelasan norma, kesiapan kelembagaan/aparat OPD, sarana/fasilitas APBD, kesiapan masyarakat, dan budaya hukum lokal.
-   c. Uji Asas Pembentukan PUU (Prof. Maria Farida Indrati & UU 12/2011 jo 13/2022): Kepatuhan terhadap 7 asas formil (kejelasan tujuan, kelembagaan tepat, kesesuaian materi muatan, dapat dilaksanakan, dll) dan 10 asas materiil (kepastian hukum, keadilan, pengayoman).
-   d. Uji 6 Dimensi BPHN Kemenkumham (Pedoman PHN-HN.01.03-07): Pancasila, Ketepatan Jenis PUU, Potensi Disharmoni (Vertikal, Horizontal, Diagonal), Kejelasan Rumusan, Kesesuaian Asas Hukum, dan Dampak Pemda.
-   e. Uji Hukum Pembangunan (Prof. Dr. Mochtar Kusumaatmadja): Law as a tool of social engineering — apakah regulasi mengarahkan transformasi sosial-ekonomi substantif atau sekadar prosedur administratif pasif.
-   f. Uji Dampak Kebijakan & Beban Ekonomi (Regulatory Impact Assessment / RIA - OECD & Bappenas Inpres 7/2017): Rasio beban kepatuhan (compliance cost) vs faedah publik, diferensiasi objek berbobot vs memukul rata.
-2. Pembagian Urusan Konkuren Daerah: Harmonisasi dengan UU No. 23/2014, regulasi teknis sektoral, serta yurisprudensi pengujian Perda di Mahkamah Agung dan MK.
-3. Administrasi Pemerintahan & Diskresi: Asas-Asas Umum Pemerintahan yang Baik (AUPB) dan syarat diskresi pejabat pemerintahan berdasarkan UU No. 30/2014.
-4. Manajemen Insan Aparatur (SDM/ASN): UU 20/2023, Disiplin PNS, Penataan Non-ASN/PPPK, dan Pola Karier Jabatan Fungsional.
-5. Akses Database Internal & Regulasi: Terhubung langsung dengan Master Data Kepegawaian Ditjen Bangda (SK 2026) dan RAG Knowledge Base Regulasi Terkini (2024–2026). DILARANG MENOLAK pertanyaan data nama pegawai atau formasi tim kerja (panggil 'lookup_bangda_staff'). Ketika ditanya ketentuan/pasal peraturan perundang-undangan (misal Permendagri 41/2012 TDU PKL, UU Cipta Kerja), Anda WAJIB memanggil 'search_regulation_knowledge' dan DILARANG mengarang dari ingatan parametrik.
-6. Standarisasi Nomenklatur Peraturan Perundang-Undangan (UU 12/2011 jo UU 13/2022):
-   a. Produk Regulasi/Pengaturan (Regeling): UU, Perppu, PP, Perpres, Permen, Perda, Perbup/Perwali disusun dalam bentuk BAB, BAGIAN, PARAGRAF, dan PASAL.
-   b. Produk Penetapan/Kebijakan (Beschikking): Keputusan Menteri (Kepmen), Keputusan Kepala Daerah (Kepbup/Kepwali), Surat Edaran (SE), atau Instruksi TIDAK MEMILIKI PASAL, melainkan memuat KONSIDERANS dan DIKTUM (KESATU, KEDUA, KETIGA, dst). DILARANG KERAS mengarang atau menciptakan nomor pasal fiktif untuk produk Keputusan Menteri. Jika pengguna menanyakan pasal apa saja pada sebuah Kepmen, Anda WAJIB menjelaskan dengan santun bahwa naskah Kepmen tersusun atas Diktum, lalu paparkan rincian Diktum KESATU, KEDUA, dst.
-7. Doktrin Evaluasi Perda, Keuangan Daerah, & Yurisprudensi Konstitusi (Update 2026):
-   a. Standar Evaluasi Ranperda RPJPD/RPJMD Provinsi (Permendagri 86/2017): Evaluasi Ranperda RPJPD/RPJMD Provinsi dipimpin Ditjen Bangda dalam waktu maksimal 15 hari kerja sejak 6 dokumen wajib lengkap. Output berupa Keputusan Mendagri. Penyempurnaan oleh Pemda maksimal 7 hari kerja.
-   b. Standar Evaluasi Ranperda Tata Ruang / RTRW (Permendagri 13/2016): Evaluasi Ranperda RTRW mensyaratkan secara mutlak Persetujuan Substansi (Persub) Menteri ATR/BPN dan album peta rekomendasi teknis BIG. Jangka waktu evaluasi 15 hari kerja.
-   c. Larangan Pembatalan Perda Sepihak oleh Eksekutif (Putusan MK No. 137/PUU-XIII/2015 & No. 56/PUU-XIV/2016): Mendagri dan Gubernur TIDAK BERWENANG membatalkan secara sepihak Perda yang telah diundangkan (monopoli MA melalui Hak Uji Materil Ps. 24A UUD 1945). Jika Perda bermasalah (misal retribusi memberatkan UMKM), langkah hukum Kemendagri adalah negosiasi/revisi kebijakan dan penundaan/pemotongan transfer ke daerah (TKD/DAU) berdasarkan UU No. 1 Tahun 2022 (HKPD Pasal 99).
-   d. Keuangan Desa (Permendagri 20/2018): Permendagri 113/2014 telah DICABUT. Pengelolaan keuangan desa berpedoman pada Permendagri No. 20 Tahun 2018 dan aplikasi SISKEUDES.
-   e. Pelindungan Data Adminduk (UU 27/2022 PDP & Permendagri 57/2021 SMKI): Integrasi aplikasi daerah wajib berbasis PKS, zero local storage, dan wajib notifikasi tertulis 3 x 24 jam ke warga & BSSN jika terjadi kebocoran data.
-8. Integritas Rujukan Portal Web & Anti-Halusinasi Tautan Eksternal:
-   a. Anda DILARANG KERAS mengarang tautan URL spesifik (misal: format /Details/...), nomor peraturan daerah, atau mengutip portal eksternal (seperti bpk.go.id, jdih, peraturan.go.id) dari ingatan parametrik semata.
-   b. Jika pengguna menanyakan regulasi pada portal luar (misal: "cari di bpk.go.id", "peraturan di jdih", "cari di web"), informasi dan tautan URL HANYA boleh dicantumkan jika secara faktual terdapat pada fakta resmi terverifikasi / output tool penelusuran ('search_web_realtime' atau 'browse_portal_autonomous').
-   c. Jika hasil penelusuran web tidak menemukan dokumen yang dicari, nyatakan secara jujur dan transparan bahwa dokumen tersebut belum terindeks pada portal resmi bersangkutan.
-   d. (TASK-158 CITATION ENFORCEMENT) Setiap pernyataan faktual tentang ISI regulasi (nomor, tahun, bunyi pasal, angka, tanggal) WAJIB disertai penanda sumber: awali blok rujukan dengan 📜 dan sebutkan judul/nomor naskah persis seperti pada konteks RAG yang diberikan. Jika konteks RAG tidak memuat sumbernya, nyatakan jujur "tidak menemukan sumber terverifikasi" dan JANGAN mengarang isi pasal. Larangan mengarang berlaku juga untuk nomor surat/disposisi dan identitas personel (NIP/pangkat).
-9. Struktur Organisasi dan Tata Kerja (SOTK) Ditjen Bina Pembangunan Daerah (Permendagri No. 9 Tahun 2025 / SOTK Kemendagri):
-   a. Pimpinan: Direktur Jenderal Bina Pembangunan Daerah.
-   b. Unsur Pembantu Pimpinan: Sekretariat Direktorat Jenderal (Setditjen), terdiri atas:
-      - Bagian Perencanaan
-      - Bagian Keuangan dan Pengelolaan BMN
-      - Bagian Kepegawaian
-      - Bagian Umum
-      - Kelompok Jabatan Fungsional
-   c. Unsur Pelaksana (DEFINITIF 5 DIREKTORAT):
-      1. Direktorat Perencanaan, Evaluasi dan Informasi Pembangunan Daerah (Dit. PEIPPD): Urusan perencanaan pembangunan daerah, evaluasi kinerja, informasi pembangunan, dan fasilitasi dokumen perencanaan (RPJPD, RPJMD, RKPD).
-      2. Direktorat Sinkronisasi Urusan Pemerintahan Daerah I (Dit. SUPD I): Bidang Pendidikan, Kesehatan, Pekerjaan Umum & Penataan Ruang, Perumahan Rakyat & Kawasan Permukiman.
-      3. Direktorat Sinkronisasi Urusan Pemerintahan Daerah II (Dit. SUPD II): Bidang Sosial, Pemberdayaan Masyarakat & Desa, Pengendalian Penduduk & KB, Pemberdayaan Perempuan & Perlindungan Anak, Administrasi Kependudukan.
-      4. Direktorat Sinkronisasi Urusan Pemerintahan Daerah III (Dit. SUPD III): Bidang Pertanian, Pangan, Kelautan & Perikanan, Pariwisata, Kebudayaan, Kehutanan, ESDM, Perhubungan, Komunikasi & Informatika, Lingkungan Hidup, Statistik, Persandian.
-      5. Direktorat Sinkronisasi Urusan Pemerintahan Daerah IV (Dit. SUPD IV): Bidang Ketenagakerjaan, Transmigrasi, Koperasi & UKM, Perindustrian, Perdagangan, Penanaman Modal, Kepemudaan & Olahraga, Kesatuan Bangsa & Politik, Ketenteraman & Ketertiban Umum.
-   d. Ketentuan SOTK Ditjen Bangda: Ditjen Bangda secara definitif memiliki 5 DIREKTORAT (PEIPPD dan SUPD I s.d. SUPD IV). Selalu sertakan Direktorat PEIPPD sebagai salah satu unsur pelaksana utama.
-10. Otonomi Eksekusi Perkakas & Larangan Klaim Palsu RAG:
-   a. DILARANG membuat klaim semu seperti "Berdasarkan penelusuran pada RAG Knowledge Base..." jika data riil dari perkakas tidak benar-benar terlampir pada konteks giliran saat ini. Jika Anda merespon berdasarkan pengetahuan tata kelola konseptual, gunakan kalimat lugas dan jujur: "Berdasarkan tinjauan tata kelola dan regulasi yang berlaku...".
-   b. Otonomi Proaktif Tanpa Meminta Izin: DILARANG bolak-balik bertanya kepada pemohon: "Apakah Bapak/Ibu mengizinkan saya memanggil tool...?" atau "Apakah saya diizinkan menelusuri web...?". Anda BERWENANG PENUH untuk LANGSUNG MEMBERIKAN JAWABAN TERBAIK secara tuntas, padat, dan solutif. Jika data dokumen primer belum lengkap pada RAG, jelaskan temuan yang ada dan rekomendasikan tindak lanjutnya secara langsung tanpa melempar pertanyaan izin administratif.
-
-Karakter & Etika Komunikasi:
-1. Bersikap sangat profesional, santun, taktis, diplomatis, objektif, dan solutif layaknya Asisten Ahli Madya Bangda berpengalaman.
-2. Selalu menyertakan dasar hukum positif (pasal/UU terkait) dan putusan peradilan (MK/MA) jika relevan.
-3. Sajikan telaah dalam format Executive Brief WhatsApp yang tajam: status kelayakan (🟢 Lulus / 🟡 Perlu Revisi / 🔴 Rawan Ultra Vires), poin pasal kritis, analisis doktrin, dan rekomendasi klausul aman (safe drafting).
-4. DILARANG mencetak header sendiri di awal pesan seperti "🏛️ PENDAPAT ASISTEN AHLI MADYA..." karena sistem pembungkus akan menempelkannya secara otomatis.
-"""
-
-SATRIA_ADMIN_PERSURATAN_PROMPT = """
-Anda adalah SATRIA (Sistem Analisis Tata Kelola, Regulasi, & Insan Aparatur), berperan khusus sebagai ASISTEN ADMINISTRASI PERSURATAN BANGDA di lingkungan Direktorat Jenderal Bina Pembangunan Daerah, Kementerian Dalam Negeri RI.
-Anda beroperasi sebagai Agen Cerdas ditenagai oleh MICROSOFT AGENT FRAMEWORK (MAF) sebagai Core Orchestration Engine yang terintegrasi secara bidirectional dengan Model Context Protocol (MCP) Universal Hub.
-
-ARSITEKTUR & INTEGRASI TEKNOLOGI (RESMI & AKTIF):
-1. Core Orchestration Engine: Microsoft Agent Framework (MAF - agent-framework-core v1.19.0).
-2. Protokol Integrasi: Model Context Protocol (MCP) Universal Hub.
-3. Status Integrasi: 🟢 TERINTEGRASI PENUH DENGAN MICROSOFT AGENT FRAMEWORK (MAF ENGINE).
-
-SPESIALISASI PERAN: ASISTEN ADMINISTRASI PERSURATAN (TATA NASKAH DINAS, AGENDA SURAT, & DISPOSISI)
-Fokus Utama:
-1. Registrasi & Tracking Naskah Dinas: Pemantauan dan pelaporan surat masuk dan surat keluar (baik eksternal dari Pemda/Kementerian/Lembaga maupun internal Ditjen Bangda/Kemendagri).
-2. Penelusuran Disposisi Pimpinan: Menelusuri status dan catatan arahan disposisi dari Pimpinan Ditjen (Direktur Jenderal, Sekretaris Ditjen, dan Para Direktur/Koordinator).
-3. Tata Naskah Dinas & Standarisasi Persuratan: Format nota dinas, surat dinas, penomoran kode klasifikasi naskah dinas Kemendagri, dan alur tata persuratan.
-4. Monitoring Fasilitasi Dokumen Daerah: Memantau riwayat registrasi surat permohonan fasilitasi rancangan produk hukum daerah (Ranperda RTRW, RPJMD, Pajak/Retribusi) dari Pemerintah Daerah.
-5. Akses Database Korespondensi: Terhubung langsung dengan Database Korespondensi & Disposisi Surat Ditjen Bangda (tabel `korespondensi_raw_pool` dan `surat_masuk_puu_eksternal`). Anda WAJIB memanggil tool 'cari_surat_korespondensi' untuk mencari surat masuk/keluar, status disposisi, atau persuratan daerah. DILARANG menyatakan tidak memiliki akses persuratan dinas.
-6. Standarisasi Format Tata Naskah Dinas (Permendagri No. 1 Tahun 2023):
-   a. Tipografi & Margin: Font Arial ukuran 11 pt, margin Atas 2 cm, Bawah 2 cm, Kiri 2.5 cm, Kanan 2 cm (atau Bawah 1.5 cm pada halaman berkop surat).
-   b. Penulisan Gelar & NIP: Pada produk pengaturan (Regeling) DILARANG mencantumkan gelar dan NIP. Pada naskah dinas penugasan/korespondensi (Nota Dinas, Surat Tugas, SPT) WAJIB mencantumkan gelar akademik/keagamaan dan NIP.
-   c. Format Khusus: Mematuhi 21 format baku (Nota Dinas, Surat Undangan, Berita Acara, dll), legalitas TTE BSrE BSSN, serta pendelegasian mandat a.n./u.b./Plt/Plh/Pjs.
-7. Kode Klasifikasi Arsip & Penomoran Surat (Permendagri No. 83 Tahun 2022):
-   a. Struktur Nomor: [Sifat/Keamanan].[Kode Klasifikasi]/[Nomor Urut]/[Kode Satker]/[Tahun].
-   b. Kode Pokok: 000 Fasilitatif, 000.6 Hubungan Urusan Pemerintahan, 100 Pemerintahan Dalam Negeri, 600 Pembangunan Daerah (Ditjen Bina Bangda).
-
-Karakter & Etika Komunikasi:
-1. Bersikap sangat taktis, akurat, informatif, dan terstruktur layaknya Asisten Administrasi Persuratan Ditjen Bangda yang handal.
-2. Sajikan rincian surat secara teratur: Nomor Surat/Nota Dinas, Tanggal Terima/Surat, Pengirim/Asal Surat, Perihal, Posisi Berkas Saat Ini, dan Catatan Arahan Disposisi.
-3. Berikan format respon yang rapi dan mudah dibaca di layar WhatsApp menggunakan emoji penegas, bullet point, dan huruf tebal (*bold*).
-4. DILARANG mencetak header sendiri di awal pesan seperti "📮 ASISTEN ADMINISTRASI PERSURATAN..." karena sistem pembungkus akan menempelkannya secara otomatis.
-"""
-
-SATRIA_SYSTEM_PROMPT = SATRIA_LEGAL_MADYA_PROMPT
+# TASK-304: Persona prompts dipisahkan ke integrations/whatsapp/handlers/prompts.py
+from integrations.whatsapp.handlers.prompts import (
+    SATRIA_PERSONAL_ASSISTANT_PROMPT,
+    SATRIA_LEGAL_MADYA_PROMPT,
+    SATRIA_ADMIN_PERSURATAN_PROMPT,
+    SATRIA_SYSTEM_PROMPT,
+)
+from integrations.whatsapp.handlers.persona_router import detect_satria_persona
 
 
 # ===== TASK-158: Validator sitasi RAG (citation enforcement, pasca-generasi) =====
@@ -223,6 +159,34 @@ def validate_rag_citation(reply_text: str) -> Dict[str, Any]:
         "honest_abstain": honest_abstain,
         "citation_ok": citation_ok,
     }
+
+
+def enforce_rag_citation_on_reply(reply_text: str, rag_context: str = "") -> tuple[str, Dict[str, Any]]:
+    """TASK-158 (158-D): Post-generation citation gate.
+    Jika jawaban memiliki klaim faktual regulasi/surat/personel namun lupa mencantumkan sitasi,
+    dan konteks RAG memiliki judul rujukan (`📜 *...*`), lampirkan sumber terverifikasi secara otomatis.
+    """
+    check = validate_rag_citation(reply_text)
+    if check["citation_ok"] or not reply_text or not rag_context:
+        return reply_text, check
+
+    # Ekstrak judul dokumen dari rag_context yang diawali 📜 *Judul*
+    found_titles = []
+    for m in re.finditer(r"📜\s*\*([^*]+)\*", rag_context):
+        t = m.group(1).strip()
+        if t and t not in found_titles:
+            found_titles.append(t)
+        if len(found_titles) >= 3:
+            break
+
+    if found_titles:
+        citation_footer = "\n\n📜 *Sumber Rujukan Terverifikasi:*\n" + "\n".join(
+            f"• _{t}_" for t in found_titles
+        )
+        updated_reply = reply_text.rstrip() + citation_footer
+        return updated_reply, validate_rag_citation(updated_reply)
+
+    return reply_text, check
 
 
 # ===== TASK-156: Perintah preferensi natural language =====
@@ -328,6 +292,130 @@ def _handle_preference_command(cleaned_text: str, clean_phone: str) -> Optional[
         + "\n\nPreferensi ini akan saya pakai di setiap jawaban berikutnya, "
           "bahkan setelah sesi di-reset. Ketik _\"lupakan preferensi saya\"_ untuk menghapusnya."
     )
+
+
+# ===== TASK-162: Detektor & Handler Feedback Loop (👍 / 👎) =====
+
+_POSITIVE_FEEDBACK_EXACT = {
+    "👍", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿", "👍👍",
+    "+1", "jempol", "membantu", "sangat membantu", "cukup membantu",
+    "mantap satria", "bagus satria", "terima kasih membantu", "oke membantu",
+}
+_NEGATIVE_FEEDBACK_EXACT = {
+    "👎", "👎🏻", "👎🏼", "👎🏽", "👎🏾", "👎🏿", "👎👎",
+    "-1", "tidak membantu", "kurang membantu", "belum membantu",
+    "kurang tepat", "jawaban salah", "masih salah",
+}
+
+
+def detect_feedback_reaction(text: str) -> Optional[Dict[str, str]]:
+    """
+    TASK-162: Mendeteksi apakah teks pesan pengguna merupakan penilaian umpan balik (👍 / 👎).
+    Mengembalikan dict {'rating': 'positive'|'negative', 'note': str} atau None.
+    """
+    raw = (text or "").strip()
+    if not raw or len(raw) > 160:
+        return None
+    low = raw.lower().strip()
+
+    if raw in _POSITIVE_FEEDBACK_EXACT or low in _POSITIVE_FEEDBACK_EXACT:
+        return {"rating": "positive", "note": ""}
+    if raw in _NEGATIVE_FEEDBACK_EXACT or low in _NEGATIVE_FEEDBACK_EXACT:
+        return {"rating": "negative", "note": ""}
+
+    # Prefix jempol diikuti catatan singkat (maksimal 20 kata)
+    words = raw.split()
+    if len(words) <= 20:
+        if raw.startswith(("👍", "+1")) or low.startswith(("membantu,", "sangat membantu")):
+            note = re.sub(r"^(?:👍[\U0001F3FB-\U0001F3FF]*|\+1|sangat membantu|membantu)[,:\s-]*", "", raw, flags=re.IGNORECASE).strip()
+            return {"rating": "positive", "note": note}
+        if raw.startswith(("👎", "-1")) or low.startswith(("tidak membantu", "kurang membantu", "kurang tepat")):
+            note = re.sub(r"^(?:👎[\U0001F3FB-\U0001F3FF]*|-1|tidak membantu|kurang membantu|kurang tepat)[,:\s-]*", "", raw, flags=re.IGNORECASE).strip()
+            return {"rating": "negative", "note": note}
+
+    return None
+
+
+def handle_user_feedback_reaction(
+    text: str,
+    user: Dict[str, Any],
+    clean_phone: str,
+    history: Optional[List[Dict[str, Any]]] = None,
+) -> Optional[str]:
+    """
+    TASK-162: Menangani dan menyimpan feedback 👍/👎 ke storage/admin_data/satria_feedback/
+    serta mencatatnya ke satria_interaction_logger dengan korelasi ke pertanyaan terakhir.
+    """
+    fb = detect_feedback_reaction(text)
+    if not fb:
+        return None
+
+    rating = fb["rating"]
+    note = fb.get("note", "")
+
+    # Cari pertanyaan user dan intent asisten terakhir dari history
+    prev_user_query = ""
+    prev_intent = "unknown"
+    if history:
+        for h in reversed(history):
+            if h.get("role") == "assistant" and prev_intent == "unknown" and h.get("intent"):
+                prev_intent = str(h.get("intent"))
+            elif h.get("role") == "user" and not prev_user_query:
+                cand_q = str(h.get("content") or "").strip()
+                if cand_q and not detect_feedback_reaction(cand_q):
+                    prev_user_query = cand_q
+
+    now_iso = datetime.now().isoformat()
+    today_str = datetime.now().strftime("%Y%m%d")
+    feedback_dir = Path("/home/aseps/MCP/storage/admin_data/satria_feedback")
+    feedback_dir.mkdir(parents=True, exist_ok=True)
+    feedback_file = feedback_dir / f"feedback_{today_str}.jsonl"
+
+    fb_record = {
+        "timestamp": now_iso,
+        "type": "response_rating",
+        "rating": rating,
+        "score": 1 if rating == "positive" else 0,
+        "note": note,
+        "user_phone": clean_phone,
+        "user_name": user.get("full_name", ""),
+        "previous_query": prev_user_query[:300],
+        "previous_intent": prev_intent,
+    }
+    try:
+        with open(feedback_file, "a", encoding="utf-8") as fp:
+            fp.write(json.dumps(fb_record, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning(f"Failed writing feedback jsonl: {e}")
+
+    satria_interaction_logger.log_interaction_async({
+        "timestamp": now_iso,
+        "user_phone": clean_phone,
+        "user_name": user.get("full_name", ""),
+        "input_text": text,
+        "is_non_service": True,
+        "non_service_category": "user_feedback_rating",
+        "intent": prev_intent,
+        "feedback_rating": rating,
+        "feedback_note": note,
+        "previous_query": prev_user_query[:250],
+        "response_time_ms": 2.0,
+        "fallback_used": False,
+    })
+
+    if rating == "positive":
+        return (
+            "🙏 *Terima kasih atas apresiasinya!* 👍\n\n"
+            "Penilaian positif Bapak/Ibu telah dicatat pada sistem evaluasi *SATRIA* "
+            "untuk terus menjaga presisi layanan telaah regulasi dan persuratan."
+        )
+    else:
+        note_ack = f"\n📝 *Catatan:* _{note}_" if note else ""
+        return (
+            "🙏 *Terima kasih atas masukannya.* 👎\n\n"
+            f"Penilaian ini telah kami catat pada antrean evaluasi kualitas *SATRIA* untuk memperbaiki akurasi jawaban.{note_ack}\n"
+            "Jika berkenan, Bapak/Ibu dapat mengetik detail koreksi atau pasal/nomor surat yang dimaksud agar segera kami perbaiki."
+        )
 
 def _lookup_bangda_staff_data(query: str) -> str:
     """Mencari data kepegawaian, pejabat, dan struktur tim kerja Ditjen Bangda dari database master SK 2026."""
@@ -637,8 +725,10 @@ def _check_ltm_memory_status() -> str:
         return f"Gagal mengecek status LTM: {e}"
 
 
-def _namespace_of_title(title: str) -> str:
-    """TASK-158: heuristik namespace dari judul untuk diversifikasi hasil RAG."""
+def _namespace_of_title(title: str, explicit_ns: Optional[str] = None) -> str:
+    """TASK-158: heuristik & resolusi namespace dari kolom namespace atau judul untuk diversifikasi hasil RAG."""
+    if explicit_ns and explicit_ns.strip():
+        return explicit_ns.strip()
     t = (title or "").lower()
     if t.startswith("tim_kerja_2026") or "personel tim kerja" in t:
         return "organisasi_bangda"
@@ -649,6 +739,63 @@ def _namespace_of_title(title: str) -> str:
     return "other"
 
 
+def _rrf_fuse_rag_rows(
+    vector_rows: List[tuple],
+    lexical_rows: List[tuple],
+    top_k: int = 3,
+    rrf_k: int = 60,
+    max_per_namespace: int = 2,
+    priority_namespaces: tuple = (),
+) -> List[tuple]:
+    """TASK-158: Reciprocal Rank Fusion (RRF) untuk menggabungkan peringkat Vector Search (pgvector)
+    dan Lexical/Citation Search (ILIKE) disertai diversifikasi kuota antar-namespace.
+
+    Format input tuple: (doc_id, title, content, namespace, vec_distance_or_none)
+    Mengembalikan list tuple: (title, content, vec_distance, namespace, rrf_score)
+    """
+    scores: Dict[str, float] = {}
+    doc_map: Dict[str, tuple] = {}
+
+    for rank, row in enumerate(vector_rows, start=1):
+        doc_id, title, content, ns, vec_dist = row[0], row[1], row[2], row[3], row[4]
+        key = str(doc_id or title)
+        # Boost ringan jika berasal dari namespace prioritas kueri
+        ns_boost = 1.25 if ns in priority_namespaces else 1.0
+        scores[key] = scores.get(key, 0.0) + (ns_boost / (rrf_k + rank))
+        if key not in doc_map:
+            doc_map[key] = (title, content, vec_dist, ns)
+
+    for rank, row in enumerate(lexical_rows, start=1):
+        doc_id, title, content, ns, vec_dist = row[0], row[1], row[2], row[3], row[4]
+        key = str(doc_id or title)
+        ns_boost = 1.35 if ns in priority_namespaces else 1.15
+        scores[key] = scores.get(key, 0.0) + (ns_boost / (rrf_k + rank))
+        if key not in doc_map:
+            doc_map[key] = (title, content, vec_dist, ns)
+
+    ranked_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)
+
+    diversified: List[tuple] = []
+    per_ns_count: Dict[str, int] = {}
+    for key in ranked_keys:
+        title, content, vec_dist, ns = doc_map[key]
+        resolved_ns = _namespace_of_title(str(title), explicit_ns=str(ns) if ns else None)
+        if per_ns_count.get(resolved_ns, 0) >= max_per_namespace:
+            continue
+        per_ns_count[resolved_ns] = per_ns_count.get(resolved_ns, 0) + 1
+        diversified.append((title, content, vec_dist, resolved_ns, round(scores[key], 5)))
+        if len(diversified) >= top_k:
+            break
+
+    if not diversified and ranked_keys:
+        for key in ranked_keys[:top_k]:
+            title, content, vec_dist, ns = doc_map[key]
+            resolved_ns = _namespace_of_title(str(title), explicit_ns=str(ns) if ns else None)
+            diversified.append((title, content, vec_dist, resolved_ns, round(scores[key], 5)))
+
+    return diversified
+
+
 import functools
 
 @functools.lru_cache(maxsize=100)
@@ -656,7 +803,60 @@ def _retrieve_rag_legal_knowledge(query: str, namespace: Optional[str] = None, t
     """Mencari naskah peraturan perundang-undangan dan tata naskah dari database RAG pgvector / knowledge_documents."""
     q_lower = query.lower()
 
-    # 0. Deteksi Khusus: DIM / Masukan Revisi UU 23/2014
+    # 0. Deteksi Khusus: Relational Baseline UU 23/2014 (Sub-Urusan & Pembagian Kewenangan Lampiran)
+    if "uu 23" in q_lower and ("sub urusan" in q_lower or "sub-urusan" in q_lower or "pembagian urusan" in q_lower):
+        try:
+            import psycopg2
+            conn_u = psycopg2.connect(_get_db_url(), connect_timeout=3)
+            cur_u = conn_u.cursor()
+            cur_u.execute("""
+                SELECT b.kode, b.nama_bidang, s.nomor, s.nama 
+                FROM uu23_lampiran_bidang b
+                JOIN uu23_lampiran_sub_urusan s ON b.id = s.bidang_id
+                ORDER BY b.id, s.nomor;
+            """)
+            all_subs = cur_u.fetchall()
+            cur_u.close()
+            conn_u.close()
+
+            # Filter bidang spesifik jika disebutkan dalam query (mis. perumahan, pendidikan, kesehatan, dll)
+            matched_subs = []
+            target_bidang_row = None
+            
+            # Prioritaskan pencocokan nama bidang secara utuh atau kata kunci dominan
+            for r in all_subs:
+                b_nama = r[1].lower()
+                # Jika nama bidang cocok dominan di query
+                if b_nama in q_lower or (len(b_nama.split()) > 1 and all(w in q_lower for w in b_nama.split()[:2])):
+                    target_bidang_row = r
+                    break
+
+            if target_bidang_row:
+                target_b_id = target_bidang_row[1]
+                matched_subs = [r for r in all_subs if r[1] == target_b_id]
+            else:
+                # Fallback: cari kata kunci bidang terpanjang
+                for r in all_subs:
+                    b_nama = r[1].lower()
+                    b_words = [w for w in b_nama.split() if len(w) > 5]
+                    if any(bw in q_lower for bw in b_words):
+                        target_b_id = r[1]
+                        matched_subs = [x for x in all_subs if x[1] == target_b_id]
+                        break
+
+            if matched_subs:
+                bidang_name = matched_subs[0][1]
+                bidang_kode = matched_subs[0][0]
+                lines = [f"📜 *Lampiran UU No. 23 Tahun 2014 — Bidang {bidang_name} (Huruf {bidang_kode})* `[Database Relasional UU 23]`\n"]
+                lines.append(f"Sub-Urusan Pemerintahan pada Bidang {bidang_name.title()} meliputi:")
+                for sub in matched_subs:
+                    lines.append(f"  {sub[2]}. *{sub[3]}*")
+                return "\n".join(lines)
+        except Exception as uu_err:
+            logger.debug(f"Relational UU23 query notice: {uu_err}")
+
+    # 0.1 Deteksi Khusus: DIM / Masukan Revisi UU 23/2014 (disertai sitasi 📜 agar lolos Citation Gate TASK-158)
+    dim_summary_prefix = ""
     dim_triggers = [
         "dim", "inventaris masalah", "inventaymasalah", "masukan uu 23", "revisi uu 23",
         "saran daerah", "saran kementerian", "masukan provinsi", "masukan daerah",
@@ -665,12 +865,18 @@ def _retrieve_rag_legal_knowledge(query: str, namespace: Optional[str] = None, t
     if any(t in q_lower for t in dim_triggers) or ("uu 23" in q_lower and any(w in q_lower for w in ["masukan", "saran", "daerah", "kementerian", "provinsi"])):
         dim_data = _retrieve_dim_uu23_data(query)
         if dim_data:
-            return dim_data
+            if any(k in q_lower for k in ["daftar", "list", "berapa", "mana saja", "siapa saja"]):
+                return f"📜 *Kompilasi Resmi DIM & Saran Masukan Revisi UU No. 23 Tahun 2014* `[ns: puu:regulasi:sarmak]`\n{dim_data}"
+            dim_summary_prefix = f"📜 *Kompilasi Resmi DIM & Saran Masukan Revisi UU No. 23 Tahun 2014* `[ns: puu:regulasi:sarmak]`\n{dim_data}\n\n"
 
     # 0.5 Deteksi Khusus: Cek Status LTM Memory
     ltm_triggers = ["memory ltm", "memori ltm", "list memory", "daftar memori", "akses ltm", "status ltm"]
     if any(t in q_lower for t in ltm_triggers):
         return _check_ltm_memory_status()
+
+    # TASK-304 Subtask 304-D: Normalisasi Query & Peningkatan Presisi pgvector
+    from integrations.whatsapp.handlers.retrieval.query_normalizer import normalize_legal_query
+    emb_search_prompt, extracted_keywords = normalize_legal_query(query)
 
     try:
         import psycopg2
@@ -678,149 +884,178 @@ def _retrieve_rag_legal_knowledge(query: str, namespace: Optional[str] = None, t
         conn = psycopg2.connect(db_url, connect_timeout=5)
         cur = conn.cursor()
 
-        # Ekstraksi kata kunci penting (regulasi, tata naskah, perencanaan, tata ruang, adminduk, ketenagakerjaan, dll)
-        reg_keywords = [
-            "permendagri", "41", "pkl", "tdu", "cipta kerja", "pp 7", "2021", "2012", "uu 6", "uu 23",
-            "psu", "utilitas", "tmmd", "120", "80", "1/2023", "83/2022", "9/2025", "86/2017", "13/2016",
-            "20/2018", "113/2014", "tata naskah", "naskah dinas", "kode klasifikasi", "rpjmd", "rpjpd",
-            "rkpd", "rtrw", "tata ruang", "persub", "keuangan desa", "hkpd", "1/2022", "pdrd", "retribusi",
-            "pdp", "27/2022", "57/2021", "smki", "adminduk", "mk 137", "putusan mk", "sotk", "bangda",
-            "struktur", "evaluasi ranperda", "margin", "font", "arial", "gelar", "persuratan",
-            "naker", "tenaga kerja", "ketenagakerjaan", "transmigrasi", "tenaga ahli", "supd iv", "supd 4",
-            "amaryadi", "lpk", "akad", "upah", "ump", "umk", "pengawasan ketenagakerjaan"
-        ]
-        keywords = [kw for kw in reg_keywords if kw in q_lower]
-        # TASK-158: 7 namespace -> 10 (audit 2026-10-05, knowledge_documents live).
-        # +archive_2025 (2382 arsip korespondensi 2025), +organisasi_bangda (368 personel Tim Kerja 2026),
-        # +arsip_regulasi (100 arsip digital regulasi). SRIKANDI tetap via search_srikandi_rag terpisah.
-        # Namespace prioritas per kategori query: korespondensi/kepegawaian diutamakan bila
-        # query menyebutkannya, agar namespace besar (archive_2025) tidak menenggelamkan yang kecil.
+        keywords = extracted_keywords
+
+        # TASK-158: Ekspansi 15 namespace aktif (mencakup puu:regulasi:*, purbalingga_legal,
+        # archive_2025, organisasi_bangda, arsip_regulasi, dll).
         active_namespaces = (
             'evaluasi_regulasi', 'legal_regulations', 'shared_legal',
             'arsip_knowledge', 'setditjen_bangda', 'docs_rag', 'supd_iv',
             'archive_2025', 'organisasi_bangda', 'arsip_regulasi',
+            'puu:regulasi:pencari', 'puu:regulasi:operasional',
+            'puu:regulasi:sarmak_daerah', 'puu:regulasi:sarmak_kl',
+            'purbalingga_legal',
         )
+        is_personnel_query = any(w in q_lower for w in (
+            "tim kerja", "personel", "personil", "pegawai", "pejabat", "staf",
+            "nip", "pangkat", "golongan", "jabatan", "siapa saja", "struktur tim",
+        ))
+        is_correspondence_query = any(w in q_lower for w in (
+            "surat", "disposisi", "arsip surat", "nomor surat", "pengirim",
+            "korespondensi", "nota dinas", "agenda surat",
+        ))
+        priority_namespaces: tuple = ()
         if namespace:
             active_namespaces = (namespace,)
+            priority_namespaces = (namespace,)
         else:
-            is_personnel_query = any(w in q_lower for w in (
-                "tim kerja", "personel", "personil", "pegawai", "pejabat", "staf",
-                "nip", "pangkat", "golongan", "jabatan", "siapa saja", "struktur tim",
-            ))
-            is_correspondence_query = any(w in q_lower for w in (
-                "surat", "disposisi", "arsip surat", "nomor surat", "pengirim",
-                "korespondensi", "nota dinas", "agenda surat",
-            ))
             if is_personnel_query and not is_correspondence_query:
-                active_namespaces = ('organisasi_bangda',) + tuple(
-                    ns for ns in active_namespaces if ns != 'organisasi_bangda'
+                priority_namespaces = ('organisasi_bangda', 'setditjen_bangda')
+                active_namespaces = priority_namespaces + tuple(
+                    ns for ns in active_namespaces if ns not in priority_namespaces
                 )
             elif is_correspondence_query and not is_personnel_query:
-                active_namespaces = ('archive_2025', 'arsip_knowledge') + tuple(
-                    ns for ns in active_namespaces if ns not in ('archive_2025', 'arsip_knowledge')
+                priority_namespaces = ('archive_2025', 'arsip_knowledge')
+                active_namespaces = priority_namespaces + tuple(
+                    ns for ns in active_namespaces if ns not in priority_namespaces
+                )
+            else:
+                priority_namespaces = (
+                    'legal_regulations', 'puu:regulasi:operasional',
+                    'puu:regulasi:pencari', 'evaluasi_regulasi',
+                    'shared_legal', 'arsip_regulasi', 'docs_rag',
                 )
 
         # TASK-158: ambang jarak vektor per kategori query (dinamis, bukan hardcode global).
-        # Personel: embedding personel berjarak jauh (~0.35 vs ~0.24 arsip) karena perbedaan
-        # kosakata — ambang longgar agar organisasi_bangda tetap terambil.
         vector_distance_threshold: Optional[float] = None
         if is_personnel_query and not is_correspondence_query:
             vector_distance_threshold = 0.45
 
-        # Semantic Vector Search via Ollama nomic-embed-text
+        v_rows_raw: List[tuple] = []
+        l_rows_raw: List[tuple] = []
+
+        # 1. Semantic Vector Search via Ollama nomic-embed-text (menggunakan normalized prompt)
         try:
-            import requests
-            resp = requests.post(
-                "http://127.0.0.1:11434/api/embeddings",
-                json={"model": "nomic-embed-text", "prompt": query[:1000]},
-                timeout=4
-            )
-            if resp.status_code == 200:
-                emb = resp.json().get("embedding")
-                if emb:
-                    ef_search = int(os.getenv("PGVECTOR_EF_SEARCH", "200"))
-                    with conn:
-                        with conn.cursor() as sem_cur:
-                            sem_cur.execute(f"SET LOCAL hnsw.ef_search = {ef_search};")
+            import httpx as _httpx_emb
+            prompt_for_emb = emb_search_prompt if emb_search_prompt else query
+            _emb_key = prompt_for_emb[:1000].strip().lower()
+            emb = _EMBEDDING_CACHE.get(_emb_key)
+            if emb is None:
+                with _httpx_emb.Client(timeout=4.0) as _emb_client:
+                    resp = _emb_client.post(
+                        "http://127.0.0.1:11434/api/embeddings",
+                        json={"model": "nomic-embed-text", "prompt": prompt_for_emb[:1000]},
+                    )
+                    if resp.status_code == 200:
+                        emb = resp.json().get("embedding")
+                        if emb:
+                            if len(_EMBEDDING_CACHE) > 500:
+                                _EMBEDDING_CACHE.clear()
+                            _EMBEDDING_CACHE[_emb_key] = emb
+            if emb:
+                ef_search = int(os.getenv("PGVECTOR_EF_SEARCH", "200"))
+                with conn:
+                    with conn.cursor() as sem_cur:
+                        sem_cur.execute(f"SET LOCAL hnsw.ef_search = {ef_search};")
+                        sem_cur.execute("""
+                            SELECT id,
+                                   COALESCE(metadata->>'title', metadata->>'file_name', id) AS title,
+                                   content,
+                                   namespace,
+                                   embedding <=> %s::vector AS vec_distance
+                            FROM knowledge_documents
+                            WHERE namespace IN %s
+                              AND embedding IS NOT NULL
+                            ORDER BY embedding <=> %s::vector
+                            LIMIT %s;
+                        """, (emb, active_namespaces, emb, max(top_k * 4, 12)))
+                        v_rows_raw = sem_cur.fetchall()
+
+                        # TASK-234: Fallback exact scan cerdas hanya bila hasil HNSW kosong (0 baris)
+                        if len(v_rows_raw) == 0:
+                            sem_cur.execute("SET LOCAL enable_indexscan = off; SET LOCAL enable_bitmapscan = off;")
                             sem_cur.execute("""
-                                SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content,
+                                SELECT id,
+                                       COALESCE(metadata->>'title', metadata->>'file_name', id) AS title,
+                                       content,
+                                       namespace,
                                        embedding <=> %s::vector AS vec_distance
                                 FROM knowledge_documents
                                 WHERE namespace IN %s
                                   AND embedding IS NOT NULL
                                 ORDER BY embedding <=> %s::vector
                                 LIMIT %s;
-                            """, (emb, active_namespaces, emb, top_k * 2))
-                            v_rows = sem_cur.fetchall()
-
-                            # TASK-234: Fallback exact scan cerdas hanya bila hasil HNSW kosong (0 baris)
-                            if len(v_rows) == 0:
-                                sem_cur.execute("SET LOCAL enable_indexscan = off; SET LOCAL enable_bitmapscan = off;")
-                                sem_cur.execute("""
-                                    SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content,
-                                           embedding <=> %s::vector AS vec_distance
-                                    FROM knowledge_documents
-                                    WHERE namespace IN %s
-                                      AND embedding IS NOT NULL
-                                    ORDER BY embedding <=> %s::vector
-                                    LIMIT %s;
-                                """, (emb, active_namespaces, emb, top_k * 2))
-                                v_rows = sem_cur.fetchall()
-                                if len(v_rows) > 0:
-                                    logger.warning(f"pgvector zero-result fallback exact triggered in whatsapp handler: found {len(v_rows)}")
-                    if vector_distance_threshold is not None:
-                        v_rows = [r for r in v_rows if r[2] is not None and float(r[2]) <= vector_distance_threshold]
-                    # Diversifikasi namespace: maksimal 2 baris per namespace agar satu
-                    # namespace besar tidak menenggelamkan namespace kecil yang relevan.
-                    diversified = []
-                    per_ns_count: Dict[str, int] = {}
-                    for r in v_rows:
-                        ns_of_row = _namespace_of_title(str(r[0]))
-                        if per_ns_count.get(ns_of_row, 0) >= 2:
-                            continue
-                        per_ns_count[ns_of_row] = per_ns_count.get(ns_of_row, 0) + 1
-                        diversified.append(r)
-                        if len(diversified) >= top_k:
-                            break
-                    v_rows = diversified or v_rows[:top_k]
-                    if v_rows:
-                        rag_text = "NASKAH PERATURAN & KNOWLEDGE BASE TERVERIFIKASI (RAG DATABASE):\n"
-                        for r in v_rows:
-                            rag_text += f"\n📜 *{r[0]}*\n{r[1][:950]}\n"
-                        cur.close()
-                        conn.close()
-                        return rag_text.strip()
+                            """, (emb, active_namespaces, emb, max(top_k * 4, 12)))
+                            v_rows_raw = sem_cur.fetchall()
+                            if len(v_rows_raw) > 0:
+                                logger.warning(f"pgvector zero-result fallback exact triggered in whatsapp handler: found {len(v_rows_raw)}")
+                if vector_distance_threshold is not None:
+                    v_rows_raw = [r for r in v_rows_raw if r[4] is not None and float(r[4]) <= vector_distance_threshold]
         except Exception as sem_err:
             logger.debug(f"Semantic search fallback notice: {sem_err}")
 
-        # Fallback to Keyword Search if semantic fails
+        # 2. Lexical / Citation Search (ILIKE) untuk menangkap kecocokan eksak nomor regulasi, pasal, & sarmak tanpa embedding
+        # Prioritaskan dokumen yang mencocokkan PALING BANYAK kata kunci (skor relevan leksikal), bukan sekadar created_at DESC
         if keywords:
-            clauses = ["(COALESCE(metadata->>'title', metadata->>'file_name', id) ILIKE %s OR content ILIKE %s)" for _ in keywords]
-            params = []
-            for kw in keywords:
-                params.extend([f"%{kw}%", f"%{kw}%"])
-            params.append(active_namespaces)
-            sql = f"""
-                SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content 
-                FROM knowledge_documents 
-                WHERE ({' OR '.join(clauses)})
-                  AND namespace IN %s
-                ORDER BY created_at DESC LIMIT %s;
-            """
-            params.append(top_k)
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-            if rows:
-                rag_text = "NASKAH PERATURAN & KNOWLEDGE BASE TERVERIFIKASI (RAG DATABASE):\n"
-                for r in rows:
-                    rag_text += f"\n📜 *{r[0]}*\n{r[1][:950]}\n"
-                cur.close()
-                conn.close()
-                return rag_text.strip()
+            try:
+                active_kws = keywords[:6]
+                match_clauses = ["(COALESCE(metadata->>'title', metadata->>'file_name', id) ILIKE %s OR content ILIKE %s)" for _ in active_kws]
+                score_terms = [
+                    "(CASE WHEN COALESCE(metadata->>'title', metadata->>'file_name', id) ILIKE %s THEN 2 ELSE 0 END + CASE WHEN content ILIKE %s THEN 1 ELSE 0 END)"
+                    for _ in active_kws
+                ]
+                params: List[Any] = []
+                # Params untuk score_terms di SELECT/ORDER BY
+                for kw in active_kws:
+                    params.extend([f"%{kw}%", f"%{kw}%"])
+                # Params untuk WHERE clauses
+                for kw in active_kws:
+                    params.extend([f"%{kw}%", f"%{kw}%"])
+                params.append(active_namespaces)
+                params.append(priority_namespaces)
+                params.append(max(top_k * 3, 9))
+                sql_lex = f"""
+                    SELECT id,
+                           COALESCE(metadata->>'title', metadata->>'file_name', id) AS title,
+                           content,
+                           namespace,
+                           NULL AS vec_distance,
+                           ({' + '.join(score_terms)}) AS kw_score
+                    FROM knowledge_documents
+                    WHERE ({' OR '.join(match_clauses)})
+                      AND namespace IN %s
+                    ORDER BY kw_score DESC,
+                             (CASE WHEN namespace IN %s THEN 0 ELSE 1 END) ASC,
+                             created_at DESC
+                    LIMIT %s;
+                """
+                cur.execute(sql_lex, params)
+                l_rows_raw = [r[:5] for r in cur.fetchall()]
+            except Exception as lex_err:
+                logger.debug(f"Lexical search notice: {lex_err}")
+
+        # 3. Hybrid Reciprocal Rank Fusion (RRF) + Diversifikasi Namespace
+        fused_rows = _rrf_fuse_rag_rows(
+            vector_rows=v_rows_raw,
+            lexical_rows=l_rows_raw,
+            top_k=top_k,
+            max_per_namespace=2,
+            priority_namespaces=priority_namespaces,
+        )
+        if fused_rows:
+            rag_text = "NASKAH PERATURAN & KNOWLEDGE BASE TERVERIFIKASI (RAG DATABASE):\n"
+            if dim_summary_prefix:
+                rag_text += f"\n{dim_summary_prefix}"
+            for r in fused_rows:
+                title_str, content_str, _, ns_str, _ = r
+                rag_text += f"\n📜 *{title_str}* `[ns: {ns_str}]`\n{content_str[:950]}\n"
+            cur.close()
+            conn.close()
+            return rag_text.strip()
 
         # Fallback query umum
         cur.execute("""
-            SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content 
+            SELECT COALESCE(metadata->>'title', metadata->>'file_name', id) AS title, content, namespace
             FROM knowledge_documents 
             WHERE namespace IN %s
             ORDER BY created_at DESC LIMIT 2;
@@ -831,7 +1066,7 @@ def _retrieve_rag_legal_knowledge(query: str, namespace: Optional[str] = None, t
         if rows:
             rag_text = "NASKAH REGULASI TERKAIT:\n"
             for r in rows:
-                rag_text += f"\n📜 *{r[0]}*\n{r[1][:650]}\n"
+                rag_text += f"\n📜 *{r[0]}* `[ns: {r[2]}]`\n{r[1][:650]}\n"
             return rag_text.strip()
     except Exception as e:
         logger.warning(f"RAG search error: {e}")
@@ -856,6 +1091,13 @@ def _query_korespondensi_data(query: str) -> str:
                 return format_dossier_for_whatsapp(dossier)
     except Exception as e:
         logger.warning(f"Dual-branch correspondence resolver error: {e}, falling back to DB query...")
+
+    # TASK-304 Subtask 304-E: Delegasikan ke smart correspondence query (pg_trgm & entity-based SQL)
+    try:
+        from integrations.whatsapp.handlers.retrieval.smart_correspondence import query_correspondence_smart
+        return query_correspondence_smart(query)
+    except Exception as smart_err:
+        logger.warning(f"Smart correspondence fallback error: {smart_err}, executing legacy fallback...")
 
     try:
         import psycopg2
@@ -1525,11 +1767,37 @@ class MilestoneGuard:
 async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipient_jid: Optional[str] = None) -> str:
     """
     Dispatcher pemanggilan perkakas SATRIA dengan proteksi Pydantic validator, ToolTimeoutGuard,
-    dan Delayed Milestone Progress Feedback untuk operasi penelusuran berdurasi panjang.
+    Semantic/Exact Tool Result Cache (TASK-160), dan Delayed Milestone Progress Feedback.
     """
+    global _LAST_TURN_CACHE_HIT, _LAST_TURN_TOOLS_CALLED
+    if tool_name not in _LAST_TURN_TOOLS_CALLED:
+        _LAST_TURN_TOOLS_CALLED.append(tool_name)
+
     is_valid, clean_args, val_err = satria_pydantic_adapter.sanitize_and_validate(tool_name, arguments)
     if not is_valid:
         logger.warning(f"Pydantic schema notice for {tool_name}: {val_err}")
+
+    # TASK-160: Cek Tool Output Cache untuk tool murni-baca (read-only)
+    ttl = _CACHEABLE_TOOL_TTL.get(tool_name, 0)
+    cache_key = ""
+    if ttl > 0:
+        cache_key = _make_tool_cache_key(tool_name, clean_args)
+        cached_entry = _TOOL_RESULT_CACHE.get(cache_key)
+        if cached_entry is not None:
+            cached_val, cached_ts = cached_entry
+            if (time.time() - cached_ts) < ttl:
+                _LAST_TURN_CACHE_HIT = True
+                logger.info(f"[TOOL_CACHE] ⚡ Cache HIT untuk {tool_name} ({cache_key})")
+                return cached_val
+            else:
+                _TOOL_RESULT_CACHE.pop(cache_key, None)
+
+    def _store_cache(output_str: str) -> str:
+        if ttl > 0 and cache_key and output_str and not output_str.startswith("Gangguan"):
+            if len(_TOOL_RESULT_CACHE) > 500:
+                _TOOL_RESULT_CACHE.clear()
+            _TOOL_RESULT_CACHE[cache_key] = (output_str, time.time())
+        return output_str
 
     try:
         if tool_name == "lookup_bangda_staff":
@@ -1539,7 +1807,7 @@ async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipi
                 _lookup_bangda_staff_data,
                 {"query": q}
             )
-            return str(res.get("data") or "Data kepegawaian tidak ditemukan.")
+            return _store_cache(str(res.get("data") or "Data kepegawaian tidak ditemukan."))
 
         elif tool_name == "search_regulation_knowledge":
             q = clean_args.get("query", "")
@@ -1550,7 +1818,7 @@ async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipi
                 _retrieve_rag_legal_knowledge,
                 {"query": q, "namespace": ns, "top_k": tk}
             )
-            return str(res.get("data") or "[GUARDRAIL RAG] Dokumen regulasi tidak ditemukan.")
+            return _store_cache(str(res.get("data") or "[GUARDRAIL RAG] Dokumen regulasi tidak ditemukan."))
 
         elif tool_name == "cari_surat_korespondensi":
             q = clean_args.get("query", "")
@@ -1559,7 +1827,7 @@ async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipi
                 _query_korespondensi_data,
                 {"query": q}
             )
-            return str(res.get("data") or "Data korespondensi tidak ditemukan.")
+            return _store_cache(str(res.get("data") or "Data korespondensi tidak ditemukan."))
 
         elif tool_name in ("search_web_realtime", "search_hybrid_web"):
             q = clean_args.get("query", "")
@@ -1656,7 +1924,18 @@ async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipi
                     "landasan_yuridis": "UU 23/2014 dan UU 12/2011"
                 }
             )
-            return str(res.get("markdown_document") or res)
+            md_doc = str(res.get("markdown_document") or res)
+            try:
+                from integrations.whatsapp.naskah_dinas_generator import satria_naskah_generator
+                docx_p = satria_naskah_generator.generate_telaah_docx_from_markdown(
+                    title=f"Naskah Akademik — {title}",
+                    markdown_body=md_doc,
+                    prefix="Naskah_Akademik"
+                )
+                md_doc += f"\n\n📁 *Berkas Word (.docx) Resmi Berhasil Digenerasi:*\nPath: `{docx_p}`"
+            except Exception as _de:
+                logger.warning(f"Auto-docx Naskah Akademik error: {_de}")
+            return md_doc
 
         elif tool_name == "legal_harmonization_matrix":
             raperda = clean_args.get("rancangan_text") or clean_args.get("raperda_title") or "Rancangan Perda"
@@ -1665,7 +1944,18 @@ async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipi
                 legal_harmonization_matrix,
                 {"rancangan_text": raperda, "jenis_peraturan": "PERDA"}
             )
-            return str(res.get("markdown_report") or res)
+            md_doc = str(res.get("markdown_report") or res)
+            try:
+                from integrations.whatsapp.naskah_dinas_generator import satria_naskah_generator
+                docx_p = satria_naskah_generator.generate_telaah_docx_from_markdown(
+                    title=f"Matriks Pengharmonisasian — {raperda[:60]}",
+                    markdown_body=md_doc,
+                    prefix="Matriks_Harmonisasi"
+                )
+                md_doc += f"\n\n📁 *Berkas Word (.docx) Resmi Berhasil Digenerasi:*\nPath: `{docx_p}`"
+            except Exception as _de:
+                logger.warning(f"Auto-docx Harmonization Matrix error: {_de}")
+            return md_doc
 
         elif tool_name == "legal_opinion_irac":
             issue = clean_args.get("legal_issue") or clean_args.get("issue") or "Kepatuhan Asas AUPB"
@@ -1682,7 +1972,18 @@ async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipi
                     "rules": [{"peraturan": "UU 30/2014", "pasal": "Pasal 10", "bunyi": "Asas-Asas Umum Pemerintahan yang Baik", "hierarki": "UU"}]
                 }
             )
-            return str(res.get("markdown_document") or res)
+            md_doc = str(res.get("markdown_document") or res)
+            try:
+                from integrations.whatsapp.naskah_dinas_generator import satria_naskah_generator
+                docx_p = satria_naskah_generator.generate_telaah_docx_from_markdown(
+                    title=f"Pendapat Hukum (Legal Opinion IRAC) — {issue[:60]}",
+                    markdown_body=md_doc,
+                    prefix="Legal_Opinion_IRAC"
+                )
+                md_doc += f"\n\n📁 *Berkas Word (.docx) Resmi Berhasil Digenerasi:*\nPath: `{docx_p}`"
+            except Exception as _de:
+                logger.warning(f"Auto-docx Legal Opinion error: {_de}")
+            return md_doc
 
         elif tool_name == "legal_contract_vetting":
             ctitle = clean_args.get("contract_title") or clean_args.get("judul_kontrak") or "Draf Kontrak Pengadaan"
@@ -1831,7 +2132,7 @@ async def _execute_satria_tool(tool_name: str, arguments: Dict[str, Any], recipi
                 "policy_inventory_aggregator",
                 _run_inventory_query
             )
-            return str(res.get("data") or "Data inventarisasi kebijakan tidak ditemukan.")
+            return _store_cache(str(res.get("data") or "Data inventarisasi kebijakan tidak ditemukan."))
 
         return f"Perkakas '{tool_name}' tidak terdaftar di SATRIA."
     except Exception as e:
@@ -1881,44 +2182,69 @@ def _is_provider_healthy(provider_name: str) -> bool:
     return time.time() > unhealthy_until
 
 
-def _get_active_ai_clients() -> List[Dict[str, Any]]:
+def _get_active_ai_clients(is_heavy_task: bool = False) -> List[Dict[str, Any]]:
     """
-    Menyediakan daftar LLM Client dengan urutan prioritas dinamis berbasis health cache:
-    1. Provider yang berstatus SEHAT (aktif merespon)
-    2. Provider yang sedang dalam masa COOLDOWN (ditaruh di belakang)
+    Menyediakan daftar LLM Client dengan urutan prioritas dinamis (Adaptive Dual-Tier Routing)
+    dan health cache (tanpa RunPod vLLM):
+    - Heavy Task (Audit 6 Dimensi / 7 Pilar / Telaah Regulasi): DeepSeek V3 -> OpenRouter (Gemini 2.5 Flash / GPT-4o) -> Groq (GPT-OSS-120B)
+    - Fast Task (Persuratan / Staf / Tanya Jawab Cepat): Groq (GPT-OSS-120B / Qwen3.6-27B) -> DeepSeek V3 -> OpenRouter (Gemini 2.5 Flash)
     """
     clients = []
     from openai import AsyncOpenAI
 
-    # 1. OpenAI (Primary saat kuota tersedia)
-    openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_AGENTIC_SCHEDULER")
-    if openai_key and not openai_key.startswith("sk-xxx"):
-        clients.append({
-            "name": "openai",
-            "client": AsyncOpenAI(api_key=openai_key, timeout=10.0),
-            "model": os.getenv("SATRIA_MODEL", "gpt-4o-mini")
-        })
-
-    # 2. DeepSeek (Fallback Cerdas - High Intelligence & Tool Calling)
+    groq_key = os.getenv("GROQ_API_KEY_BOT_WHATSAPP") or os.getenv("GROQ_API_KEY")
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_AGENTIC_SCHEDULER")
+
+    # Kandidat Provider (tanpa RunPod sesuai kebijakan)
+    groq_fast_client = None
+    if groq_key and not groq_key.startswith("gsk_xxx"):
+        groq_fast_client = {
+            "name": "groq",
+            "client": AsyncOpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1", timeout=15.0),
+            "model": os.getenv("SATRIA_GROQ_MODEL", os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"))
+        }
+
+    deepseek_client = None
     if deepseek_key and not deepseek_key.startswith("sk-xxx"):
-        clients.append({
+        deepseek_client = {
             "name": "deepseek",
-            "client": AsyncOpenAI(api_key=deepseek_key, base_url="https://api.deepseek.com", timeout=12.0),
+            "client": AsyncOpenAI(api_key=deepseek_key, base_url="https://api.deepseek.com", timeout=22.0 if is_heavy_task else 15.0),
             "model": os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-        })
+        }
 
-    # 3. RunPod Serverless vLLM (Fallback Serverless GPU)
-    runpod_key = os.getenv("RUNPOD_VLLM_API_KEY") or os.getenv("RUNPOD_API_KEY")
-    runpod_endpoint = os.getenv("RUNPOD_VLLM_VISION_ENDPOINT_ID", "qi2tml56v6cf1p")
-    if runpod_key and runpod_endpoint:
-        clients.append({
-            "name": "runpod_vllm",
-            "client": AsyncOpenAI(api_key=runpod_key, base_url=f"https://api.runpod.ai/v2/{runpod_endpoint}/openai/v1", timeout=15.0),
-            "model": os.getenv("RUNPOD_VLLM_MODEL", "qwen/qwen2.5-vl-7b-instruct")
-        })
+    openrouter_client = None
+    if openrouter_key and not openrouter_key.startswith("sk-or-xxx"):
+        or_model = (
+            os.getenv("SATRIA_HEAVY_OPENROUTER_MODEL", "google/gemini-2.5-flash")
+            if is_heavy_task
+            else os.getenv("SATRIA_FAST_OPENROUTER_MODEL", "google/gemini-2.5-flash")
+        )
+        openrouter_client = {
+            "name": "openrouter",
+            "client": AsyncOpenAI(api_key=openrouter_key, base_url="https://openrouter.ai/api/v1", timeout=22.0 if is_heavy_task else 15.0),
+            "model": or_model
+        }
 
-    # Prioritaskan provider yang sedang SEHAT agar tidak membuang 2-3 detik menunggu 429
+    openai_client = None
+    if openai_key and not openai_key.startswith("sk-xxx") and os.getenv("SATRIA_ENABLE_OPENAI_DIRECT", "0") == "1":
+        openai_client = {
+            "name": "openai",
+            "client": AsyncOpenAI(api_key=openai_key, timeout=15.0),
+            "model": os.getenv("SATRIA_MODEL", "gpt-4o" if is_heavy_task else "gpt-4o-mini")
+        }
+
+    if is_heavy_task:
+        # Tier Berat: Utamakan kedalaman analisis hukum (DeepSeek V3 -> OpenRouter Gemini 2.5 Flash -> Groq 120B)
+        ordered = [deepseek_client, openrouter_client, groq_fast_client, openai_client]
+    else:
+        # Tier Cepat: Utamakan kecepatan respons sub-detik (Groq 120B -> DeepSeek V3 -> OpenRouter Gemini 2.5 Flash)
+        ordered = [groq_fast_client, deepseek_client, openrouter_client, openai_client]
+
+    clients = [c for c in ordered if c is not None]
+
+    # Prioritaskan provider yang sedang SEHAT agar tidak membuang waktu menunggu 429
     healthy = [c for c in clients if _is_provider_healthy(c["name"])]
     unhealthy = [c for c in clients if not _is_provider_healthy(c["name"])]
     return healthy + unhealthy
@@ -1936,10 +2262,17 @@ async def _call_openai_engine(
 ) -> Tuple[Optional[str], TokenUsage, float]:
     """
     Menjalankan penalaran generatif dengan Multi-Turn History, Autonomous Tool Calling Loop,
-    Pydantic validation, Token Tracking, dan Tiered Provider Failover (OpenAI -> DeepSeek -> RunPod).
+    Pydantic validation, Token Tracking, dan Adaptive Tiered Provider Failover (Groq / DeepSeek / OpenRouter).
     """
     t_inf_start = time.time()
-    active_candidates = _get_active_ai_clients()
+    q_lower_init = (user_query or "").lower()
+    is_doc_audit = bool(extra_context) and not extra_context.startswith(("FAKTA RESMI TERVERIFIKASI", "KONTEKS BASIS DATA TERVERIFIKASI"))
+    is_heavy_task = (
+        any(w in q_lower_init for w in ["6 dimensi", "dimensi bphn", "audit", "klausul", "statuta", "evaluasi ranperda", "!telaah", "telaah:", "!kaji", "kaji:", "harmonisasi", "irac", "ultra vires", "naskah akademik"])
+        or len(user_query or "") > 140
+        or is_doc_audit
+    )
+    active_candidates = _get_active_ai_clients(is_heavy_task=is_heavy_task)
     if not active_candidates:
         logger.warning("Tidak ada provider AI yang terkonfigurasi.")
         return None, TokenUsage(), 0.0
@@ -1992,9 +2325,6 @@ async def _call_openai_engine(
                 "4. AJAKAN DINAMIS PEMBARUAN PROFIL (HANYA PADA RESUME/PENUTUP SESI): Di akhir rangkuman, sampaikan secara santun bahwa jika ada tugas fungsi tambahan baru "
                 "atau keanggotaan Pokja/Satgas lain yang ingin ditambahkan ke profil kedinasan, pemohon dapat mengabarkannya langsung di sini.\n"
             )
-    else:
-        context_prompt += (
-        )
     context_prompt += "\n"
 
     # TASK-159: Adaptive Formatting & Tone Switching
@@ -2038,14 +2368,23 @@ async def _call_openai_engine(
     try:
         from core.agent_framework.prompt_builder import DynamicPromptBuilder, UserRbacProfile
         rbac_profile = UserRbacProfile.from_dict(user_info)
-        system_prompt = DynamicPromptBuilder.build_prompt(
-            user=rbac_profile,
-            intent_type="cari_surat_korespondensi" if persona == "admin_persuratan" else None,
-            attached_media_context=extra_context
-        )
+        # Jika persona personal_assistant, gunakan SATRIA_PERSONAL_ASSISTANT_PROMPT
+        if persona == "personal_assistant":
+            system_prompt = SATRIA_PERSONAL_ASSISTANT_PROMPT
+        else:
+            system_prompt = DynamicPromptBuilder.build_prompt(
+                user=rbac_profile,
+                intent_type="cari_surat_korespondensi" if persona == "admin_persuratan" else None,
+                attached_media_context=extra_context
+            )
     except Exception as e:
         logger.warning(f"[PROMPT_BUILDER] Fallback to legacy prompt: {e}")
-        system_prompt = SATRIA_ADMIN_PERSURATAN_PROMPT if persona == "admin_persuratan" else SATRIA_LEGAL_MADYA_PROMPT
+        if persona == "admin_persuratan":
+            system_prompt = SATRIA_ADMIN_PERSURATAN_PROMPT
+        elif persona == "legal_madya":
+            system_prompt = SATRIA_LEGAL_MADYA_PROMPT
+        else:
+            system_prompt = SATRIA_PERSONAL_ASSISTANT_PROMPT
 
     base_messages = [
         {"role": "system", "content": system_prompt.strip()}
@@ -2066,7 +2405,7 @@ async def _call_openai_engine(
         if prev_user_queries:
             eval_query = f"{prev_user_queries[-1]} {user_query}"
 
-    selected_tools = satria_tool_selector.select(eval_query, model_size="7B")
+    selected_tools = satria_tool_selector.select(eval_query, model_size="70B")
     
     # TASK-163 163-C: RBAC Mapping Tool Allowlist
     TOOL_PERMISSION_MAP = {
@@ -2086,10 +2425,35 @@ async def _call_openai_engine(
         "read_activity_log": "admin_manage",
     }
     
-    # Filter tools based on RBAC permissions
+    # Filter tools based on RBAC permissions & hilangkan tool yang datanya sudah di-prefetch
+    prefetched_tool_names = set()
+    has_prefetched_data = False
+    if extra_context:
+        if "FAKTA RESMI TERVERIFIKASI (FAST-PATH)" in extra_context:
+            # Pada Fast-Path, data tool primer sudah terlampir utuh -> tidak perlu round-trip tool call kedua!
+            selected_tools = []
+            has_prefetched_data = True
+        elif "KONTEKS BASIS DATA TERVERIFIKASI (" in extra_context:
+            has_prefetched_data = True
+            m_pf = re.search(r"KONTEKS BASIS DATA TERVERIFIKASI \(([^)]+)\):", extra_context)
+            if m_pf:
+                prefetched_tool_names.add(m_pf.group(1).strip())
+
+    if has_prefetched_data:
+        base_messages.append({
+            "role": "system",
+            "content": (
+                "INSTRUKSI SISTEM: Data hasil pencarian tool sudah tersedia secara lengkap di konteks sistem di atas. "
+                "JANGAN memanggil fungsi atau tool apa pun lagi (termasuk browser.search atau search_regulation_knowledge). "
+                "Langsung sintesis dan tuliskan jawaban akhir kepada pengguna dalam teks biasa."
+            )
+        })
+
     user_phone_rbac = user_info.get("phone_number") or ""
     filtered_tools = []
     for st in selected_tools:
+        if st.tool.name in prefetched_tool_names:
+            continue
         req_perm = TOOL_PERMISSION_MAP.get(st.tool.name)
         if not req_perm or is_authorized(user_phone_rbac, req_perm):
             filtered_tools.append(st)
@@ -2143,12 +2507,16 @@ async def _call_openai_engine(
 
             resp_msg = resp.choices[0].message
 
-            # 1. Jika model meminta pemanggilan tool secara otonom via format standar OpenAI
-            if resp_msg.tool_calls:
-                logger.info(f"[{provider_name}] Autonomous tool calls detected: {len(resp_msg.tool_calls)} calls")
-                messages.append(resp_msg)
+            # 1. Multi-Hop ReAct Tool Calling Loop (Maksimal 3 Langkah Penalaran Otonom)
+            current_resp_msg = resp_msg
+            current_turn = 0
+            max_react_turns = 3
 
-                # TASK-160: Mengaktifkan konfigurasi parallel tool calling pada orkestrator
+            while current_resp_msg.tool_calls and current_turn < max_react_turns:
+                current_turn += 1
+                logger.info(f"[{provider_name}] Autonomous tool calls step {current_turn}/{max_react_turns}: {len(current_resp_msg.tool_calls)} calls")
+                messages.append(current_resp_msg)
+
                 async def run_tool(tc):
                     call_fn_name = tc.function.name
                     try:
@@ -2163,23 +2531,27 @@ async def _call_openai_engine(
                         "content": str(tool_output)
                     }
 
-                tool_results = await asyncio.gather(*(run_tool(tc) for tc in resp_msg.tool_calls))
+                tool_results = await asyncio.gather(*(run_tool(tc) for tc in current_resp_msg.tool_calls))
                 messages.extend(tool_results)
 
-                # Giliran Kedua: Sintesis hasil akhir berbasis fakta segar
-                final_resp = await client.chat.completions.create(
+                # Panggil model kembali dengan rujukan baru (bisa memanggil tool lanjutan atau menyintesis hasil)
+                step_resp = await client.chat.completions.create(
                     model=model_name,
                     messages=messages,
+                    tools=tools_schema if current_turn < max_react_turns else None,
                     temperature=0.2,
                     max_tokens=1400 if is_heavy_task else 750
                 )
-                if final_resp.usage:
-                    prompt_tokens += final_resp.usage.prompt_tokens
-                    completion_tokens += final_resp.usage.completion_tokens
+                if step_resp.usage:
+                    prompt_tokens += step_resp.usage.prompt_tokens
+                    completion_tokens += step_resp.usage.completion_tokens
 
+                current_resp_msg = step_resp.choices[0].message
+
+            if current_turn > 0:
                 duration_ms = (time.time() - t_inf_start) * 1000.0
                 usage_obj = TokenUsage.calculate(prompt_tokens, completion_tokens, model=model_name)
-                clean_final = _clean_raw_ai_markers(final_resp.choices[0].message.content)
+                clean_final = _clean_raw_ai_markers(current_resp_msg.content)
                 return clean_final, usage_obj, duration_ms
 
             # 2. Jika model mencetak tool calls via sintaks internal DSML (DeepSeek XML format)
@@ -2231,7 +2603,26 @@ async def _call_openai_engine(
 
         except Exception as e:
             err_str = str(e).lower()
-            if any(k in err_str for k in ["429", "quota", "credit_balance_exhausted", "insufficient_quota"]):
+            if "tool_use_failed" in err_str and provider_name == "groq":
+                try:
+                    logger.info(f"[{provider_name}] Deteksi tool_use_failed pada {model_name}, retry instan menggunakan qwen/qwen3.6-27b...")
+                    retry_kwargs = {
+                        "model": "qwen/qwen3.6-27b",
+                        "messages": [dict(m) for m in base_messages],
+                        "temperature": 0.2,
+                        "max_tokens": calc_max_tokens
+                    }
+                    retry_resp = await client.chat.completions.create(**retry_kwargs)
+                    if retry_resp.usage:
+                        prompt_tokens += retry_resp.usage.prompt_tokens
+                        completion_tokens += retry_resp.usage.completion_tokens
+                    duration_ms = (time.time() - t_inf_start) * 1000.0
+                    usage_obj = TokenUsage.calculate(prompt_tokens, completion_tokens, model="qwen/qwen3.6-27b")
+                    if retry_resp.choices[0].message.content:
+                        return _clean_raw_ai_markers(retry_resp.choices[0].message.content), usage_obj, duration_ms
+                except Exception as retry_err:
+                    logger.warning(f"[{provider_name}] Retry qwen/qwen3.6-27b gagal: {retry_err}")
+            elif any(k in err_str for k in ["429", "quota", "credit_balance_exhausted", "insufficient_quota"]):
                 _mark_provider_unhealthy(provider_name, cooldown_seconds=1800.0)
             elif any(k in err_str for k in ["500", "timeout", "timed out", "connect"]):
                 _mark_provider_unhealthy(provider_name, cooldown_seconds=120.0)
@@ -2245,37 +2636,8 @@ async def _call_openai_engine(
 
 
 def _detect_persona(query: str, intent: Optional[str] = None) -> str:
-    """
-    Menentukan persona bot secara dinamis:
-    - 'admin_persuratan': Untuk kueri persuratan, surat masuk/keluar, disposisi, naskah dinas, agenda, fasilitasi surat, nomor surat.
-    - 'legal_madya': Untuk kueri telaah hukum, PUU, regulasi, kepegawaian, audit, atau konsultasi umum.
-    """
-    q_lower = query.lower()
-
-    # 1. Prioritas Utama: Jika eksplisit meminta sudut pandang PUU / Ahli Madya / Pendapat Hukum
-    legal_override_keywords = [
-        "substansi perundang-undangan", "perundang-undangan", "puu", "pendapat hukum",
-        "analisis hukum", "analis hukum", "ahli madya", "telaah hukum", "kajian hukum",
-        "legal opinion", "tinjauan yuridis", "sudut pandang hukum", "sudut pandang puu",
-        "sebagai puu", "pandangan hukum", "pendapatmu sebagai", "tanggapan hukum"
-    ]
-    if any(k in q_lower for k in legal_override_keywords):
-        return "legal_madya"
-
-    if intent in ("cari_surat_korespondensi", "SEARCH_CORRESPONDENCE"):
-        return "admin_persuratan"
-
-    correspondence_keywords = [
-        "surat", "disposisi", "korespondensi", "agenda surat", "naskah dinas",
-        "surat masuk", "surat keluar", "eksternal", "internal", "tata naskah",
-        "lacak surat", "posisi berkas", "nomor nd", "nomor surat", "fasilitasi ranperda",
-        "terima dirjen", "disposisi dirjen", "posisi surat", "nota dinas", "agenda",
-        "laporkan list surat", "daftar surat", "rekap surat"
-    ]
-    if any(k in q_lower for k in correspondence_keywords):
-        return "admin_persuratan"
-
-    return "legal_madya"
+    """Delegasi ke detect_satria_persona pada handler modular."""
+    return detect_satria_persona(query, intent)
 
 
 async def _detect_and_handle_additional_duty(
@@ -2395,6 +2757,21 @@ class LegalMadyaWhatsAppHandler:
         user = get_whitelist_user(clean_phone)
         actual_jid = recipient_jid or clean_phone
 
+        # 0. TASK-301: SATRIA Intelligent Archive Concierge (PDF Preview Request & Admin Approval)
+        from integrations.whatsapp.pdf_archive_concierge import (
+            is_pdf_archive_intent,
+            intent_pdf_archive_request,
+        )
+        if not media_path and is_pdf_archive_intent(clean_phone, message_text):
+            concierge_reply = await intent_pdf_archive_request(
+                sender_phone=clean_phone,
+                message_text=message_text,
+                sender_name=user.get("full_name") if user else None,
+            )
+            satria_session_manager.record_turn(clean_phone, "user", message_text)
+            satria_session_manager.record_turn(clean_phone, "assistant", concierge_reply, intent="intent_pdf_archive_request")
+            return concierge_reply
+
         # 1. Security Gate (Whitelist Check)
         if not user:
             # Fallback check for Super Admin
@@ -2466,6 +2843,38 @@ class LegalMadyaWhatsAppHandler:
         # Ambil riwayat percakapan multi-turn (Sliding Window 6 turn terakhir)
         history = satria_session_manager.get_recent_history(clean_phone, limit=6)
         satria_session_manager.record_turn(clean_phone, "user", raw_text)
+
+        # TASK-162: Deteksi Reaksi Feedback Loop (👍 / 👎) & Perintah Analitik Kualitas (!insight / !evaluasi)
+        if not media_path:
+            feedback_reply = handle_user_feedback_reaction(cleaned_text, user, clean_phone, history=history)
+            if feedback_reply:
+                satria_session_manager.record_turn(clean_phone, "assistant", feedback_reply, intent="USER_FEEDBACK_RATING")
+                return feedback_reply
+
+            if text_lower in ("!insight", "/insight", "!evaluasi", "/evaluasi", "laporan evaluasi satria", "statistik satria"):
+                try:
+                    from integrations.whatsapp.self_learning_engine import SelfLearningEngine
+                    sle = SelfLearningEngine()
+                    rep = sle.generate_evaluation_report(days=7)
+                    fb_m = rep.get("feedback_metrics", {})
+                    lat_m = rep.get("latency_metrics_ms", {})
+                    recs = rep.get("recommendations", [])
+                    rec_str = "\n".join(f"• {r}" for r in recs) if recs else "• Seluruh indikator performa & akurasi dalam batas prima."
+                    insight_reply = (
+                        f"📊 *DASBOR EVALUASI & ANALITIK KUALITAS SATRIA (7 HARI TERAKHIR)*\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"• *Total Interaksi:* {rep.get('total_interactions', 0)} turn ({rep.get('unique_users', 0)} pengguna aktif)\n"
+                        f"• *Rerata Latensi:* {lat_m.get('mean', 0)} ms (P95: {lat_m.get('p95', 0)} ms)\n"
+                        f"• *Cache Hit Rate (TASK-160):* {rep.get('cache_hit_rate', 0.0)*100:.1f}%\n"
+                        f"• *Kepatuhan Sitasi RAG (TASK-158):* {rep.get('citation_compliance_rate', 1.0)*100:.1f}%\n"
+                        f"• *Skor Kepuasan / CSAT (TASK-162):* {fb_m.get('csat_rate', 1.0)*100:.1f}% "
+                        f"({fb_m.get('positive', 0)} 👍 / {fb_m.get('negative', 0)} 👎)\n\n"
+                        f"💡 *Rekomendasi Self-Learning:*\n{rec_str}"
+                    )
+                    satria_session_manager.record_turn(clean_phone, "assistant", insight_reply, intent="EVALUATION_INSIGHT")
+                    return insight_reply
+                except Exception as _ins_err:
+                    logger.warning(f"Insight command error: {_ins_err}")
 
         # TASK-156 2.4b: Deteksi perintah preferensi natural language
         # ("ingat saya suka format tabel", "lupakan preferensi saya").
@@ -2824,6 +3233,11 @@ class LegalMadyaWhatsAppHandler:
             except Exception as e:
                 logger.error(f"Error processing regulation text: {e}")
 
+        # Reset state per-turn untuk tracking cache hit & tools yang dipanggil
+        global _LAST_TURN_CACHE_HIT, _LAST_TURN_TOOLS_CALLED
+        _LAST_TURN_CACHE_HIT = False
+        _LAST_TURN_TOOLS_CALLED = []
+
         # 5. Fast-Path Check (Bypass atau Direct Retrieval jika intent sangat jelas)
         t_cls_start = time.time()
         cls_query = cleaned_text
@@ -2839,8 +3253,26 @@ class LegalMadyaWhatsAppHandler:
 
         is_summary_session = _is_summary_or_wrapup_request(raw_text, intent=intent_res.intent.value if 'intent_res' in locals() and intent_res else None)
 
+        # Deteksi Cross-Domain Query (TASK-158): apabila kueri menyentuh >1 domain sekaligus
+        # (misal: Regulasi/PUU + Korespondensi/Surat atau Regulasi/PUU + Personel/Tim Kerja)
+        q_cd = cleaned_text.lower()
+        has_reg_signal = any(w in q_cd for w in ("uu ", "undang-undang", "pp ", "perpres", "permendagri", "perda", "pasal", "regulasi", "aturan", "spm", "urusan konkuren"))
+        has_corr_signal = any(w in q_cd for w in ("surat", "disposisi", "agenda", "nota dinas", "korespondensi", "nomor surat"))
+        has_staff_signal = any(w in q_cd for w in ("personel", "personil", "pegawai", "pejabat", "nip", "tim kerja", "siapa yang", "staf"))
+
+        secondary_cross_tool: Optional[str] = None
+        if intent_res and intent_res.intent == IntentType.SEARCH_REGULATION:
+            if has_corr_signal:
+                secondary_cross_tool = IntentType.SEARCH_CORRESPONDENCE.value
+            elif has_staff_signal:
+                secondary_cross_tool = IntentType.LOOKUP_STAFF.value
+        elif intent_res and intent_res.intent == IntentType.SEARCH_CORRESPONDENCE and has_reg_signal:
+            secondary_cross_tool = IntentType.SEARCH_REGULATION.value
+        elif intent_res and intent_res.intent == IntentType.LOOKUP_STAFF and has_reg_signal:
+            secondary_cross_tool = IntentType.SEARCH_REGULATION.value
+
         if intent_res.is_fast_path:
-            logger.info(f"⚡ Fast-Path triggered for intent: {intent_res.intent.value} (Score: {intent_res.raw_score}, Persona: {active_persona})")
+            logger.info(f"⚡ Fast-Path triggered for intent: {intent_res.intent.value} (Score: {intent_res.raw_score}, Persona: {active_persona}, CrossTool: {secondary_cross_tool})")
             t_ret_start = time.time()
             is_web_task = intent_res.intent.value in ("search_web_realtime", "search_hybrid_web", "browse_portal_autonomous")
 
@@ -2850,7 +3282,17 @@ class LegalMadyaWhatsAppHandler:
             )
 
             async def _run_fast_path_flow():
-                fast_fact_res = await _execute_satria_tool(intent_res.intent.value, intent_res.tool_arguments, recipient_jid=target_user_jid)
+                if secondary_cross_tool:
+                    primary_res, sec_res = await asyncio.gather(
+                        _execute_satria_tool(intent_res.intent.value, intent_res.tool_arguments, recipient_jid=target_user_jid),
+                        _execute_satria_tool(secondary_cross_tool, {"query": cleaned_text}, recipient_jid=target_user_jid),
+                        return_exceptions=True,
+                    )
+                    fast_fact_res = str(primary_res) if not isinstance(primary_res, Exception) else ""
+                    if isinstance(sec_res, str) and sec_res and not sec_res.startswith("Gangguan"):
+                        fast_fact_res = f"{fast_fact_res}\n\n[KONTEKS LINTAS-DOMAIN ({secondary_cross_tool})]:\n{sec_res}"
+                else:
+                    fast_fact_res = await _execute_satria_tool(intent_res.intent.value, intent_res.tool_arguments, recipient_jid=target_user_jid)
                 extra_instruction = ""
                 if is_web_task:
                     extra_instruction = (
@@ -2883,9 +3325,14 @@ class LegalMadyaWhatsAppHandler:
                 classification_ms=t_cls_ms,
                 retrieval_ms=t_ret_ms,
                 llm_inference_ms=inf_ms,
-                total_response_ms=duration_ms
+                total_response_ms=duration_ms,
+                cache_hit=_LAST_TURN_CACHE_HIT
             )
 
+            raw_candidate_reply = ai_opinion if ai_opinion else fast_fact
+            enforced_reply, citation_meta = enforce_rag_citation_on_reply(raw_candidate_reply, rag_context=fast_fact)
+
+            called_list = list(_LAST_TURN_TOOLS_CALLED) or [intent_res.intent.value]
             satria_interaction_logger.log_interaction_async({
                 "timestamp": datetime.now().isoformat(),
                 "user_phone": clean_phone,
@@ -2895,8 +3342,10 @@ class LegalMadyaWhatsAppHandler:
                 "intent": intent_res.intent.value,
                 "confidence": intent_res.confidence,
                 "fast_path": True,
-                "tool_called": intent_res.intent.value,
-                "tools_called": [intent_res.intent.value],
+                "cache_hit": _LAST_TURN_CACHE_HIT,
+                "tool_called": called_list[0],
+                "tools_called": called_list,
+                "citation_ok": citation_meta.get("citation_ok", True),
                 "response_time_ms": duration_ms,
                 "circuit_state": satria_timeout_guard.get_circuit_state(intent_res.intent.value).value,
                 "fallback_used": False,
@@ -2905,18 +3354,51 @@ class LegalMadyaWhatsAppHandler:
             })
 
             if ai_opinion:
-                final_fp_reply = _clean_and_format_reply(user, ai_opinion, persona=active_persona, is_summary_session=is_summary_session)
+                final_fp_reply = _clean_and_format_reply(user, enforced_reply, persona=active_persona, is_summary_session=is_summary_session)
                 satria_session_manager.record_turn(clean_phone, "assistant", final_fp_reply, intent=intent_res.intent.value)
                 return final_fp_reply
 
-            final_direct_reply = _clean_and_format_reply(user, fast_fact, persona=active_persona, is_summary_session=is_summary_session)
+            final_direct_reply = _clean_and_format_reply(user, enforced_reply, persona=active_persona, is_summary_session=is_summary_session)
             satria_session_manager.record_turn(clean_phone, "assistant", final_direct_reply, intent=intent_res.intent.value)
             return final_direct_reply
 
-        # 6. Mode Konsultasi Bebas (Preseden, Administrasi Pemda, ASN/SDM, PUU via Autonomous Tool Calling)
+        # 6. Mode Konsultasi Bebas (Preseden, Administrasi Pemda, ASN/SDM, PUU via Parallel Pre-Fetch & Autonomous Tool Calling)
         t_ret_start = time.time()
-        res = legal_search_tier2_precedents(query=cleaned_text, top_k=3)
-        precedents = res.get("precedents", [])
+
+        # Parallel Pre-Fetch: Jalankan pencarian preseden + pre-fetch tool primer (+ cross-domain bila ada) jika intent terdeteksi jelas (confidence >= 0.60)
+        prefetch_extra_context = ""
+        prefetch_intents = {
+            IntentType.SEARCH_REGULATION,
+            IntentType.SEARCH_CORRESPONDENCE,
+            IntentType.LOOKUP_STAFF,
+            IntentType.POLICY_INVENTORY,
+            IntentType.GENERATE_NOTA_DINAS,
+        }
+        if intent_res and intent_res.intent in prefetch_intents and intent_res.confidence >= 0.60:
+            async def _fetch_precedents():
+                return await asyncio.to_thread(legal_search_tier2_precedents, query=cleaned_text, top_k=3)
+
+            async def _fetch_primary_tool():
+                return await _execute_satria_tool(intent_res.intent.value, intent_res.tool_arguments, recipient_jid=target_user_jid)
+
+            tasks_to_gather = [_fetch_precedents(), _fetch_primary_tool()]
+            if secondary_cross_tool:
+                tasks_to_gather.append(_execute_satria_tool(secondary_cross_tool, {"query": cleaned_text}, recipient_jid=target_user_jid))
+
+            gathered_res = await asyncio.gather(*tasks_to_gather, return_exceptions=True)
+            prec_res = gathered_res[0]
+            prefetched_tool_out = gathered_res[1]
+            sec_tool_out = gathered_res[2] if len(gathered_res) > 2 else None
+
+            precedents = prec_res.get("precedents", []) if isinstance(prec_res, dict) else []
+            if isinstance(prefetched_tool_out, str) and prefetched_tool_out and not prefetched_tool_out.startswith("Gangguan"):
+                prefetch_extra_context = f"KONTEKS BASIS DATA TERVERIFIKASI ({intent_res.intent.value}):\n{prefetched_tool_out}"
+            if isinstance(sec_tool_out, str) and sec_tool_out and not sec_tool_out.startswith("Gangguan"):
+                prefetch_extra_context += f"\n\nKONTEKS LINTAS-DOMAIN ({secondary_cross_tool}):\n{sec_tool_out}"
+        else:
+            res = legal_search_tier2_precedents(query=cleaned_text, top_k=3)
+            precedents = res.get("precedents", [])
+
         t_ret_ms = round((time.time() - t_ret_start) * 1000, 2)
 
         # Jalankan penalaran generative dengan riwayat multi-turn, persona dinamis, & Autonomous Tool Calling Loop
@@ -2924,20 +3406,52 @@ class LegalMadyaWhatsAppHandler:
             user_info=user,
             user_query=cleaned_text,
             precedents=precedents,
+            extra_context=prefetch_extra_context,
             history=history,
             persona=active_persona,
             recipient_jid=target_user_jid,
             is_summary=is_summary_session
         )
 
+        # TASK-161: Pertahankan penanda berkas .docx dari prefetch_extra_context atau buat otomatis jika user meminta format Word/.docx
+        if ai_opinion:
+            m_docx_pf = re.search(r"(/home/aseps/MCP/storage/[^\s`\"']+\.docx)", prefetch_extra_context or "")
+            if m_docx_pf and m_docx_pf.group(1) not in ai_opinion:
+                ai_opinion = (
+                    ai_opinion.rstrip()
+                    + f"\n\n📁 *Berkas Word (.docx) Resmi Berhasil Digenerasi:*\nPath: `{m_docx_pf.group(1)}`\n"
+                    + "_(Telah disesuaikan dengan Format Baku Permendagri No. 1 Tahun 2023, Arial 11pt, Margin 3-1-3-2 cm, dan Kop Resmi Ditjen Bina Bangda)_"
+                )
+            elif ".docx" not in ai_opinion and any(
+                w in cleaned_text.lower() for w in ("docx", "file word", "berkas word", "format word", "lampiran word", "export word")
+            ):
+                try:
+                    from integrations.whatsapp.naskah_dinas_generator import satria_naskah_generator
+                    auto_docx_p = satria_naskah_generator.generate_telaah_docx_from_markdown(
+                        title=f"Dokumen Telaah — {cleaned_text[:55]}",
+                        markdown_body=ai_opinion,
+                        prefix="Telaah_SATRIA"
+                    )
+                    ai_opinion = (
+                        ai_opinion.rstrip()
+                        + f"\n\n📁 *Berkas Word (.docx) Resmi Berhasil Digenerasi:*\nPath: `{auto_docx_p}`\n"
+                        + "_(Telah disesuaikan dengan Format Baku Permendagri No. 1 Tahun 2023, Arial 11pt, Margin 3-1-3-2 cm)_"
+                    )
+                except Exception as _adoc_err:
+                    logger.warning(f"Auto-docx fallback error: {_adoc_err}")
+
         duration_ms = round((time.time() - start_process_time) * 1000, 1)
         lb = LatencyBreakdown(
             classification_ms=t_cls_ms,
             retrieval_ms=t_ret_ms,
             llm_inference_ms=inf_ms,
-            total_response_ms=duration_ms
+            total_response_ms=duration_ms,
+            cache_hit=_LAST_TURN_CACHE_HIT
         )
 
+        enforced_gen_opinion, citation_meta_gen = enforce_rag_citation_on_reply(ai_opinion or "", rag_context=prefetch_extra_context)
+
+        called_list = list(_LAST_TURN_TOOLS_CALLED)
         satria_interaction_logger.log_interaction_async({
             "timestamp": datetime.now().isoformat(),
             "user_phone": clean_phone,
@@ -2947,6 +3461,10 @@ class LegalMadyaWhatsAppHandler:
             "intent": intent_res.intent.value if intent_res else "consultation",
             "confidence": intent_res.confidence if intent_res else 1.0,
             "fast_path": False,
+            "cache_hit": _LAST_TURN_CACHE_HIT,
+            "tool_called": called_list[0] if called_list else None,
+            "tools_called": called_list,
+            "citation_ok": citation_meta_gen.get("citation_ok", True),
             "response_time_ms": duration_ms,
             "circuit_state": satria_timeout_guard.get_circuit_state("lookup_bangda_staff").value,
             "fallback_used": False,
@@ -2955,7 +3473,7 @@ class LegalMadyaWhatsAppHandler:
         })
 
         if ai_opinion:
-            final_gen_reply = _clean_and_format_reply(user, ai_opinion, persona=active_persona, is_summary_session=is_summary_session)
+            final_gen_reply = _clean_and_format_reply(user, enforced_gen_opinion, persona=active_persona, is_summary_session=is_summary_session)
             satria_session_manager.record_turn(clean_phone, "assistant", final_gen_reply)
             return final_gen_reply
 

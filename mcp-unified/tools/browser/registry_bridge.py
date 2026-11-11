@@ -179,3 +179,73 @@ def register_srikandi_tools(registry) -> int:
 
     logger.info(f"Srikandi bridge: {registered} tools registered")
     return registered
+
+
+_SIKERJA_TOOLS = {
+    "sikerja_sync_sheet": "Mengunduh data tab bulan tertentu dari Google Spreadsheet 'Laporan sikerja 2026' ke JSON lokal.",
+    "sikerja_get_status": "Memeriksa status login dan jumlah transaksi saat ini di portal SIKERJA Kemendagri.",
+    "sikerja_inject_laporan": "Menginjeksi baris kegiatan dari dataset JSON ke portal SIKERJA Kemendagri secara aman dengan Future-Date Guard (WIB).",
+}
+
+
+def register_sikerja_tools(registry) -> int:
+    """
+    Daftarkan semua tools SIKERJA ke execution.registry via bridge wrapper.
+    """
+    import tools.browser.sikerja_tools  # Trigger @register_tool in tool_registry
+    registered = 0
+    for tool_name, description in _SIKERJA_TOOLS.items():
+        try:
+            if registry.get_tool(tool_name) is not None:
+                logger.info(f"SIKERJA tool '{tool_name}' sudah terdaftar, skip")
+                continue
+
+            wrapper = _make_wrapper(tool_name)
+            wrapper.__doc__ = description
+            registry.register(
+                wrapper,
+                name=tool_name,
+                description_short=description[:200],
+                category="sikerja",
+            )
+            registered += 1
+            logger.info(f"Registered SIKERJA tool: {tool_name}")
+        except Exception as e:
+            logger.error(f"Failed to register SIKERJA tool '{tool_name}': {e}")
+
+    logger.info(f"SIKERJA bridge: {registered} tools registered")
+    return registered
+
+
+_CAPTCHA_TOOLS = {
+    "browser_solve_captcha": "Memecahkan teks CAPTCHA alfanumerik dari gambar (Base64 atau data URI) secara instan (< 50ms) menggunakan EasyOCR Universal Singleton. Dapat digunakan untuk portal Srikandi, SIKERJA, OSS, JDIH, atau situs kedinasan lainnya.",
+}
+
+
+def register_captcha_tools(registry) -> int:
+    """
+    Daftarkan tool universal CAPTCHA solver ke execution.registry via bridge wrapper.
+    """
+    import tools.browser.captcha_tools  # Trigger @register_tool in tool_registry
+    registered = 0
+    for tool_name, description in _CAPTCHA_TOOLS.items():
+        try:
+            if registry.get_tool(tool_name) is not None:
+                logger.info(f"CAPTCHA tool '{tool_name}' sudah terdaftar, skip")
+                continue
+
+            wrapper = _make_wrapper(tool_name)
+            wrapper.__doc__ = description
+            registry.register(
+                wrapper,
+                name=tool_name,
+                description_short=description[:200],
+                category="browser",
+            )
+            registered += 1
+            logger.info(f"Registered CAPTCHA tool: {tool_name}")
+        except Exception as e:
+            logger.error(f"Failed to register CAPTCHA tool '{tool_name}': {e}")
+
+    logger.info(f"CAPTCHA bridge: {registered} tools registered")
+    return registered

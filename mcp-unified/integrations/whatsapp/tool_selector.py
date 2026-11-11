@@ -18,25 +18,26 @@ logger = logging.getLogger("satria_tool_selector")
 class IntentType(Enum):
     """Kategori intent pemohon di Ditjen Bangda & WhatsApp."""
     LOOKUP_STAFF = "lookup_bangda_staff"
-    SEARCH_REGULATION = "search_regulation_knowledge"
-    POLICY_INVENTORY = "policy_inventory_aggregator"
+    SEARCH_REGULATION="search_regulation_knowledge"
+    POLICY_INVENTORY="policy_inventory_aggregator"
     SEARCH_CORRESPONDENCE = "cari_surat_korespondensi"
     LIVE_WEB_SEARCH = "search_web_realtime"
-    SEARCH_SOCIAL_MEDIA = "search_social_media"
-    AUTONOMOUS_BROWSE = "browse_portal_autonomous"
+    SEARCH_SOCIAL_MEDIA="search_social_media"
+    AUTONOMOUS_BROWSE="browse_portal_autonomous"
     EVALUATE_DOCTRINE = "evaluate_bphn_doctrine"
-    DEONTIC_VERIFY = "legal_deontic_verify"
-    NASKAH_AKADEMIK = "legal_naskah_akademik_generate"
+    DEONTIC_VERIFY="legal_deontic_verify"
+    NASKAH_AKADEMIK="legal_naskah_akademik_generate"
     HARMONIZATION_MATRIX = "legal_harmonization_matrix"
-    LEGAL_OPINION = "legal_opinion_irac"
-    CONTRACT_VETTING = "legal_contract_vetting"
+    LEGAL_OPINION="legal_opinion_irac"
+    CONTRACT_VETTING="legal_contract_vetting"
     LITIGATION_ADVOCACY = "legal_litigation_advocacy"
     PATCH_CLAUSE = "legal_patch_clause"
     VERIFY_SPM = "legal_verify_spm"
     GENERATE_NOTA_DINAS = "nd_generate_laporan"
     SYSTEM_HEALTH = "system_health_check"
-    LIST_TABLES = "list_database_tables"
-    SEND_MESSAGE = "send_whatsapp_message"
+    LIST_TABLES="list_database_tables"
+    SEND_MESSAGE="send_whatsapp_message"
+    PDF_ARCHIVE_REQUEST = "intent_pdf_archive_request"
     UNKNOWN = "unknown"
 
 
@@ -105,10 +106,10 @@ class TextNormalizer:
         return None
 
     def extract_regulation_citation(self, text: str) -> Optional[str]:
-        """Mendeteksi kutipan peraturan spesifik (misal: PP 1/2026, UU 23/2014, Permendagri 9/2025)."""
+        """Mendeteksi kutipan peraturan spesifik (misal: PP 1/2026, UU 23/2014, Permendagri 9/2025, Inpres 3/2019)."""
         if not text:
             return None
-        pattern = r'(?:uu|undang-undang|pp|peraturan pemerintah|perpres|permen|permendagri|perda)\s*(?:no\.?|nomor)?\s*\d+\s*(?:tahun|\/)?\s*\d{4}'
+        pattern = r'(?:uu|undang-undang|pp|peraturan\s+pemerintah|perpres|inpres|instruksi\s+presiden|keppres|permen|permendagri|kepmen|kepmendagri|inmendagri|perda|pergub|perbup|perwali|se|surat\s+edaran)\s*(?:no\.?|nomor)?\s*\d+\s*(?:tahun|\/)?\s*\d{4}'
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             return match.group(0).strip()
@@ -122,16 +123,21 @@ class DomainIntentClassifier:
         self.normalizer = TextNormalizer()
         self.intent_rules = {
             IntentType.LOOKUP_STAFF: {
-                "keywords": ["pejabat", "pegawai", "madya", "muda", "struktur", "tim kerja", "lady", "faisal", "asep", "amir", "salim", "rizal", "formasi", "jumlah", "siapa", "subdit", "direktorat", "sekretariat", "kontak", "staf", "perancang", "fungsional", "jf"],
+                "keywords": [
+                    "pejabat", "pegawai", "madya", "muda", "struktur", "tim kerja", "lady", "faisal", "asep", "amir", "salim", "rizal",
+                    "formasi", "jumlah", "siapa", "subdit", "direktorat", "sekretariat", "kontak", "staf", "perancang", "fungsional", "jf",
+                    "periksa role", "cek role", "role saya", "profil saya", "nip", "asn", "pppk", "analis"
+                ],
                 "patterns": [
-                    r"siapa\s+(?:ahli\s+madya|koordinator|pejabat|penanggung\s+jawab)",
+                    r"siapa\s+(?:ahli\s+madya|koordinator|pejabat|penanggung\s+jawab|ketua\s+tim|kasubdit|direktur)",
                     r"berapa\s+(?:jumlah|formasi)",
                     r"(?:kontak|jabatan|data\s+staf)",
                     r"daftar\s+(?:nama\s+)?(?:staf|pegawai|fungsional)",
                     r"pegawai\s+bernama",
-                    r"data\s+pegawai"
+                    r"data\s+pegawai",
+                    r"(?:periksa|cek)\s+role(?:\s+saya)?"
                 ],
-                "weight": 4
+                "weight": 5
             },
             IntentType.SEARCH_CORRESPONDENCE: {
                 "keywords": [
@@ -140,7 +146,7 @@ class DomainIntentClassifier:
                     "nota dinas", "eksternal", "internal", "tata naskah", "lacak",
                     "posisi berkas", "dirjen", "sesditjen", "asal surat", "pengirim",
                     "rekapitulasi", "daftar surat", "list surat", "kode klasifikasi",
-                    "000.6", "600", "penomoran surat", "format naskah"
+                    "000.6", "600", "penomoran surat", "format naskah", "arsip surat"
                 ],
                 "patterns": [
                     r"surat\s+(?:masuk|keluar|fasilitasi|dinas|eksternal|internal)",
@@ -158,9 +164,10 @@ class DomainIntentClassifier:
             },
             IntentType.SEARCH_REGULATION: {
                 "keywords": [
-                    "pp", "uu", "undang", "perpres", "permen", "permendagri", "perda", "pasal",
+                    "pp", "uu", "undang", "perpres", "inpres", "keppres", "permen", "permendagri", "kepmen", "kepmendagri", "inmendagri",
+                    "perda", "pergub", "perbup", "perwali", "pasal", "ayat", "diktum",
                     "ranperda", "raperda", "putusan", "mk", "ma", "2024", "2025", "2026", "norma",
-                    "regulasi", "peraturan", "spm", "apbd", "meritokrasi", "diskresi", "konkuren",
+                    "regulasi", "peraturan", "aturan", "kebijakan", "spm", "apbd", "meritokrasi", "diskresi", "konkuren",
                     "tdu", "pkl", "tata naskah", "naskah dinas", "format surat", "kode klasifikasi",
                     "rpjmd", "rpjpd", "rkpd", "rtrw", "tata ruang", "persub", "sotk", "keuangan desa",
                     "siskeudes", "retribusi", "pdrd", "hkpd", "pdp", "data pribadi", "adminduk", "smki",
@@ -168,13 +175,20 @@ class DomainIntentClassifier:
                     "dim", "inventaris masalah", "inventaymasalah", "masukan uu 23", "revisi uu 23",
                     "saran daerah", "saran kementerian", "masukan provinsi", "masukan daerah",
                     "memory ltm", "memori ltm", "ltm", "list memory", "akses ltm", "status ltm",
-                    "struktur organisasi", "struktur", "organisasi", "sotk", "peippd", "supd", "tupoksi",
-                    "tata kerja", "unit kerja", "direktorat", "bagan organisasi", "susunan organisasi"
+                    "struktur organisasi", "struktur", "organisasi", "peippd", "supd", "tupoksi",
+                    "tata kerja", "unit kerja", "direktorat", "bagan organisasi", "susunan organisasi",
+                    "urusan", "sub urusan", "perumahan", "permukiman", "pemukiman", "kawasan kumuh",
+                    "pendidikan", "kesehatan", "pekerjaan umum", "sosial", "ketenagakerjaan", "naker", "transmigrasi",
+                    "pertanian", "pangan", "kelautan", "perikanan", "pariwisata", "lingkungan hidup", "perhubungan",
+                    "koperasi", "ukm", "umkm", "penanaman modal", "kepemudaan", "olahraga", "persepakbolaan",
+                    "lsdp", "pokir", "pokok pikiran", "musrenbang", "rakortekrenbang", "sipd",
+                    "ketua rt", "ketua rw", "lkd", "lembaga kemasyarakatan desa", "bumd", "bumdes", "blud",
+                    "pemerintah daerah", "pemda", "pemprov", "pemkab", "pemkot", "kewenangan daerah"
                 ],
                 "patterns": [
-                    r"(?:pp|uu|permen|permendagri)\s*(?:no|nomor|\d)",
+                    r"(?:pp|uu|perpres|inpres|keppres|permen|permendagri|kepmen|kepmendagri|perda|pergub|perbup|perwali)\s*(?:no|nomor|\d)",
                     r"pasal\s+\d+",
-                    r"regulasi\s+terbaru",
+                    r"regulasi\s+(?:terbaru|tentang|terkait|pembangunan)?",
                     r"tdu\s+(?:pasal|bagi|pkl)",
                     r"(?:format|aturan|margin|font)\s+naskah",
                     r"evaluasi\s+(?:ranperda|rpjmd|rpjpd|rtrw)",
@@ -188,10 +202,13 @@ class DomainIntentClassifier:
                     r"(?:akses|status)\s+ltm",
                     r"(?:struktur|bagan|susunan)\s+(?:organisasi|ditjen|kemendagri|bangda)",
                     r"sotk\s+(?:ditjen|bangda|kemendagri)?",
-                    r"(?:tupoksi|tata\s+kerja|pembagian\s+urusan)\s+(?:ditjen|direktorat|subdit)?",
-                    r"(?:peippd|supd\s+[iv]+)"
+                    r"(?:tupoksi|tata\s+kerja|pembagian\s+urusan|sub\s+urusan)\s*(?:ditjen|direktorat|subdit|pada\s+bidang|bidang)?",
+                    r"(?:peippd|supd\s+[iv1234]+)",
+                    r"(?:aturan|regulasi|dasar\s+hukum|ketentuan)\s+(?:tentang|terhadap|terkait|mengenai)",
+                    r"(?:apakah\s+pemerintah\s+daerah|bolehkah\s+pemda|kewenangan\s+pemda)",
+                    r"(?:lsdp|standar\s+pelayanan|sub\s+urusan)\s+(?:bidang|urusan)?"
                 ],
-                "weight": 4
+                "weight": 5
             },
             IntentType.POLICY_INVENTORY: {
                 "keywords": [
@@ -378,15 +395,29 @@ class DomainIntentClassifier:
             IntentType.GENERATE_NOTA_DINAS: {
                 "keywords": [
                     "nota dinas", "buatkan nd", "draf nd", "laporan rapat", "format nd",
-                    "nd laporan", "susun nota dinas", "telaahan staf", "golden pattern"
+                    "nd laporan", "susun nota dinas", "telaahan staf", "golden pattern",
+                    "kerangka acuan kerja", "kak", "menyusun kak", "template docx"
                 ],
                 "patterns": [
                     r"\bnota\s+dinas\b",
                     r"\bdraf\s+nd\b",
                     r"laporan\s+(?:hasil\s+)?rapat",
-                    r"telaahan\s+staf"
+                    r"telaahan\s+staf",
+                    r"kerangka\s+acuan\s+kerja|\bkak\b"
                 ],
                 "weight": 7
+            },
+            IntentType.PDF_ARCHIVE_REQUEST: {
+                "keywords": [
+                    "preview pdf", "pdf sumber", "naskah asli", "canvas preview",
+                    "sumber kode", "minta akses preview", "sarm_daerah", "sarm_kl"
+                ],
+                "patterns": [
+                    r"preview\s+pdf\s+sumber",
+                    r"sumber\s+kode\s*:\s*SARM_",
+                    r"\bSARM_(?:DAERAH|KL)_[A-Za-z0-9_]+\b"
+                ],
+                "weight": 10
             },
             IntentType.SYSTEM_HEALTH: {
                 "keywords": [
@@ -396,14 +427,17 @@ class DomainIntentClassifier:
                     "kesehatan", "health", "healthy", "sistem", "server", "database", "runpod",
                     "healthy agent", "health status", "cek healthy", "status agent", "jalankan healthy",
                     "cek status", "status kesehatan", "kesehatan bot", "kesehatan server",
-                    "status maf", "cek maf", "status framework", "kesehatan framework", "kesehatan maf"
+                    "status maf", "cek maf", "status framework", "kesehatan framework", "kesehatan maf",
+                    "/status", "/ststus", "upgrade backend", "catatan log", "log aktivitas", "activity log"
                 ],
                 "patterns": [
-                    r"(?:cek|status|kondisi|kesehatan|diagnosa|healthy)\s+(?:\w+\s+){0,3}(?:sistem|server|database|runpod|bot|agent|status|maf|framework)?",
+                    r"^/?st[a]?tus\b",
+                    r"(?:cek|status|kondisi|kesehatan|diagnosa|healthy)\s+(?:\w+\s+){0,3}(?:sistem|server|database|runpod|bot|agent|status|maf|framework|backend)?",
                     r"health(?:y)?[\s_-]?(?:check|status|agent)?",
                     r"(?:jalankan|cek)\s+healthy(?:\s+agent)?",
                     r"(?:cek|status)\s+kesehatan",
-                    r"(?:cek|status)\s+(?:maf|framework)"
+                    r"(?:cek|status)\s+(?:maf|framework)",
+                    r"(?:catatan|baca)\s+log(?:\s+aktivitas)?"
                 ],
                 "weight": 7
             },
@@ -428,6 +462,7 @@ class DomainIntentClassifier:
 
     def classify(self, user_text: str) -> IntentResult:
         """Mengklasifikasikan pesan pengguna ke kategori intent dan mengekstrak entitas."""
+        raw_lower = (user_text or "").lower().strip()
         clean_text = self.normalizer.normalize(user_text)
         words = set(clean_text.split())
 
@@ -438,29 +473,30 @@ class DomainIntentClassifier:
 
         # Hitung skor pembobotan
         for itype, rules in self.intent_rules.items():
-            # 1. Keyword overlap
+            # 1. Keyword overlap (periksa pada teks ternormalisasi maupun teks asli huruf kecil agar kata berakhiran -an/-i tidak hilang)
             for kw in rules["keywords"]:
-                if re.search(r'\b' + re.escape(kw) + r'\b', clean_text, re.IGNORECASE):
+                pat_kw = r'\b' + re.escape(kw) + r'\b'
+                if re.search(pat_kw, clean_text, re.IGNORECASE) or re.search(pat_kw, raw_lower, re.IGNORECASE):
                     scores[itype] += rules["weight"]
 
             # 2. Regex pattern match
             for pat in rules["patterns"]:
                 if re.search(pat, user_text, re.IGNORECASE):
-                    scores[itype] += 5.0
+                    scores[itype] += 6.0
 
         # Penegasan konteks khusus
         if phone and any(k in clean_text for k in ["kirim", "pesan", "chat", "wa"]):
             scores[IntentType.SEND_MESSAGE] += 6.0
 
         if reg_citation:
-            scores[IntentType.SEARCH_REGULATION] += 5.0
+            scores[IntentType.SEARCH_REGULATION] += 6.0
 
-        has_domain_search = any(d in clean_text or d in user_text.lower() for d in ["bpk.go.id", "bpk", "peraturan.bpk", "jdih", "peraturan.go.id", ".go.id"]) or \
-                            any(p in clean_text for p in ["cari di internet", "cari di web", "browsing", "portal web"])
+        has_domain_search = any(d in clean_text or d in raw_lower for d in ["bpk.go.id", "bpk", "peraturan.bpk", "jdih", "peraturan.go.id", ".go.id"]) or \
+                            any(p in clean_text or p in raw_lower for p in ["cari di internet", "cari di web", "browsing", "portal web"])
         if has_domain_search:
             scores[IntentType.LIVE_WEB_SEARCH] += 16.0
 
-        if any(w in user_text.lower() for w in ["!telaah", "telaah:", "!kaji", "kaji:", "6 dimensi", "bphn", "keselarasan vertikal", "disharmoni norma", "ultra vires"]):
+        if any(w in raw_lower for w in ["!telaah", "telaah:", "!kaji", "kaji:", "6 dimensi", "bphn", "keselarasan vertikal", "disharmoni norma", "ultra vires"]):
             scores[IntentType.EVALUATE_DOCTRINE] += 12.0
 
         best_intent = max(scores, key=scores.get)
@@ -476,8 +512,8 @@ class DomainIntentClassifier:
                 tool_arguments={}
             )
 
-        # Confidence normalized 0.0 - 0.98
-        confidence = min(0.98, round(best_score / 12.0, 2))
+        # Confidence normalized 0.0 - 0.98 (kalibrasi pembagi 8.0 agar 1 keyword kuat = 0.625 dan pattern = 0.75+)
+        confidence = min(0.98, round(best_score / 8.0, 2))
 
         # Ekstraksi entitas & argumen tool
         entities: Dict[str, Any] = {}
@@ -582,6 +618,14 @@ class DomainIntentClassifier:
             tool_arguments = {"limit": 10}
         elif best_intent == IntentType.SEND_MESSAGE:
             tool_arguments = {"phone_number": phone or "", "text": user_text.strip()}
+        elif best_intent == IntentType.PDF_ARCHIVE_REQUEST:
+            m_slug = re.search(r"\b(SARM_(?:DAERAH|KL)_[A-Za-z0-9_]+)\b", user_text, re.IGNORECASE)
+            tool_arguments = {
+                "slug": m_slug.group(1) if m_slug else "",
+                "message_text": user_text.strip(),
+            }
+        else:
+            tool_arguments = {"query": user_text.strip()}
 
         # Deteksi apakah memenuhi syarat Fast-Path (Score tinggi pada data baku tanpa perlu LLM penalaran)
         is_fast_path = False
@@ -928,6 +972,19 @@ class SatriaToolSelector:
                     }
                 },
                 priority=10
+            ),
+            IntentType.PDF_ARCHIVE_REQUEST.value: ToolDefinition(
+                name="intent_pdf_archive_request",
+                description="Menangani permohonan akses preview berkas PDF sumber asli (Secure View-Only Canvas) melalui SATRIA WhatsApp Concierge dan verifikasi UU PDP No. 27/2022.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "slug": {"type": "string", "description": "Kode slug dokumen sumber (mis. SARM_DAERAH_01_Jatim)."},
+                        "message_text": {"type": "string", "description": "Pesan permohonan atau verifikasi dari pemohon."}
+                    },
+                    "required": ["message_text"]
+                },
+                priority=10
             )
         }
 
@@ -1012,13 +1069,23 @@ class SatriaToolSelector:
         return result
 
     def _get_default_fallback_tools(self) -> List[SelectedTool]:
-        """Perkakas default aman saat pertanyaan umum diajukan."""
-        defaults = ["search_regulation_knowledge", "lookup_bangda_staff", "cari_surat_korespondensi"]
+        """
+        TASK-304 Subtask 304-F:
+        Perkakas default yang komprehensif saat intent umum atau pertanyaan bebas diajukan.
+        Menyediakan kombinasi lengkap: Regulasi, Kepegawaian, Persuratan, Web Live, dan Inventaris Kebijakan.
+        """
+        defaults = [
+            "search_regulation_knowledge",
+            "cari_surat_korespondensi",
+            "lookup_bangda_staff",
+            "search_web_realtime",
+            "policy_inventory_aggregator"
+        ]
         res = []
         for name in defaults:
             t = self.tools.get(name)
             if t:
-                res.append(SelectedTool(tool=t, score=4.0, reason="General default tool"))
+                res.append(SelectedTool(tool=t, score=4.5, reason="Comprehensive multi-skill default"))
         return res
 
     def get_openai_tools_schema(self, selected_tools: List[SelectedTool]) -> List[Dict[str, Any]]:
