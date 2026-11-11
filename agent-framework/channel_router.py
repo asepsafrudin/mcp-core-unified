@@ -128,7 +128,8 @@ def classify_legal_intent(text: str) -> Dict[str, Any]:
             "intent": detected_intent_a,
             "recommended_persona": f"PERANCANG_PUU_{recommended_jenjang}",
             "confidence": min(1.0, 0.5 + (score_a * 0.1)),
-            "matches": track_a_matches
+            "matches": track_a_matches,
+            "scores": {"A": score_a, "B": score_b},
         }
     elif score_b >= score_a and score_b > 0:
         if "judicial review" in lower or "mahkamah konstitusi" in lower:
@@ -142,7 +143,8 @@ def classify_legal_intent(text: str) -> Dict[str, Any]:
             "intent": detected_intent_b,
             "recommended_persona": f"ANALIS_HUKUM_{recommended_jenjang}",
             "confidence": min(1.0, 0.5 + (score_b * 0.1)),
-            "matches": track_b_matches
+            "matches": track_b_matches,
+            "scores": {"A": score_a, "B": score_b},
         }
 
     return {
@@ -150,7 +152,8 @@ def classify_legal_intent(text: str) -> Dict[str, Any]:
         "intent": "general_inquiry",
         "recommended_persona": "PERANCANG_PUU_AHLI_MUDA",
         "confidence": 0.3,
-        "matches": []
+        "matches": [],
+        "scores": {"A": score_a, "B": score_b},
     }
 
 
