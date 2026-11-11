@@ -202,6 +202,16 @@ try:
 except ImportError:
     pass
 
+# Import Decision Bridge tools (JEV / SemIf)
+try:
+    from .decision_bridge import (
+        decision_triage,
+        decision_status,
+        decision_hitl_choice,
+    )
+except ImportError:
+    pass
+
 # Extend __all__ with all tools
 __all__.extend([
     # File tools
@@ -255,6 +265,10 @@ __all__.extend([
     "universal_document_extract",
     "universal_document_triage",
     "universal_document_audit_gate",
+    # Decision Bridge Tools (JEV / SemIf)
+    "decision_triage",
+    "decision_status",
+    "decision_hitl_choice",
 ])
 
 # Import workspace tools (separate module)

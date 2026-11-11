@@ -33,7 +33,7 @@ class TestDynamicPromptBuilder(unittest.TestCase):
         self.assertIn("MICROSOFT AGENT FRAMEWORK", prompt)
         self.assertIn("WEWENANG SUPER ADMINISTRATOR", prompt)
         # Token efficiency check: should be under 4000 characters (~700 tokens)
-        self.assertLess(len(prompt), 3500)
+        self.assertLess(len(prompt), 4000)
 
     def test_legal_analyst_prompt(self):
         legal_user = UserRbacProfile(
@@ -192,6 +192,18 @@ class TestDynamicPromptBuilder(unittest.TestCase):
         self.assertIn("3 POIN AKSI KUNCI", summary)
         self.assertIn("TINGKAT RISIKO HUKUM", summary)
         self.assertIn("Analisis & Opini Hukum (BPHN)", summary)
+
+    def test_epistemic_humility_and_cognitive_freedom_clauses(self):
+        """Memverifikasi klausul anti-anchoring dan epistemic humility (Dokumen 08 / RFC-Agentic-02)."""
+        prompt = DynamicPromptBuilder.build_legal_persona_prompt(
+            persona_key="PERANCANG_PUU_AHLI_MADYA",
+            intent_type="harmonisasi_raperda_ditjen_pp",
+        )
+        self.assertIn("PRINSIP KEBEBASAN PENALARAN & DISIPLIN EPISTEMIK", prompt)
+        self.assertIn("Nol Toleransi Rujukan Fiktif", prompt)
+        self.assertIn("Hak Menyatakan 'Tidak Ditemukan'", prompt)
+        self.assertIn("Kerangka Evaluasi sebagai Alat Bantu, Bukan Pembatas Pikiran", prompt)
+        self.assertIn("Catatan Kritis di Luar Kerangka", prompt)
 
 
 if __name__ == "__main__":
