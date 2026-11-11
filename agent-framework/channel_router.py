@@ -418,11 +418,39 @@ class MultiChannelRouter:
             agent_result = await agent.run(message.text)
             raw_text = str(agent_result.text if hasattr(agent_result, "text") else agent_result)
         except Exception as e:
-            logger.error(f"[MAF Router] Error during agent execution: {e}")
-            raw_text = f"Mohon maaf, terjadi kendala saat memproses permintaan: {e}"
+            err_msg = str(e)
+            logger.warning(f"[MAF Router] Percobaan awal agent.run gagal ({err_msg}). Memeriksa opsi fallback model...")
+            is_transient_error = any(
+                k in err_msg.lower()
+                for k in ["503", "unavailable", "high demand", "resource_exhausted", "429", "404", "not_found", "timeout"]
+            )
+            if is_transient_error:
+                # Coba fallback ke model stabil
+                current_model = model_name or os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+                fallback_model = "gemini-3.5-flash" if "gemini-3-flash-preview" in current_model else "gemini-3-flash-preview"
+                logger.info(f"[MAF Router] Memicu fallback otomatis ke model: {fallback_model}")
+                try:
+                    fallback_agent = ModelClientFactory.create_agent(
+                        name=f"Unified_Fallback_{resolved_persona or 'ChannelAgent'}",
+                        instructions=dynamic_instructions,
+                        tools=agent_tools,
+                        model_name=fallback_model,
+                    )
+                    agent_result = await fallback_agent.run(message.text)
+                    raw_text = str(agent_result.text if hasattr(agent_result, "text") else agent_result)
+                    logger.info(f"[MAF Router] Fallback model {fallback_model} berhasil merespons.")
+                except Exception as fb_err:
+                    logger.error(f"[MAF Router] Fallback agent juga gagal: {fb_err}")
+                    raw_text = f"Mohon maaf, server AI sedang mengalami lonjakan beban sementara. Silakan coba kembali dalam beberapa saat."
+            else:
+                logger.error(f"[MAF Router] Error during agent execution: {e}")
+                raw_text = f"Mohon maaf, terjadi kendala saat memproses permintaan: {e}"
 
         # Dual-output processing (Executive Summary for High-Level Officials)
-        wants_dual = dual_output or (message.channel == "whatsapp" and len(raw_text) > 400) or ("ringkasan" in message.text.lower())
+        is_error_output = "Mohon maaf" in raw_text and ("kendala" in raw_text or "lonjakan" in raw_text)
+        wants_dual = (not is_error_output) and (
+            dual_output or (message.channel == "whatsapp" and len(raw_text) > 400) or ("ringkasan" in message.text.lower())
+        )
         exec_summary = None
         if wants_dual and resolved_track:
             exec_summary = generate_executive_summary(raw_text, track=resolved_track, intent=resolved_intent)

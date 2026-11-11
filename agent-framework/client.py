@@ -76,7 +76,7 @@ class ModelClientFactory:
 
         elif provider == SupportedProvider.GEMINI:
             api_key = kwargs.get("api_key") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-            model = model_name or os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            model = model_name or os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
             return GeminiChatClient(api_key=api_key, model=model, **kwargs)
 
         elif provider == SupportedProvider.OPENAI:
